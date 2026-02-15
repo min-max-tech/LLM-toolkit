@@ -58,14 +58,15 @@ services:
       echo "Done."
 
   comfyui-model-puller:
-    image: curlimages/curl:latest
+    image: python:3.12-slim
     restart: "no"
     environment:
       - MODELS_DIR=/models
     volumes:
       - ./models/comfyui:/models
+      - comfyui-text-encoders:/models/text_encoders  # Volume avoids I/O error on Windows bind mount
       - ./scripts:/scripts:ro
-    command: ["/bin/sh", "/scripts/pull-comfyui-models.sh"]
+    command: ["python3", "/scripts/pull_comfyui_models.py"]
 
   comfyui:
     image: ghcr.io/lecode-official/comfyui-docker:latest
@@ -82,6 +83,7 @@ services:
     # LTX-2 model layout: checkpoints/, text_encoders/, loras/, latent_upscale_models/
     volumes:
       - ./models/comfyui:/opt/comfyui/models
+      - comfyui-text-encoders:/opt/comfyui/models/text_encoders  # Gemma stored in volume (Windows bind mount I/O fix)
       - comfyui-custom-nodes:/opt/comfyui/custom_nodes
       - comfyui-output:/opt/comfyui/output
     deploy:
@@ -109,5 +111,6 @@ volumes:
   open-webui:
   comfyui-custom-nodes:
   comfyui-output:
+  comfyui-text-encoders:
   n8n-data:
   n8n-files:

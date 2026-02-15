@@ -9,7 +9,7 @@ Run Ollama + Open WebUI in Docker with optional one-shot model pulling.
 | **ollama**    | Local LLM runtime. Exposed on `11434` (optional; can be used only from Open WebUI). |
 | **open-webui**| Web UI at [http://localhost:3000](http://localhost:3000). |
 | **model-puller** | Runs once on first `up` to pull the models listed in `MODELS` (or `.env`). |
-| **comfyui-model-puller** | Runs once on first `up` to download LTX-2 models (~35GB) to `./models/comfyui/`. |
+| **comfyui-model-puller** | Runs once on first `up` to download LTX-2 models (~60GB) to `./models/comfyui/`. |
 | **comfyui**   | Stable Diffusion node-based UI at [http://localhost:8188](http://localhost:8188). Waits for model puller. Requires NVIDIA GPU. |
 | **n8n**       | Workflow automation at [http://localhost:5678](http://localhost:5678). |
 
@@ -55,9 +55,9 @@ to pull the new list (existing models are skipped).
 
 ## ComfyUI (LTX-2)
 
-ComfyUI starts after `comfyui-model-puller` has downloaded the LTX-2 models (~35GB total). First run may take a while; subsequent runs skip existing files.
+ComfyUI starts after `comfyui-model-puller` has downloaded the LTX-2 models (~60GB total). First run may take a while; subsequent runs skip existing files.
 
-**Auto-downloaded:** checkpoint (fp8), LoRAs, latent upscaler. The Gemma text encoder downloads on first workflow use via the LTXVideo nodes.
+**Auto-downloaded:** checkpoint (fp8), LoRAs, latent upscaler, Gemma text encoder (~24GB).
 
 To re-pull models:
 
