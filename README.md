@@ -9,6 +9,8 @@ Run Ollama + Open WebUI in Docker with optional one-shot model pulling.
 | **ollama**    | Local LLM runtime. Exposed on `11434` (optional; can be used only from Open WebUI). |
 | **open-webui**| Web UI at [http://localhost:3000](http://localhost:3000). |
 | **model-puller** | Runs once on first `up` to pull the models listed in `MODELS` (or `.env`). |
+| **comfyui**   | Stable Diffusion node-based UI at [http://localhost:8188](http://localhost:8188). Requires NVIDIA GPU. |
+| **n8n**       | Workflow automation at [http://localhost:5678](http://localhost:5678). |
 
 ## Quick start
 
@@ -79,12 +81,16 @@ docker compose up -d ollama
 ## Ports and access
 
 - **3000** – Open WebUI (browser).
+- **5678** – N8N (workflow automation).
+- **8188** – ComfyUI (Stable Diffusion).
 - **11434** – Ollama API (for CLI, scripts, or other apps). You can remove the `ports` mapping for `ollama` if you only want access through Open WebUI.
 
 ## Data
 
 - `ollama` volume: model files and Ollama data.
 - `open-webui` volume: Open WebUI data (users, chats, settings).
+- `comfyui-models`, `comfyui-custom-nodes`, `comfyui-output`: ComfyUI models, extensions, and generated images.
+- `n8n-data`, `n8n-files`: N8N workflows and shared files (use `/files` in N8N for file nodes).
 
 Back up these volumes if you care about models and UI state.
 

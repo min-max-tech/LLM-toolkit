@@ -9,14 +9,13 @@ services:
     volumes:
       - ollama:/root/.ollama
     # --- NVIDIA GPU (optional) ---
-    # If you have NVIDIA Container Toolkit installed, uncomment:
-    # deploy:
-    #   resources:
-    #     reservations:
-    #       devices:
-    #         - driver: nvidia
-    #           count: all
-    #           capabilities: [gpu]
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:main
@@ -59,6 +58,44 @@ services:
 
       echo "Done."
 
+  comfyui:
+    image: ghcr.io/lecode-official/comfyui-docker:latest
+    container_name: comfyui
+    restart: unless-stopped
+    ports:
+      - "8188:8188"
+    environment:
+      USER_ID: "${USER_ID:-1000}"
+      GROUP_ID: "${GROUP_ID:-1000}"
+    volumes:
+      - comfyui-models:/opt/comfyui/models
+      - comfyui-custom-nodes:/opt/comfyui/custom_nodes
+      - comfyui-output:/opt/comfyui/output
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]
+
+  n8n:
+    image: docker.n8n.io/n8nio/n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+    volumes:
+      - n8n-data:/home/node/.n8n
+      - n8n-files:/files
+
 volumes:
   ollama:
   open-webui:
+  comfyui-models:
+  comfyui-custom-nodes:
+  comfyui-output:
+  n8n-data:
+  n8n-files:
