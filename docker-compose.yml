@@ -1,0 +1,64 @@
+services:
+  ollama:
+    image: ollama/ollama:latest
+    restart: unless-stopped
+    environment:
+      - OLLAMA_HOST=0.0.0.0:11434
+    ports:
+      - "11434:11434" # remove if you ONLY want access via Open WebUI
+    volumes:
+      - ollama:/root/.ollama
+    # --- NVIDIA GPU (optional) ---
+    # If you have NVIDIA Container Toolkit installed, uncomment:
+    # deploy:
+    #   resources:
+    #     reservations:
+    #       devices:
+    #         - driver: nvidia
+    #           count: all
+    #           capabilities: [gpu]
+
+  open-webui:
+    image: ghcr.io/open-webui/open-webui:main
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "3000:8080"
+    environment:
+      - OLLAMA_BASE_URL=http://ollama:11434
+      # Optional single-user mode (disables login). Can't be toggled later without reset:
+      # - WEBUI_AUTH=False
+    volumes:
+      - open-webui:/app/backend/data
+
+  model-puller:
+    image: curlimages/curl:latest
+    depends_on:
+      - ollama
+    restart: "no"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      # Set in .env or here. Comma-separated; good defaults below.
+      - MODELS=${MODELS:-deepseek-r1:7b,deepseek-coder:6.7b,nomic-embed-text}
+    entrypoint: ["/bin/sh", "-c"]
+    command: |
+      set -eu
+      echo "Waiting for Ollama at $$OLLAMA_URL ..."
+      until curl -fsS "$$OLLAMA_URL/api/version" >/dev/null; do sleep 2; done
+
+      echo "Pulling models: $$MODELS"
+      IFS=','; for m in $$MODELS; do
+        m="$$(echo "$$m" | tr -d ' ')"
+        [ -z "$$m" ] && continue
+        echo "==> Pulling $$m"
+        curl -fsS "$$OLLAMA_URL/api/pull" \
+          -H "Content-Type: application/json" \
+          -d "{\"model\":\"$$m\",\"stream\":false}"
+      done
+
+      echo "Done."
+
+volumes:
+  ollama:
+  open-webui:
