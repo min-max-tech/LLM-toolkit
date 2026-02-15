@@ -9,7 +9,8 @@ Run Ollama + Open WebUI in Docker with optional one-shot model pulling.
 | **ollama**    | Local LLM runtime. Exposed on `11434` (optional; can be used only from Open WebUI). |
 | **open-webui**| Web UI at [http://localhost:3000](http://localhost:3000). |
 | **model-puller** | Runs once on first `up` to pull the models listed in `MODELS` (or `.env`). |
-| **comfyui**   | Stable Diffusion node-based UI at [http://localhost:8188](http://localhost:8188). Requires NVIDIA GPU. |
+| **comfyui-model-puller** | Runs once on first `up` to download LTX-2 models (~35GB) to `./models/comfyui/`. |
+| **comfyui**   | Stable Diffusion node-based UI at [http://localhost:8188](http://localhost:8188). Waits for model puller. Requires NVIDIA GPU. |
 | **n8n**       | Workflow automation at [http://localhost:5678](http://localhost:5678). |
 
 ## Quick start
@@ -52,6 +53,18 @@ docker compose up -d model-puller
 
 to pull the new list (existing models are skipped).
 
+## ComfyUI (LTX-2)
+
+ComfyUI starts after `comfyui-model-puller` has downloaded the LTX-2 models (~35GB total). First run may take a while; subsequent runs skip existing files.
+
+**Auto-downloaded:** checkpoint (fp8), LoRAs, latent upscaler. The Gemma text encoder downloads on first workflow use via the LTXVideo nodes.
+
+To re-pull models:
+
+```bash
+docker compose up -d comfyui-model-puller
+```
+
 ## GPU (NVIDIA)
 
 If you use the [NVIDIA Container Toolkit](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/install-guide.html), uncomment the GPU block under the `ollama` service in `docker-compose.yml`:
@@ -89,7 +102,8 @@ docker compose up -d ollama
 
 - `ollama` volume: model files and Ollama data.
 - `open-webui` volume: Open WebUI data (users, chats, settings).
-- `comfyui-models`, `comfyui-custom-nodes`, `comfyui-output`: ComfyUI models, extensions, and generated images.
+- `./models/comfyui/`: ComfyUI LTX-2 models (checkpoints, loras, upscalers). Auto-downloaded on first run.
+- `comfyui-custom-nodes`, `comfyui-output`: ComfyUI extensions and generated images.
 - `n8n-data`, `n8n-files`: N8N workflows and shared files (use `/files` in N8N for file nodes).
 
 Back up these volumes if you care about models and UI state.
@@ -102,6 +116,7 @@ docker compose up -d
 
 # View logs (e.g. model pull progress)
 docker compose logs -f model-puller
+docker compose logs -f comfyui-model-puller
 docker compose logs -f ollama
 
 # Stop

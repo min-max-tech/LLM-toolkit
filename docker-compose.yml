@@ -57,17 +57,31 @@ services:
 
       echo "Done."
 
+  comfyui-model-puller:
+    image: curlimages/curl:latest
+    restart: "no"
+    environment:
+      - MODELS_DIR=/models
+    volumes:
+      - ./models/comfyui:/models
+      - ./scripts:/scripts:ro
+    command: ["/bin/sh", "/scripts/pull-comfyui-models.sh"]
+
   comfyui:
     image: ghcr.io/lecode-official/comfyui-docker:latest
     container_name: comfyui
     restart: unless-stopped
+    depends_on:
+      comfyui-model-puller:
+        condition: service_completed_successfully
     ports:
       - "8188:8188"
     environment:
       USER_ID: "${USER_ID:-1000}"
       GROUP_ID: "${GROUP_ID:-1000}"
+    # LTX-2 model layout: checkpoints/, text_encoders/, loras/, latent_upscale_models/
     volumes:
-      - comfyui-models:/opt/comfyui/models
+      - ./models/comfyui:/opt/comfyui/models
       - comfyui-custom-nodes:/opt/comfyui/custom_nodes
       - comfyui-output:/opt/comfyui/output
     deploy:
@@ -93,7 +107,6 @@ services:
 volumes:
   ollama:
   open-webui:
-  comfyui-models:
   comfyui-custom-nodes:
   comfyui-output:
   n8n-data:
