@@ -12,7 +12,7 @@ DOWNLOADS = [
     ("Lightricks/LTX-2", "ltx-2-19b-distilled-lora-384.safetensors", "loras"),
     ("Lightricks/LTX-2-19b-LoRA-Camera-Control-Dolly-Left", "ltx-2-19b-lora-camera-control-dolly-left.safetensors", "loras"),
     ("Lightricks/LTX-2", "ltx-2-spatial-upscaler-x2-1.0.safetensors", "latent_upscale_models"),
-    ("Comfy-Org/ltx-2", "split_files/text_encoders/gemma_3_12B_it.safetensors", "text_encoders", "gemma_3_12B_it.safetensors", 20.0),
+    ("Comfy-Org/ltx-2", "split_files/text_encoders/gemma_3_12B_it_fp4_mixed.safetensors", "text_encoders", "gemma_3_12B_it_fp4_mixed.safetensors", 8.0),
 ]
 
 SUBDIRS = ("checkpoints", "text_encoders", "loras", "latent_upscale_models")

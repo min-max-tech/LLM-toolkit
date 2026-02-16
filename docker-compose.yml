@@ -38,20 +38,21 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - MODELS=${MODELS:-deepseek-r1:7b,deepseek-coder:6.7b,nomic-embed-text}
     entrypoint: ["/bin/sh", "-c"]
-    command: |
-      set -eu
-      echo "Waiting for Ollama ..."
-      until curl -fsS "$$OLLAMA_URL/api/version" >/dev/null; do sleep 2; done
-      echo "Pulling: $$MODELS"
-      IFS=','; for m in $$MODELS; do
-        m="$$(echo "$$m" | tr -d ' ')"
-        [ -z "$$m" ] && continue
-        echo "==> $$m"
-        curl -fsS "$$OLLAMA_URL/api/pull" \
-          -H "Content-Type: application/json" \
-          -d "{\"model\":\"$$m\",\"stream\":false}"
-      done
-      echo "Done."
+    command:
+      - |
+        set -eu
+        echo "Waiting for Ollama ..."
+        until curl -fsS "$$OLLAMA_URL/api/version" >/dev/null; do sleep 2; done
+        echo "Pulling: $$MODELS"
+        IFS=','; for m in $$MODELS; do
+          m="$$(echo "$$m" | tr -d ' ')"
+          [ -z "$$m" ] && continue
+          echo "==> $$m"
+          curl -fsS "$$OLLAMA_URL/api/pull" \
+            -H "Content-Type: application/json" \
+            -d "{\"model\":\"$$m\",\"stream\":false}"
+        done
+        echo "Done."
 
   comfyui-model-puller:
     image: python:3.12-slim
@@ -73,7 +74,7 @@ services:
     ports:
       - "8188:8188"
     environment:
-      - CLI_ARGS=--disable-xformers
+      - CLI_ARGS=--disable-xformers --lowvram
     volumes:
       - ${BASE_PATH:-.}/data/comfyui-storage:/root
       - ${BASE_PATH:-.}/models/comfyui:/root/ComfyUI/models
