@@ -1,5 +1,12 @@
+# Profiles make services optional. Run only what you need:
+#   ollama + openclaw:  docker compose --profile ollama --profile openclaw up -d
+#   + webui:            docker compose --profile ollama --profile openclaw --profile webui up -d
+#   + models (pull):    add --profile models
+#   + comfyui:          add --profile comfyui
+#   + n8n:              add --profile n8n
 services:
   ollama:
+    profiles: [ollama]
     image: ollama/ollama:latest
     restart: unless-stopped
     environment:
@@ -17,6 +24,7 @@ services:
               capabilities: [gpu]
 
   open-webui:
+    profiles: [webui]
     image: ghcr.io/open-webui/open-webui:main
     restart: unless-stopped
     depends_on:
@@ -30,6 +38,7 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data
 
   model-puller:
+    profiles: [models]
     image: curlimages/curl:latest
     depends_on:
       - ollama
@@ -55,6 +64,7 @@ services:
         echo "Done."
 
   comfyui-model-puller:
+    profiles: [comfyui]
     image: python:3.12-slim
     restart: "no"
     environment:
@@ -65,6 +75,7 @@ services:
     command: ["python3", "/scripts/comfyui/pull_comfyui_models.py"]
 
   comfyui:
+    profiles: [comfyui]
     image: yanwk/comfyui-boot:cu128-slim
     container_name: comfyui
     restart: unless-stopped
@@ -89,6 +100,7 @@ services:
               capabilities: [gpu]
 
   n8n:
+    profiles: [n8n]
     image: docker.n8n.io/n8nio/n8n
     restart: unless-stopped
     ports:
@@ -99,3 +111,50 @@ services:
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
+
+  openclaw-gateway:
+    profiles: [openclaw]
+    image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
+    container_name: openclaw-gateway
+    depends_on:
+      - ollama
+    env_file:
+      - openclaw/.env
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      NODE_ENV: production
+      OPENCLAW_SKIP_SERVICE_CHECK: "true"
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR:-${BASE_PATH:-.}/data/openclaw/workspace}:/home/node/.openclaw/workspace
+    ports:
+      - "${OPENCLAW_GATEWAY_PORT:-18789}:18789"
+      - "${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+    stdin_open: true
+    tty: true
+    init: true
+    restart: unless-stopped
+    command: ["gateway", "--allow-unconfigured"]
+
+  openclaw-cli:
+    profiles: [openclaw]
+    image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
+    depends_on:
+      - ollama
+    env_file:
+      - openclaw/.env
+    environment:
+      HOME: /home/node
+      TERM: xterm-256color
+      NODE_ENV: production
+      BROWSER: echo
+      OPENCLAW_GATEWAY_TOKEN: ${OPENCLAW_GATEWAY_TOKEN}
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/home/node/.openclaw
+      - ${OPENCLAW_WORKSPACE_DIR:-${BASE_PATH:-.}/data/openclaw/workspace}:/home/node/.openclaw/workspace
+    stdin_open: true
+    tty: true
+    init: true
+    entrypoint: ["node", "/app/dist/index.js"]

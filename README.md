@@ -28,11 +28,22 @@ copy .env.example .env
 # 3. Create data directories
 .\scripts\ensure_dirs.ps1
 
-# 4. Start
-docker compose up -d
+# 4. Start — pick what you need via profiles
+docker compose --profile ollama --profile openclaw up -d   # OpenClaw + Ollama only
+# docker compose --profile ollama --profile openclaw --profile webui up -d   # + chat UI
+# docker compose --profile ollama --profile openclaw --profile models up -d  # + pull models
+# docker compose --profile ollama --profile openclaw --profile comfyui up -d  # + ComfyUI
+# docker compose --profile ollama --profile openclaw --profile n8n up -d     # + n8n
 ```
 
-Open **http://localhost:3000** to use the chat UI.
+| Profiles | Services |
+|----------|----------|
+| `ollama` | Ollama LLM runtime |
+| `openclaw` | OpenClaw gateway — [localhost:18789](http://localhost:18789) |
+| `webui` | Open WebUI chat — [localhost:3000](http://localhost:3000) |
+| `models` | Pull Ollama models on first start |
+| `comfyui` | ComfyUI + LTX-2 models |
+| `n8n` | N8N workflow automation |
 
 ## Ollama models
 
@@ -78,19 +89,15 @@ All data is stored under `BASE_PATH` via bind mounts — no Docker named volumes
 | `data/openclaw` | OpenClaw config + workspace (SOUL.md, AGENTS.md, TOOLS.md) |
 | `models/comfyui/` | LTX-2 models (auto-downloaded) |
 
-## OpenClaw (optional)
+## OpenClaw
 
-[OpenClaw](openclaw/) is a personal AI assistant in a separate compose file. See [openclaw/README.md](openclaw/README.md) for setup.
-
-```bash
-cd openclaw && docker compose up -d openclaw-gateway
-```
+[OpenClaw](openclaw/) is a personal AI assistant, now integrated in the main compose. Use `--profile openclaw` (with `--profile ollama`). It defaults to the local Ollama model `qwen2.5:3b`; see [openclaw/README.md](openclaw/README.md) for token setup.
 
 ## Commands
 
-```bash
-docker compose up -d              # Start everything
-docker compose logs -f ollama     # View logs
-docker compose down               # Stop
-docker compose down -v            # Stop + remove volumes
+```powershell
+docker compose --profile ollama --profile openclaw up -d   # Ollama + OpenClaw
+docker compose logs -f ollama                              # View logs
+docker exec local-llm-docker-ollama-1 ollama pull <model>   # Pull a model
+docker compose down                                        # Stop
 ```
