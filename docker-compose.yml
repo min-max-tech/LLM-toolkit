@@ -62,7 +62,7 @@ services:
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
-    command: ["python3", "/scripts/pull_comfyui_models.py"]
+    command: ["python3", "/scripts/comfyui/pull_comfyui_models.py"]
 
   comfyui:
     image: yanwk/comfyui-boot:cu128-slim
@@ -75,6 +75,7 @@ services:
       - "8188:8188"
     environment:
       - CLI_ARGS=--disable-xformers --lowvram
+      - PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True,pinned_use_cuda_host_register:True
     volumes:
       - ${BASE_PATH:-.}/data/comfyui-storage:/root
       - ${BASE_PATH:-.}/models/comfyui:/root/ComfyUI/models

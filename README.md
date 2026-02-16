@@ -2,6 +2,8 @@
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 
+→ [Repository structure](docs/STRUCTURE.md)
+
 ## Services
 
 | Service | Port | Purpose |
@@ -10,6 +12,7 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 | **open-webui** | 3000 | Chat UI — [localhost:3000](http://localhost:3000) |
 | **comfyui** | 8188 | Stable Diffusion / LTX-2 — [localhost:8188](http://localhost:8188) |
 | **n8n** | 5678 | Workflow automation — [localhost:5678](http://localhost:5678) |
+| **OpenClaw** | 18789 | Personal AI assistant — [openclaw/](openclaw/) |
 | model-puller | — | Pulls Ollama models once on first start |
 | comfyui-model-puller | — | Downloads LTX-2 models (~60 GB) once on first start |
 
@@ -72,7 +75,16 @@ All data is stored under `BASE_PATH` via bind mounts — no Docker named volumes
 | `data/comfyui-output` | Generated images/video |
 | `data/n8n-data` | Workflows |
 | `data/n8n-files` | Shared files |
+| `data/openclaw` | OpenClaw config + workspace (SOUL.md, AGENTS.md, TOOLS.md) |
 | `models/comfyui/` | LTX-2 models (auto-downloaded) |
+
+## OpenClaw (optional)
+
+[OpenClaw](openclaw/) is a personal AI assistant in a separate compose file. See [openclaw/README.md](openclaw/README.md) for setup.
+
+```bash
+cd openclaw && docker compose up -d openclaw-gateway
+```
 
 ## Commands
 

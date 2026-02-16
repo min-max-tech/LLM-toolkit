@@ -1,3 +1,6 @@
 .env
 models/
 data/
+
+# Debug / temporary
+comfyui-logs.txt

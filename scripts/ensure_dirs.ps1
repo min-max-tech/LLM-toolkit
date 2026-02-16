@@ -9,6 +9,8 @@ $dirs = @(
     (Join-Path $data "comfyui-output"),
     (Join-Path $data "n8n-data"),
     (Join-Path $data "n8n-files"),
+    (Join-Path $data "openclaw"),
+    (Join-Path $data "openclaw\workspace"),
     (Join-Path $base "models\comfyui\checkpoints"),
     (Join-Path $base "models\comfyui\loras"),
     (Join-Path $base "models\comfyui\latent_upscale_models"),
