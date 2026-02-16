@@ -7,7 +7,8 @@ services:
     ports:
       - "11434:11434" # remove if you ONLY want access via Open WebUI
     volumes:
-      - ollama:/root/.ollama
+      # All data on DATA_PATH (e.g. D:/local-llm-docker/data)
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/ollama:/root/.ollama
     # --- NVIDIA GPU (optional) ---
     deploy:
       resources:
@@ -28,7 +29,7 @@ services:
       - OLLAMA_BASE_URL=http://ollama:11434
       - WEBUI_AUTH=False
     volumes:
-      - open-webui:/app/backend/data
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data
 
   model-puller:
     image: curlimages/curl:latest
@@ -63,9 +64,9 @@ services:
     environment:
       - MODELS_DIR=/models
     volumes:
-      - ./models/comfyui:/models
-      - comfyui-text-encoders:/models/text_encoders  # Volume avoids I/O error on Windows bind mount
-      - ./scripts:/scripts:ro
+      # All ComfyUI models (incl. Gemma) on BASE_PATH to keep everything on one drive
+      - ${BASE_PATH:-.}/models/comfyui:/models
+      - ${BASE_PATH:-.}/scripts:/scripts:ro
     command: ["python3", "/scripts/pull_comfyui_models.py"]
 
   comfyui:
@@ -82,10 +83,8 @@ services:
       GROUP_ID: "${GROUP_ID:-1000}"
     # LTX-2 model layout: checkpoints/, text_encoders/, loras/, latent_upscale_models/
     volumes:
-      - ./models/comfyui:/opt/comfyui/models
-      - comfyui-text-encoders:/opt/comfyui/models/text_encoders  # Gemma stored in volume (Windows bind mount I/O fix)
-      - comfyui-custom-nodes:/opt/comfyui/custom_nodes
-      - comfyui-output:/opt/comfyui/output
+      - ${BASE_PATH:-.}/models/comfyui:/opt/comfyui/models
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/opt/comfyui/output
     deploy:
       resources:
         reservations:
@@ -103,14 +102,5 @@ services:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
     volumes:
-      - n8n-data:/home/node/.n8n
-      - n8n-files:/files
-
-volumes:
-  ollama:
-  open-webui:
-  comfyui-custom-nodes:
-  comfyui-output:
-  comfyui-text-encoders:
-  n8n-data:
-  n8n-files:
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files

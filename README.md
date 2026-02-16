@@ -15,21 +15,34 @@ Run Ollama + Open WebUI in Docker with optional one-shot model pulling.
 
 ## Quick start
 
-1. **Clone and enter the repo**
-   ```bash
-   cd local-llm-docker
+1. **Copy the project to your target drive** (e.g. D: to save C: space)
+   ```powershell
+   # Copy to D: (or E:, etc.)
+   xcopy /E /I "c:\Users\lynch\local-llm-docker" "D:\local-llm-docker"
+   cd D:\local-llm-docker
    ```
 
-2. **Optional: set models to pull**
+2. **Configure `.env`**
+   - Copy `.env.example` to `.env`
+   - Set `BASE_PATH=D:/local-llm-docker` (or your project path). **All data lives under this path** – no Docker volumes on C:.
+
+3. **Optional: set models to pull**
    - Edit `MODELS` in `docker-compose.yml` under `model-puller`, or
    - Copy `.env.example` to `.env` and set `MODELS=model1:tag,model2:tag`
 
-3. **Start the stack**
+4. **Create data directories** (first run only)
+   ```powershell
+   cd D:\local-llm-docker
+   $env:BASE_PATH = "D:/local-llm-docker"
+   .\scripts\ensure_dirs.ps1
+   ```
+
+5. **Start the stack**
    ```bash
    docker compose up -d
    ```
 
-4. Open **http://localhost:3000** and sign up / log in. Models will appear as they finish pulling (watch logs with `docker compose logs -f model-puller`).
+6. Open **http://localhost:3000** and sign up / log in. Models will appear as they finish pulling (watch logs with `docker compose logs -f model-puller`).
 
 ## Customizing models
 
@@ -98,15 +111,20 @@ docker compose up -d ollama
 - **8188** – ComfyUI (Stable Diffusion).
 - **11434** – Ollama API (for CLI, scripts, or other apps). You can remove the `ports` mapping for `ollama` if you only want access through Open WebUI.
 
-## Data
+## Data (all under BASE_PATH, e.g. D:/local-llm-docker)
 
-- `ollama` volume: model files and Ollama data.
-- `open-webui` volume: Open WebUI data (users, chats, settings).
-- `./models/comfyui/`: ComfyUI LTX-2 models (checkpoints, loras, upscalers). Auto-downloaded on first run.
-- `comfyui-custom-nodes`, `comfyui-output`: ComfyUI extensions and generated images.
-- `n8n-data`, `n8n-files`: N8N workflows and shared files (use `/files` in N8N for file nodes).
+| Path | Contents |
+|------|----------|
+| `data/ollama` | Ollama models and data |
+| `data/open-webui` | Open WebUI users, chats, settings |
+| `data/comfyui-output` | ComfyUI generated images |
+| `data/n8n-data` | N8N workflows |
+| `data/n8n-files` | N8N shared files |
+| `models/comfyui/` | LTX-2 models (checkpoints, loras, upscalers, Gemma). Auto-downloaded on first run |
 
-Back up these volumes if you care about models and UI state.
+Everything is on disk via bind mounts – no Docker named volumes. Back up the `data/` and `models/` dirs if you care about state.
+
+**Migrating from named volumes:** If you previously used the default setup (Docker volumes on C:), run `docker compose down` first. The new bind mounts start empty. To migrate Ollama models, copy from the old volume (use `docker run --rm -v ollama:/from -v D:/local-llm-docker/data/ollama:/to alpine cp -a /from/. /to/` – adjust paths). Otherwise start fresh.
 
 ## Commands
 

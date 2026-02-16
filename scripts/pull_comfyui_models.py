@@ -13,7 +13,7 @@ DOWNLOADS = [
     ("Lightricks/LTX-2", "ltx-2-19b-distilled-lora-384.safetensors", "loras"),
     ("Lightricks/LTX-2-19b-LoRA-Camera-Control-Dolly-Left", "ltx-2-19b-lora-camera-control-dolly-left.safetensors", "loras"),
     ("Lightricks/LTX-2", "ltx-2-spatial-upscaler-x2-1.0.safetensors", "latent_upscale_models"),
-    ("Comfy-Org/ltx-2", "split_files/text_encoders/gemma_3_12B_it.safetensors", "text_encoders", "gemma_3_12B_it.safetensors"),
+    ("Comfy-Org/ltx-2", "split_files/text_encoders/gemma_3_12B_it.safetensors", "text_encoders", "gemma_3_12B_it.safetensors", 20.0),
 ]
 
 
@@ -22,13 +22,22 @@ def ensure_dirs():
         os.makedirs(os.path.join(MODELS_DIR, sub), exist_ok=True)
 
 
-def hf_download(repo_id: str, filename: str, subdir: str, dest_name: Optional[str] = None) -> bool:
+def hf_download(repo_id: str, filename: str, subdir: str, dest_name: Optional[str] = None, min_size_gb: float = 0.0) -> bool:
     dest_name = dest_name or os.path.basename(filename)
     dest_path = os.path.join(MODELS_DIR, subdir, dest_name)
 
     if os.path.exists(dest_path):
-        print(f"==> Skipping (exists): {dest_path}")
-        return True
+        if min_size_gb > 0:
+            size_gb = os.path.getsize(dest_path) / (1024 ** 3)
+            if size_gb < min_size_gb:
+                print(f"==> Removing corrupt/incomplete file ({size_gb:.1f}GB < {min_size_gb}GB): {dest_path}")
+                os.remove(dest_path)
+            else:
+                print(f"==> Skipping (exists): {dest_path}")
+                return True
+        else:
+            print(f"==> Skipping (exists): {dest_path}")
+            return True
 
     print(f"==> Downloading: {dest_name}")
     try:
@@ -52,13 +61,17 @@ def main():
     ensure_dirs()
 
     for item in DOWNLOADS:
-        if len(item) == 4:
+        if len(item) == 5:
+            repo_id, filename, subdir, dest_name, min_size_gb = item
+        elif len(item) == 4:
             repo_id, filename, subdir, dest_name = item
+            min_size_gb = 0.0
         else:
             repo_id, filename, subdir = item
             dest_name = None
+            min_size_gb = 0.0
 
-        if not hf_download(repo_id, filename, subdir, dest_name):
+        if not hf_download(repo_id, filename, subdir, dest_name, min_size_gb):
             return 1
 
     print("ComfyUI LTX-2 models ready.")
