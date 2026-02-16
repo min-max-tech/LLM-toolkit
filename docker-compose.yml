@@ -5,11 +5,9 @@ services:
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
     ports:
-      - "11434:11434" # remove if you ONLY want access via Open WebUI
+      - "11434:11434"
     volumes:
-      # All data on DATA_PATH (e.g. D:/local-llm-docker/data)
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/ollama:/root/.ollama
-    # --- NVIDIA GPU (optional) ---
     deploy:
       resources:
         reservations:
@@ -38,24 +36,21 @@ services:
     restart: "no"
     environment:
       - OLLAMA_URL=http://ollama:11434
-      # Set in .env or here. Comma-separated; good defaults below.
       - MODELS=${MODELS:-deepseek-r1:7b,deepseek-coder:6.7b,nomic-embed-text}
     entrypoint: ["/bin/sh", "-c"]
     command: |
       set -eu
-      echo "Waiting for Ollama at $$OLLAMA_URL ..."
+      echo "Waiting for Ollama ..."
       until curl -fsS "$$OLLAMA_URL/api/version" >/dev/null; do sleep 2; done
-
-      echo "Pulling models: $$MODELS"
+      echo "Pulling: $$MODELS"
       IFS=','; for m in $$MODELS; do
         m="$$(echo "$$m" | tr -d ' ')"
         [ -z "$$m" ] && continue
-        echo "==> Pulling $$m"
+        echo "==> $$m"
         curl -fsS "$$OLLAMA_URL/api/pull" \
           -H "Content-Type: application/json" \
           -d "{\"model\":\"$$m\",\"stream\":false}"
       done
-
       echo "Done."
 
   comfyui-model-puller:
@@ -64,13 +59,12 @@ services:
     environment:
       - MODELS_DIR=/models
     volumes:
-      # All ComfyUI models (incl. Gemma) on BASE_PATH to keep everything on one drive
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
     command: ["python3", "/scripts/pull_comfyui_models.py"]
 
   comfyui:
-    image: ghcr.io/lecode-official/comfyui-docker:latest
+    image: yanwk/comfyui-boot:cu128-slim
     container_name: comfyui
     restart: unless-stopped
     depends_on:
@@ -79,12 +73,11 @@ services:
     ports:
       - "8188:8188"
     environment:
-      USER_ID: "${USER_ID:-1000}"
-      GROUP_ID: "${GROUP_ID:-1000}"
-    # LTX-2 model layout: checkpoints/, text_encoders/, loras/, latent_upscale_models/
+      - CLI_ARGS=--disable-xformers
     volumes:
-      - ${BASE_PATH:-.}/models/comfyui:/opt/comfyui/models
-      - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/opt/comfyui/output
+      - ${BASE_PATH:-.}/data/comfyui-storage:/root
+      - ${BASE_PATH:-.}/models/comfyui:/root/ComfyUI/models
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/root/ComfyUI/output
     deploy:
       resources:
         reservations:
