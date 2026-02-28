@@ -10,6 +10,7 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 
 | Service | Port | Purpose |
 |---------|------|---------|
+| **dashboard** | 8080 | **Unified model manager** — [localhost:8080](http://localhost:8080) |
 | **ollama** | 11434 | Local LLM runtime (GPU) |
 | **open-webui** | 3000 | Chat UI — [localhost:3000](http://localhost:3000) |
 | **comfyui** | 8188 | Stable Diffusion / LTX-2 — [localhost:8188](http://localhost:8188) |
@@ -31,7 +32,8 @@ copy .env.example .env
 .\scripts\ensure_dirs.ps1
 
 # 4. Start — pick what you need via profiles
-docker compose --profile ollama --profile openclaw up -d   # OpenClaw + Ollama only
+docker compose --profile dashboard up -d   # Dashboard + Ollama (unified model UI)
+# docker compose --profile ollama --profile openclaw up -d   # OpenClaw + Ollama only
 # docker compose --profile ollama --profile openclaw --profile webui up -d   # + chat UI
 # docker compose --profile ollama --profile openclaw --profile models up -d  # + pull models
 # docker compose --profile ollama --profile openclaw --profile comfyui up -d  # + ComfyUI
@@ -40,12 +42,25 @@ docker compose --profile ollama --profile openclaw up -d   # OpenClaw + Ollama o
 
 | Profiles | Services |
 |----------|----------|
+| `dashboard` | **Unified dashboard** — model management, service links — [localhost:8080](http://localhost:8080) |
 | `ollama` | Ollama LLM runtime |
 | `openclaw` | OpenClaw gateway — [localhost:18789](http://localhost:18789) |
 | `webui` | Open WebUI chat — [localhost:3000](http://localhost:3000) |
 | `models` | Pull Ollama models on first start |
 | `comfyui` | ComfyUI + LTX-2 models |
 | `n8n` | N8N workflow automation |
+
+## Dashboard (recommended)
+
+The **dashboard** at [localhost:8080](http://localhost:8080) gives you a single web UI to:
+
+- **View all models** — Ollama (LLM) and ComfyUI (LTX-2) in one place
+- **Pull models** — no CLI needed; type a model name and click Pull
+- **Jump to services** — Open WebUI, ComfyUI, N8N, OpenClaw
+
+```powershell
+docker compose --profile dashboard up -d
+```
 
 ## Ollama models
 
@@ -55,10 +70,11 @@ Default models (set in `.env`):
 - `deepseek-coder:6.7b` — coding
 - `nomic-embed-text` — embeddings / RAG
 
-Change them in `.env` and re-pull:
+**Pull via dashboard** (recommended) or via CLI:
 
 ```bash
-docker compose up -d model-puller
+docker compose up -d model-puller   # one-shot from .env
+# Or use the dashboard at localhost:8080
 ```
 
 ## ComfyUI (LTX-2)
@@ -67,7 +83,7 @@ ComfyUI waits for `comfyui-model-puller` to finish downloading LTX-2 models (~60
 
 **Auto-downloaded:** LTX-2 checkpoint (fp8), LoRAs, latent upscaler, Gemma 3 12B text encoder.
 
-Re-pull models:
+**Pull via dashboard** (recommended) or:
 
 ```bash
 docker compose up -d comfyui-model-puller
