@@ -119,6 +119,22 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
 
+  mcp-gateway:
+    image: docker/mcp-gateway:latest
+    container_name: mcp-gateway
+    restart: unless-stopped
+    command:
+      - --transport=streaming
+      - --servers=${MCP_GATEWAY_SERVERS:-duckduckgo}
+      - --port=8811
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+    ports:
+      - "${MCP_GATEWAY_PORT:-8811}:8811"
+    # Optional: mount secrets for MCPs that need API keys (e.g. github-official, brave)
+    # secrets: [mcp_secrets]
+    # Uncomment and create mcp/.env with GITHUB_PERSONAL_ACCESS_TOKEN etc.
+
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
     container_name: openclaw-gateway

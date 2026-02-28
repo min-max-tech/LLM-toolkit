@@ -36,7 +36,7 @@ Services bind to `0.0.0.0` to allow access from other machines on your network. 
 
 ### Secrets
 
-- **Never commit** `.env` or `openclaw/.env`. They are gitignored.
+- **Never commit** `.env`, `openclaw/.env`, or `mcp/.env`. They are gitignored.
 - Use `.env.example` as a template; copy to `.env` and fill in values locally.
 - API keys (OpenAI, Anthropic, etc.) and tokens should only live in `.env` files, never in the repository.
 
