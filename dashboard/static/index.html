@@ -107,11 +107,34 @@
       margin-bottom: 1rem;
       line-height: 1.5;
     }
+    .mcp-howto {
+      margin-top: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg-elevated);
+      border: 1px solid var(--border-subtle);
+      border-radius: var(--radius-sm);
+      font-size: 0.85rem;
+    }
+    .mcp-howto summary {
+      cursor: pointer;
+      color: var(--accent);
+      font-weight: 500;
+    }
+    .mcp-howto-content {
+      margin-top: 0.75rem;
+      color: var(--text-soft);
+      line-height: 1.6;
+    }
+    .mcp-howto-content p { margin-bottom: 0.5rem; }
+    .mcp-howto-content p:last-child { margin-bottom: 0; }
+    .mcp-howto code { background: var(--bg); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.8em; }
     .services {
       display: grid;
-      grid-template-columns: repeat(auto-fill, minmax(200px, 1fr));
+      grid-template-columns: repeat(6, minmax(0, 1fr));
       gap: 0.875rem;
     }
+    @media (max-width: 1100px) { .services { grid-template-columns: repeat(3, 1fr); } }
+    @media (max-width: 600px) { .services { grid-template-columns: repeat(2, 1fr); } }
     .service {
       display: flex;
       align-items: center;
@@ -195,10 +218,11 @@
       background: var(--bg-elevated);
       border-radius: var(--radius);
       border: 1px solid var(--border-subtle);
-      overflow: hidden;
+      overflow: visible;
       transition: border-color 0.2s;
     }
     .model-panel:hover { border-color: var(--border); }
+    .models-grid .model-panel:first-child { position: relative; z-index: 2; }
     .model-panel h3 {
       font-size: 0.9rem;
       font-weight: 600;
@@ -291,7 +315,7 @@
       overflow: hidden;
       display: flex;
       flex-direction: column;
-      z-index: 100;
+      z-index: 1000;
       box-shadow: var(--shadow-lg);
     }
     .model-select-search {
@@ -479,6 +503,14 @@
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
       </div>
+      <details class="mcp-howto">
+        <summary>MCP Gateway — How to use</summary>
+        <div class="mcp-howto-content">
+          <p><strong>Open WebUI:</strong> Admin Settings → External Tools → Add Server → Type: MCP (Streamable HTTP) → URL: <code>http://localhost:8811/mcp</code></p>
+          <p><strong>Cursor / Claude Desktop:</strong> Add MCP server with URL <code>http://localhost:8811/mcp</code> (Streamable HTTP)</p>
+          <p><strong>Add more tools:</strong> Set <code>MCP_GATEWAY_SERVERS=duckduckgo,fetch,dockerhub</code> in <code>.env</code>, then restart <code>mcp-gateway</code></p>
+        </div>
+      </details>
     </section>
 
     <section>
