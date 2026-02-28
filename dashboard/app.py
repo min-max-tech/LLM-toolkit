@@ -207,6 +207,8 @@ SERVICES = [
      "hint": "Check: docker compose logs n8n"},
     {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789", "check": "http://openclaw-gateway:18789",
      "hint": "Run ensure_dirs.ps1 to create openclaw/.env. Check: docker compose logs openclaw-gateway"},
+    {"id": "mcp", "name": "MCP Gateway", "port": 8811, "url": "http://localhost:8811", "check": "http://mcp-gateway:8811/mcp",
+     "hint": "Add MCP_GATEWAY_SERVERS in .env. See mcp/README.md to connect Open WebUI, Cursor, etc."},
 ]
 
 

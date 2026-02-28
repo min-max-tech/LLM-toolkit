@@ -17,6 +17,9 @@ LLM-toolkit/
 │   └── comfyui/
 │       └── pull_comfyui_models.py  # LTX-2 model downloader
 │
+├── mcp/                    # MCP Gateway — shared MCP tools for all services
+│   └── README.md           # Add servers, connect Open WebUI/Cursor/OpenClaw
+│
 ├── openclaw/               # Optional: Personal AI assistant
 │   ├── docker-compose.yml  # OpenClaw gateway + CLI
 │   ├── .env.example        # OpenClaw-specific env
@@ -55,4 +58,5 @@ All services use bind mounts under `BASE_PATH` (no Docker named volumes):
 | `data/n8n-data` | Workflows |
 | `data/n8n-files` | Shared files |
 | `data/openclaw` | OpenClaw config + workspace |
+| `mcp/.env` | MCP secrets (API keys for github-official, brave, etc.) — gitignored |
 | `models/comfyui` | LTX-2 checkpoints, LoRAs, text encoders |

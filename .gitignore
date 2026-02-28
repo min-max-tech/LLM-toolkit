@@ -1,5 +1,6 @@
 .env
 openclaw/.env
+mcp/.env
 models/
 data/
 
