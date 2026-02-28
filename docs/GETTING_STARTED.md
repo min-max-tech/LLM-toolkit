@@ -14,10 +14,9 @@ No GPU required for chat (Ollama runs on CPU, slower but works).
 
 ### I want to generate images (LTX-2)
 
-1. Requires NVIDIA GPU
-2. Start full stack: `docker compose up -d`
-3. Pull LTX-2 models via dashboard (~60 GB, first run takes a while)
-4. Open [localhost:8188](http://localhost:8188) — ComfyUI
+1. Run `./compose up -d` (auto-detects NVIDIA/AMD/Intel/CPU)
+2. Pull LTX-2 models via dashboard (~60 GB, first run takes a while)
+3. Open [localhost:8188](http://localhost:8188) — ComfyUI
 
 ### I want workflow automation
 
