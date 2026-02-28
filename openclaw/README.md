@@ -45,6 +45,8 @@ Use the token from `.env` when prompted.
 
 Open **http://localhost:18789/** in your browser. Paste the gateway token into Settings → Token.
 
+**Not reachable?** When using the main LLM-toolkit compose, the gateway is configured with `OPENCLAW_GATEWAY_BIND=lan` so it accepts connections from the host. If you run OpenClaw standalone from `openclaw/`, add `OPENCLAW_GATEWAY_BIND=lan` to your `.env`. Then verify: `docker compose ps` (gateway running), `docker compose logs openclaw-gateway` (no errors).
+
 ## Workspace Files
 
 The agent reads these files at session start:

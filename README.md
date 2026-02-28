@@ -16,8 +16,8 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 | **comfyui** | 8188 | Stable Diffusion / LTX-2 — [localhost:8188](http://localhost:8188) |
 | **n8n** | 5678 | Workflow automation — [localhost:5678](http://localhost:5678) |
 | **OpenClaw** | 18789 | Personal AI assistant — [openclaw/](openclaw/) |
-| model-puller | — | Pulls Ollama models once on first start |
-| comfyui-model-puller | — | Downloads LTX-2 models (~60 GB) once on first start |
+| model-puller | — | Ready to pull Ollama models on demand |
+| comfyui-model-puller | — | Ready to download LTX-2 models (~60 GB) on demand |
 
 ## Quick start
 
@@ -38,6 +38,11 @@ docker compose up -d
 All services start by default. Open the **dashboard** at [localhost:8080](http://localhost:8080) to manage models and see service status.
 
 **If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI requires an NVIDIA GPU; OpenClaw needs `openclaw/.env` (created by step 3).
+
+**On-demand commands** (run when you want to pull models):
+- `docker compose run --rm model-puller` — pull Ollama models from `.env`
+- `docker compose run --rm comfyui-model-puller` — download LTX-2 models (~60 GB)
+- `docker compose run --rm openclaw-cli onboard` — OpenClaw setup
 
 ## Dashboard
 
@@ -60,20 +65,20 @@ Default models (set in `.env`):
 **Pull via dashboard** (recommended) or via CLI:
 
 ```bash
-docker compose up -d model-puller   # one-shot from .env
+docker compose run --rm model-puller   # on-demand from .env
 # Or use the dashboard at localhost:8080
 ```
 
 ## ComfyUI (LTX-2)
 
-ComfyUI waits for `comfyui-model-puller` to finish downloading LTX-2 models (~60 GB). First run takes a while; subsequent runs skip existing files.
+ComfyUI starts independently. LTX-2 models (~60 GB) are downloaded on demand — first run takes a while; subsequent runs skip existing files.
 
-**Auto-downloaded:** LTX-2 checkpoint (fp8), LoRAs, latent upscaler, Gemma 3 12B text encoder.
+**Includes:** LTX-2 checkpoint (fp8), LoRAs, latent upscaler, Gemma 3 12B text encoder.
 
 **Pull via dashboard** (recommended) or:
 
 ```bash
-docker compose up -d comfyui-model-puller
+docker compose run --rm comfyui-model-puller
 ```
 
 ## Security
@@ -98,7 +103,7 @@ All data is stored under `BASE_PATH` via bind mounts — no Docker named volumes
 | `data/n8n-data` | Workflows |
 | `data/n8n-files` | Shared files |
 | `data/openclaw` | OpenClaw config + workspace (SOUL.md, AGENTS.md, TOOLS.md) |
-| `models/comfyui/` | LTX-2 models (auto-downloaded) |
+| `models/comfyui/` | LTX-2 models (downloaded on demand) |
 
 ## OpenClaw
 
