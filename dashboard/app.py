@@ -29,6 +29,56 @@ class PullRequest(BaseModel):
 # --- Ollama ---
 
 
+# Ollama library — models available at registry.ollama.ai (no public API, so we maintain a curated list)
+OLLAMA_LIBRARY = [
+    "llama3.2", "llama3.1", "llama3", "llama2", "llama4",
+    "deepseek-r1:7b", "deepseek-r1:70b", "deepseek-coder:6.7b", "deepseek-coder-v2",
+    "deepseek-v3", "deepseek-v3.1", "deepseek-v3.2", "deepseek-v2", "deepseek-llm",
+    "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "qwen2.5:72b", "qwen2.5-coder", "qwen2.5vl",
+    "qwen3", "qwen3.5", "qwen3-coder", "qwen3-vl", "qwen3-next", "qwen3-embedding",
+    "qwen2", "qwen2-math", "qwen", "codeqwen",
+    "gemma3", "gemma2:9b", "gemma2:27b", "gemma", "embeddinggemma",
+    "mistral", "mistral-nemo", "mistral-large", "mistral-small", "mistral-small3.1", "mistral-small3.2",
+    "mixtral", "codestral", "ministral-3",
+    "phi3", "phi3.5", "phi4", "phi4-mini", "phi4-reasoning", "phi4-mini-reasoning", "phi",
+    "nomic-embed-text", "nomic-embed-text-v2-moe", "mxbai-embed-large", "bge-m3", "bge-large",
+    "snowflake-arctic-embed", "snowflake-arctic-embed2", "granite-embedding", "paraphrase-multilingual",
+    "codellama", "starcoder", "starcoder2", "sqlcoder", "wizardcoder", "magicoder", "codegemma",
+    "llava", "llava-llama3", "llava-phi3", "bakllava", "minicpm-v", "moondream",
+    "tinyllama", "smollm2", "smollm", "all-minilm", "dolphin3", "dolphin-phi", "dolphin-llama3",
+    "dolphin-mixtral", "dolphin-mistral", "dolphincoder", "tinydolphin",
+    "olmo2", "olmo-3", "olmo-3.1", "yi", "yi-coder", "glm4", "glm-4.6", "glm-4.7", "glm-4.7-flash",
+    "glm-5", "glm-ocr", "minimax-m2", "minimax-m2.1", "minimax-m2.5", "kimi-k2", "kimi-k2.5",
+    "kimi-k2-thinking", "granite3.1-moe", "granite3.2", "granite3.2-vision", "granite3.3",
+    "granite3.1-dense", "granite3-dense", "granite4", "granite-code", "granite3-guardian",
+    "command-r", "command-r7b", "command-r-plus", "command-a", "command-r7b-arabic",
+    "devstral", "devstral-small-2", "devstral-2", "codestral",
+    "gpt-oss", "gpt-oss-safeguard", "cogito", "cogito-2.1", "gemini-3-flash-preview",
+    "nexusraven", "firefunction-v2", "llama3-groq-tool-use", "llama-guard3",
+    "wizardlm2", "wizardlm", "wizard-math", "wizard-vicuna", "wizard-vicuna-uncensored",
+    "internlm2", "exaone-deep", "exaone3.5", "aya", "aya-expanse",
+    "falcon", "falcon2", "falcon3", "solar", "solar-pro", "vicuna", "openchat",
+    "nous-hermes", "nous-hermes2", "nous-hermes2-mixtral", "openhermes", "neural-chat",
+    "orca-mini", "orca2", "stable-beluga", "stablelm2", "stablelm-zephyr", "stable-code",
+    "xwinlm", "llama2-chinese", "llama3-chatqa", "llama-pro", "yarn-llama2", "yarn-mistral",
+    "phind-codellama", "opencoder", "openthinker", "deepcoder", "qwq",
+    "llama2-uncensored", "everythinglm", "reflection", "meditron", "medllama2",
+    "samantha-mistral", "r1-1776", "athene-v2", "nemotron", "nemotron-mini", "nemotron-3-nano",
+    "dbrx", "goliath", "megadolphin", "alfred", "marco-o1", "sailor2",
+    "smallthinker", "deepseek-v2.5", "phi4-mini-reasoning", "shieldgemma",
+    "reader-lm", "qwen3-next", "translategemma", "functiongemma",
+    "duckdb-nsql", "nuextract", "mistrallite", "bespoke-minicheck", "tulu3",
+    "notux", "notus", "codebooga", "open-orca-platypus2", "codeup", "mathstral",
+    "deepseek-ocr", "solar-pro", "rnj-1", "hermes3", "zephyr",
+]
+
+
+@app.get("/api/ollama/library")
+async def ollama_library():
+    """List models available in the Ollama registry (curated)."""
+    return {"models": sorted(set(OLLAMA_LIBRARY)), "ok": True}
+
+
 @app.get("/api/ollama/models")
 async def ollama_models():
     """List models available in Ollama."""
@@ -146,27 +196,43 @@ async def comfyui_pull_status():
 
 # --- Services ---
 
+SERVICES = [
+    {"id": "ollama", "name": "Ollama", "port": 11434, "url": "http://localhost:11434", "check": "http://ollama:11434/api/version",
+     "hint": "Run: docker compose up -d ollama"},
+    {"id": "webui", "name": "Open WebUI", "port": 3000, "url": "http://localhost:3000", "check": "http://open-webui:8080",
+     "hint": "Depends on Ollama. Check: docker compose logs open-webui"},
+    {"id": "comfyui", "name": "ComfyUI", "port": 8188, "url": "http://localhost:8188", "check": "http://comfyui:8188",
+     "hint": "Requires NVIDIA GPU. No GPU? Remove deploy block from docker-compose. Pull LTX-2 via dashboard."},
+    {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
+     "hint": "Check: docker compose logs n8n"},
+    {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789", "check": "http://openclaw-gateway:18789",
+     "hint": "Run ensure_dirs.ps1 to create openclaw/.env. Check: docker compose logs openclaw-gateway"},
+]
+
+
+async def _check_service(url: str) -> tuple[bool, str]:
+    """Check if a service is reachable. Returns (ok, error_message)."""
+    try:
+        async with AsyncClient(timeout=3.0) as client:
+            r = await client.get(url)
+            return (r.status_code < 500, "")
+    except Exception as e:
+        return (False, str(e))
+
 
 @app.get("/api/services")
 async def services():
-    """Service links and status."""
-    ollama_ok = False
-    try:
-        async with AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{OLLAMA_URL}/api/version")
-            ollama_ok = r.status_code == 200
-    except Exception:
-        pass
-
-    return {
-        "services": [
-            {"id": "ollama", "name": "Ollama", "port": 11434, "url": "http://localhost:11434", "ok": ollama_ok},
-            {"id": "webui", "name": "Open WebUI", "port": 3000, "url": "http://localhost:3000"},
-            {"id": "comfyui", "name": "ComfyUI", "port": 8188, "url": "http://localhost:8188"},
-            {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678"},
-            {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789"},
-        ]
-    }
+    """Service links and live health status."""
+    results = []
+    for svc in SERVICES:
+        ok, err = await _check_service(svc["check"]) if svc.get("check") else (None, "")
+        results.append({
+            **{k: v for k, v in svc.items() if k != "check"},
+            "ok": ok,
+            "error": err if not ok else None,
+            "hint": svc.get("hint", ""),
+        })
+    return {"services": results}
 
 
 # --- Static ---

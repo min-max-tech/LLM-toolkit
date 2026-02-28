@@ -3,6 +3,7 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta http-equiv="Cache-Control" content="no-cache, no-store, must-revalidate">
   <title>LLM-toolkit Dashboard</title>
   <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 24 24' fill='%2358a6ff'><path d='M12 2L2 7l10 5 10-5-10-5zM2 17l10 5 10-5M2 12l10 5 10-5'/></svg>">
   <link rel="preconnect" href="https://fonts.googleapis.com">
@@ -104,8 +105,54 @@
       flex-shrink: 0;
     }
     .service .status.ok { background: var(--success); box-shadow: 0 0 8px var(--success); }
+    .service .status.fail { background: var(--danger); }
     .service .label { flex: 1; font-size: 0.95rem; }
     .service .external { opacity: 0.5; font-size: 0.75rem; }
+    .service-card {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding: 1rem 1.25rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      transition: all 0.2s;
+    }
+    .service-card:hover { border-color: var(--accent); }
+    .service-card.fail { border-color: var(--danger); background: rgba(248,81,73,0.06); }
+    .service-card .row {
+      display: flex;
+      align-items: center;
+      gap: 0.75rem;
+    }
+    .service-card .hint {
+      font-size: 0.8rem;
+      color: var(--muted);
+      margin-top: 0.25rem;
+      padding-left: 1.5rem;
+    }
+    .service-card .hint a { color: var(--accent); }
+    .status-summary {
+      display: flex;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      background: var(--bg);
+      border-radius: var(--radius-sm);
+      font-size: 0.9rem;
+    }
+    .status-summary.all-ok { border-left: 4px solid var(--success); }
+    .status-summary.has-issues { border-left: 4px solid var(--warning); }
+    .setup-banner {
+      padding: 1rem 1.25rem;
+      background: var(--accent-dim);
+      border: 1px solid var(--accent);
+      border-radius: var(--radius-sm);
+      margin-bottom: 1.5rem;
+      font-size: 0.9rem;
+    }
+    .setup-banner code { background: var(--bg); padding: 0.2rem 0.5rem; border-radius: 4px; font-size: 0.85em; }
     .models-grid {
       display: grid;
       grid-template-columns: 1fr 1fr;
@@ -170,6 +217,100 @@
       transition: all 0.2s;
     }
     .pill:hover { border-color: var(--accent); color: var(--accent); }
+    .model-select-wrap {
+      position: relative;
+      flex: 1;
+      min-width: 200px;
+    }
+    .model-select-trigger {
+      width: 100%;
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 0.65rem 1rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.9rem;
+      cursor: pointer;
+      transition: border-color 0.2s;
+    }
+    .model-select-trigger:hover, .model-select-trigger.open { border-color: var(--accent); }
+    .model-select-trigger .chevron { transition: transform 0.2s; opacity: 0.7; }
+    .model-select-trigger.open .chevron { transform: rotate(180deg); }
+    .model-select-dropdown {
+      position: absolute;
+      top: 100%;
+      left: 0;
+      right: 0;
+      margin-top: 4px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      max-height: 320px;
+      overflow: hidden;
+      display: flex;
+      flex-direction: column;
+      z-index: 100;
+      box-shadow: 0 8px 24px rgba(0,0,0,0.4);
+    }
+    .model-select-search {
+      padding: 0.5rem 0.75rem;
+      border-bottom: 1px solid var(--border);
+    }
+    .model-select-search input {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+    .model-select-search input:focus { outline: none; border-color: var(--accent); }
+    .model-select-dropdown .section-label {
+      padding: 0.5rem 1rem;
+      font-size: 0.7rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: var(--muted);
+      border-bottom: 1px solid var(--border);
+    }
+    .model-select-option {
+      padding: 0.6rem 1rem;
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+      cursor: pointer;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: background 0.15s;
+    }
+    .model-select-option:hover { background: var(--surface-hover); }
+    .model-select-option.installed { color: var(--muted); cursor: default; }
+    .model-select-option.installed:hover { background: transparent; }
+    .model-select-option .badge { font-size: 0.7rem; color: var(--success); }
+    .model-select-option .size { font-size: 0.8rem; color: var(--muted); }
+    #ollama-select-options { overflow-y: auto; max-height: 220px; }
+    .model-select-custom {
+      padding: 0.75rem 1rem;
+      border-top: 1px solid var(--border);
+    }
+    .model-select-custom input {
+      width: 100%;
+      padding: 0.5rem 0.75rem;
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: var(--radius-sm);
+      color: var(--text);
+      font-family: 'JetBrains Mono', monospace;
+      font-size: 0.85rem;
+    }
+    .model-select-custom input:focus { outline: none; border-color: var(--accent); }
+    .last-updated { font-size: 0.75rem; color: var(--muted); margin-top: 0.5rem; }
     input[type="text"] {
       flex: 1;
       min-width: 180px;
@@ -281,12 +422,17 @@
         <p class="subtitle">Unified model management — Ollama, ComfyUI, and services</p>
       </div>
       <div class="header-actions">
+        <button class="btn-icon" id="rebuild-hint" title="docker compose build dashboard && docker compose up -d" style="font-size:0.7rem;width:auto;padding:0 0.5rem;">↻ Rebuild</button>
         <button class="btn-icon" id="refresh-btn" title="Refresh">↻</button>
       </div>
     </header>
 
+    <div class="setup-banner" id="setup-banner" style="display:none;">
+      <strong>First time?</strong> Run: <code>.\scripts\ensure_dirs.ps1</code> then <code>docker compose up -d</code>
+    </div>
     <section>
       <h2>Services</h2>
+      <div class="status-summary" id="status-summary" style="display:none;"></div>
       <div class="services" id="services">
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
@@ -305,23 +451,26 @@
             <div class="skeleton skeleton-line"></div>
           </div>
           <div class="pull-area">
-            <div class="quick-pills" id="ollama-pills">
-              <span class="pill" data-model="llama3.2">llama3.2</span>
-              <span class="pill" data-model="deepseek-r1:7b">deepseek-r1</span>
-              <span class="pill" data-model="nomic-embed-text">nomic-embed</span>
-            </div>
             <div class="pull-row">
-              <input type="text" id="ollama-model" placeholder="Model name (e.g. qwen2.5:7b)" list="ollama-suggestions">
-              <datalist id="ollama-suggestions">
-                <option value="llama3.2">llama3.2</option>
-                <option value="deepseek-r1:7b">deepseek-r1:7b</option>
-                <option value="deepseek-coder:6.7b">deepseek-coder:6.7b</option>
-                <option value="nomic-embed-text">nomic-embed-text</option>
-                <option value="qwen2.5:7b">qwen2.5:7b</option>
-                <option value="mistral">mistral</option>
-              </datalist>
+              <div class="model-select-wrap">
+                <div class="model-select-trigger" id="ollama-select-trigger">
+                  <span id="ollama-select-label">Select model to pull...</span>
+                  <span class="chevron">▼</span>
+                </div>
+                <div class="model-select-dropdown" id="ollama-select-dropdown" style="display:none;">
+                  <div class="model-select-search">
+                    <input type="text" id="ollama-library-search" placeholder="Search 150+ models..." autocomplete="off">
+                  </div>
+                  <div class="section-label">Ollama library — click to select</div>
+                  <div id="ollama-select-options"></div>
+                  <div class="model-select-custom">
+                    <input type="text" id="ollama-model-custom" placeholder="Or type any model name">
+                  </div>
+                </div>
+              </div>
               <button id="ollama-pull">Pull</button>
             </div>
+            <div class="last-updated" id="ollama-last-updated"></div>
             <div id="ollama-progress" class="progress-area" style="display:none;">
               <div class="progress-bar"><div class="fill" id="ollama-progress-bar" style="width:0%"></div></div>
               <div class="log" id="ollama-log"></div>
@@ -350,7 +499,10 @@
   <div class="toast-container" id="toasts"></div>
 
   <script>
-    const api = (path, opts = {}) => fetch(path, { ...opts, headers: { 'Accept': 'application/json', ...opts.headers } });
+    const api = (path, opts = {}) => fetch(path, { cache: 'no-store', ...opts, headers: { 'Accept': 'application/json', ...opts.headers } });
+
+    let ollamaModels = [];
+    let ollamaLibrary = [];
 
     function toast(msg, type = '') {
       const el = document.createElement('div');
@@ -368,18 +520,64 @@
 
     async function loadServices() {
       const el = document.getElementById('services');
+      const summaryEl = document.getElementById('status-summary');
       try {
         const r = await api('/api/services');
         const d = await r.json();
-        el.innerHTML = d.services.map(s => `
-          <a href="${s.url}" target="_blank" rel="noopener" class="service">
-            <span class="status ${s.ok ? 'ok' : ''}"></span>
-            <span class="label">${s.name}</span>
-            <span class="external">↗</span>
-          </a>
+        const services = d.services || [];
+        const okCount = services.filter(s => s.ok).length;
+        const total = services.length;
+        summaryEl.style.display = 'block';
+        summaryEl.className = 'status-summary ' + (okCount === total ? 'all-ok' : 'has-issues');
+        summaryEl.innerHTML = okCount === total
+          ? `✓ All ${total} services running`
+          : `${okCount}/${total} services running — check hints below`;
+        document.getElementById('setup-banner').style.display = okCount < total ? 'block' : 'none';
+        el.innerHTML = services.map(s => `
+          <div class="service-card ${s.ok ? '' : 'fail'}">
+            <div class="row">
+              <a href="${s.url}" target="_blank" rel="noopener" class="service" style="flex:1;text-decoration:none;color:inherit;">
+                <span class="status ${s.ok ? 'ok' : 'fail'}"></span>
+                <span class="label">${s.name}</span>
+                <span class="external">↗</span>
+              </a>
+            </div>
+            ${!s.ok && s.hint ? `<div class="hint">${s.hint}</div>` : ''}
+          </div>
         `).join('');
       } catch (e) {
-        el.innerHTML = '<div class="empty">Could not load services. Is the dashboard running?</div>';
+        summaryEl.style.display = 'block';
+        summaryEl.className = 'status-summary has-issues';
+        summaryEl.innerHTML = 'Could not reach services';
+        el.innerHTML = '<div class="empty">Run: docker compose up -d</div>';
+      }
+    }
+
+    function buildOllamaDropdown(filter = '') {
+      const installed = new Set(ollamaModels.map(m => m.name));
+      const optionsEl = document.getElementById('ollama-select-options');
+      if (!optionsEl) return;
+      const q = filter.toLowerCase().trim();
+      const models = q ? ollamaLibrary.filter(m => m.toLowerCase().includes(q)) : ollamaLibrary;
+      optionsEl.innerHTML = models.slice(0, 80).map(name => {
+        const isInstalled = installed.has(name);
+        return `<div class="model-select-option ${isInstalled ? 'installed' : ''}" data-model="${name}">
+          <span>${name}</span>
+          ${isInstalled ? '<span class="badge">✓</span>' : '<span class="size">pull</span>'}
+        </div>`;
+      }).join('');
+      if (models.length > 80) {
+        optionsEl.innerHTML += `<div class="section-label" style="border:none;padding:0.5rem;">+ ${models.length - 80} more — type to search</div>`;
+      }
+    }
+
+    async function loadOllamaLibrary() {
+      try {
+        const r = await api('/api/ollama/library');
+        const d = await r.json();
+        ollamaLibrary = d.models || [];
+      } catch (_) {
+        ollamaLibrary = ['llama3.2', 'deepseek-r1:7b', 'qwen2.5:7b', 'mistral', 'nomic-embed-text'];
       }
     }
 
@@ -388,15 +586,19 @@
       try {
         const r = await api('/api/ollama/models');
         const d = await r.json();
+        ollamaModels = d.models || [];
+        buildOllamaDropdown(document.getElementById('ollama-library-search')?.value || '');
         if (!d.ok) {
-          el.innerHTML = '<div class="empty">Ollama unreachable.<span class="hint">Start with: docker compose --profile dashboard up -d</span></div>';
+          el.innerHTML = '<div class="empty">Ollama unreachable.<span class="hint">Start with: docker compose up -d</span></div>';
           return;
         }
-        if (!d.models?.length) {
-          el.innerHTML = '<div class="empty">No models yet.<span class="hint">Pick one below and click Pull.</span></div>';
+        if (!ollamaModels.length) {
+          el.innerHTML = '<div class="empty">No models yet.<span class="hint">Select one below and click Pull.</span></div>';
+          document.getElementById('ollama-last-updated').textContent = '';
           return;
         }
-        el.innerHTML = d.models.map(m => `
+        document.getElementById('ollama-last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
+        el.innerHTML = ollamaModels.map(m => `
           <div class="model-item">
             <span class="name">${m.name}</span>
             <span class="meta">${formatSize(m.size || 0)}</span>
@@ -437,16 +639,66 @@
       }
     }
 
-    document.getElementById('ollama-pills').onclick = (e) => {
-      const model = e.target.dataset.model;
-      if (model) {
-        document.getElementById('ollama-model').value = model;
-        document.getElementById('ollama-model').focus();
+    function getSelectedOllamaModel() {
+      const custom = document.getElementById('ollama-model-custom').value.trim();
+      if (custom) return custom;
+      const label = document.getElementById('ollama-select-label').textContent;
+      return label !== 'Select model to pull...' ? label : '';
+    }
+
+    function setSelectedOllamaModel(name) {
+      document.getElementById('ollama-model-custom').value = '';
+      document.getElementById('ollama-select-label').textContent = name || 'Select model to pull...';
+    }
+
+    document.getElementById('ollama-select-trigger').onclick = (e) => {
+      e.stopPropagation();
+      const dd = document.getElementById('ollama-select-dropdown');
+      const isOpen = dd.style.display === 'flex';
+      dd.style.display = isOpen ? 'none' : 'flex';
+      document.getElementById('ollama-select-trigger').classList.toggle('open', !isOpen);
+      if (!isOpen) {
+        document.getElementById('ollama-library-search').value = '';
+        document.getElementById('ollama-library-search').focus();
+        buildOllamaDropdown('');
       }
     };
 
+    document.getElementById('ollama-select-options').addEventListener('click', (e) => {
+      const opt = e.target.closest('.model-select-option');
+      if (!opt || opt.classList.contains('installed')) return;
+      const model = opt.dataset.model;
+      setSelectedOllamaModel(model);
+      document.getElementById('ollama-select-dropdown').style.display = 'none';
+      document.getElementById('ollama-select-trigger').classList.remove('open');
+      document.getElementById('ollama-library-search').value = '';
+    });
+
+    document.getElementById('ollama-library-search').oninput = (e) => {
+      buildOllamaDropdown(e.target.value);
+    };
+
+    document.getElementById('ollama-library-search').onkeydown = (e) => {
+      e.stopPropagation();
+    };
+
+    document.getElementById('ollama-model-custom').oninput = () => {
+      const v = document.getElementById('ollama-model-custom').value.trim();
+      document.getElementById('ollama-select-label').textContent = v || 'Select model to pull...';
+    };
+
+    document.addEventListener('click', () => {
+      const dd = document.getElementById('ollama-select-dropdown');
+      if (dd.style.display === 'flex') {
+        dd.style.display = 'none';
+        document.getElementById('ollama-select-trigger').classList.remove('open');
+      }
+    });
+
+    document.getElementById('ollama-select-dropdown').onclick = (e) => e.stopPropagation();
+
     document.getElementById('ollama-pull').onclick = async () => {
-      const name = document.getElementById('ollama-model').value.trim();
+      const name = getSelectedOllamaModel();
       if (!name) { toast('Enter a model name', 'error'); return; }
       const btn = document.getElementById('ollama-pull');
       const prog = document.getElementById('ollama-progress');
@@ -460,6 +712,7 @@
       try {
         const r = await fetch('/api/ollama/pull', {
           method: 'POST',
+          cache: 'no-store',
           headers: { 'Content-Type': 'application/json' },
           body: JSON.stringify({ model: name })
         });
@@ -490,7 +743,8 @@
         barEl.style.width = '100%';
         logEl.textContent += '\n✓ Done.';
         toast(`Pulled ${name}`, 'success');
-        loadOllamaModels();
+        setSelectedOllamaModel('');
+        await loadOllamaModels();
       } catch (e) {
         logEl.textContent += '\nError: ' + e.message;
         toast('Pull failed: ' + e.message, 'error');
@@ -531,14 +785,20 @@
     async function refresh() {
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
+      if (!ollamaLibrary.length) await loadOllamaLibrary();
       await Promise.all([loadServices(), loadOllamaModels(), loadComfyuiModels()]);
       btn.classList.remove('loading');
     }
 
     document.getElementById('refresh-btn').onclick = refresh;
 
-    refresh();
-    setInterval(refresh, 45000);
+    document.getElementById('rebuild-hint').onclick = () => {
+      const cmd = 'docker compose build dashboard && docker compose up -d';
+      navigator.clipboard?.writeText(cmd).then(() => toast('Rebuild command copied to clipboard', 'success')).catch(() => toast(cmd));
+    };
+
+    loadOllamaLibrary().then(() => refresh());
+    setInterval(refresh, 15000);
   </script>
 </body>
 </html>
