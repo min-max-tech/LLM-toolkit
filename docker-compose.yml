@@ -8,7 +8,7 @@ name: llm-toolkit
 #   + n8n:              add --profile n8n
 services:
   ollama:
-    profiles: [ollama]
+    profiles: [ollama, dashboard]
     image: ollama/ollama:latest
     restart: unless-stopped
     environment:
@@ -24,6 +24,22 @@ services:
             - driver: nvidia
               count: all
               capabilities: [gpu]
+
+  dashboard:
+    profiles: [dashboard, ollama]
+    build: ./dashboard
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    ports:
+      - "8080:8080"
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - MODELS_DIR=/models
+      - SCRIPTS_DIR=/scripts
+    volumes:
+      - ${BASE_PATH:-.}/models/comfyui:/models
+      - ${BASE_PATH:-.}/scripts:/scripts:ro
 
   open-webui:
     profiles: [webui]

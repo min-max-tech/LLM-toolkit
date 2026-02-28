@@ -6,6 +6,12 @@ LLM-toolkit/
 ├── .env.example            # Copy to .env — BASE_PATH, MODELS
 ├── README.md               # Quick start, services, commands
 │
+├── dashboard/               # Unified model management web UI
+│   ├── app.py              # FastAPI backend (Ollama + ComfyUI APIs)
+│   ├── static/             # Frontend
+│   ├── Dockerfile
+│   └── requirements.txt
+│
 ├── scripts/                # Setup and model pullers
 │   ├── ensure_dirs.ps1     # Creates data/ and models/ directories
 │   └── comfyui/
