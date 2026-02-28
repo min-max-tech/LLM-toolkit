@@ -3,7 +3,7 @@ name: llm-toolkit
 # All services start by default. Run: docker compose up -d
 services:
   ollama:
-    image: ollama/ollama:latest
+    image: ollama/ollama:0.17.4
     restart: unless-stopped
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
@@ -35,7 +35,7 @@ services:
       - ${BASE_PATH:-.}/scripts:/scripts:ro
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:main
+    image: ghcr.io/open-webui/open-webui:v0.8.4
     restart: unless-stopped
     depends_on:
       - ollama
@@ -49,7 +49,7 @@ services:
 
   model-puller:
     profiles: [models]
-    image: curlimages/curl:latest
+    image: curlimages/curl:8.10.1
     depends_on:
       - ollama
     restart: "no"
@@ -75,7 +75,7 @@ services:
 
   comfyui-model-puller:
     profiles: [comfyui-models]
-    image: python:3.12-slim
+    image: python:3.12.8-slim
     restart: "no"
     environment:
       - MODELS_DIR=/models

@@ -4,7 +4,7 @@ Hey, I am Cam, I made this repo to simplify my local-LLM setup. I wanted a bunch
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 
-→ [Repository structure](docs/STRUCTURE.md)
+→ [Repository structure](docs/STRUCTURE.md) · [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
 
 ## Services
 
@@ -20,25 +20,49 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 | model-puller | — | Ready to pull Ollama models on demand |
 | comfyui-model-puller | — | Ready to download LTX-2 models (~60 GB) on demand |
 
-## Quick start
+## First-time setup
 
+1. **Clone** the repo to your target drive (e.g. `F:\LLM-toolkit` or `~/LLM-toolkit`).
+2. **Create `.env`** — copy `.env.example` to `.env` and set `BASE_PATH` to your install path.
+3. **Create directories** — run the setup script for your OS:
+   - **Windows (PowerShell):** `.\scripts\ensure_dirs.ps1`
+   - **Linux/Mac:** `./scripts/ensure_dirs.sh`
+4. **Start services:** `docker compose up -d`
+5. **Open the dashboard** at [localhost:8080](http://localhost:8080).
+6. **Pull models** — use the "Starter pack" button or select models from the dropdown.
+7. **Chat** — open [localhost:3000](http://localhost:3000) (Open WebUI).
+
+**No GPU?** Start only the core stack: `docker compose up -d ollama dashboard open-webui` — see [Troubleshooting](docs/TROUBLESHOOTING.md).
+
+## Daily use
+
+```bash
+docker compose up -d      # Start all services
+# Open dashboard: localhost:8080
+# Chat: localhost:3000
+```
+
+## Quick start (copy-paste)
+
+**Windows (PowerShell):**
 ```powershell
-# 1. Clone / copy to your target drive (repo name: LLM-toolkit)
 cd F:\LLM-toolkit
-
-# 2. Create .env (edit BASE_PATH to match your install path)
 copy .env.example .env
-
-# 3. Create data directories and openclaw/.env (required for OpenClaw)
 .\scripts\ensure_dirs.ps1
+docker compose up -d
+```
 
-# 4. Start all services
+**Linux/Mac:**
+```bash
+cd ~/LLM-toolkit
+cp .env.example .env
+./scripts/ensure_dirs.sh
 docker compose up -d
 ```
 
 All services start by default. Open the **dashboard** at [localhost:8080](http://localhost:8080) to manage models and see service status.
 
-**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI requires an NVIDIA GPU; OpenClaw needs `openclaw/.env` (created by step 3).
+**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI requires an NVIDIA GPU; OpenClaw needs `openclaw/.env` (created by step 3). See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 **On-demand commands** (run when you want to pull models):
 - `docker compose run --rm model-puller` — pull Ollama models from `.env`
@@ -90,7 +114,9 @@ docker compose run --rm comfyui-model-puller
 
 ## GPU
 
-The `ollama` and `comfyui` services are configured for NVIDIA GPU via the Container Toolkit. Remove the `deploy` block if you don't have a GPU.
+The `ollama` and `comfyui` services are configured for NVIDIA GPU via the Container Toolkit.
+
+**No GPU?** Run the minimal stack (chat only): `docker compose up -d ollama dashboard open-webui`. Remove the `deploy` block from `comfyui` in `docker-compose.yml` if you want ComfyUI without GPU (CPU mode, slower). See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
 
 ## Data
 

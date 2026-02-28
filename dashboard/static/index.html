@@ -139,7 +139,7 @@
       display: flex;
       align-items: center;
       gap: 0.875rem;
-      padding: 1rem 1.25rem;
+      padding: 0.5rem 0;
       background: var(--bg-elevated);
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-sm);
@@ -174,12 +174,13 @@
     .service-card {
       display: flex;
       flex-direction: column;
-      gap: 0.5rem;
-      padding: 1.125rem 1.25rem;
+      gap: 0;
+      padding: 1.25rem 1.5rem;
       background: var(--bg-elevated);
       border: 1px solid var(--border-subtle);
       border-radius: var(--radius-sm);
       transition: all 0.25s ease;
+      min-height: 4.5rem;
     }
     .service-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
     .service-card.fail { border-color: var(--danger); background: var(--danger-dim); }
@@ -189,10 +190,18 @@
       gap: 0.75rem;
     }
     .service-card .hint {
-      font-size: 0.8rem;
-      color: var(--muted);
-      margin-top: 0.25rem;
-      padding-left: 1.5rem;
+      font-size: 0.85rem;
+      line-height: 1.5;
+      color: var(--text-soft);
+      margin-top: 0.75rem;
+      padding-top: 0.75rem;
+      padding-left: 1.75rem;
+      border-top: 1px solid var(--border-subtle);
+      word-wrap: break-word;
+    }
+    .service-card.fail .hint {
+      color: var(--text);
+      border-top-color: rgba(239, 68, 68, 0.2);
     }
     .service-card .hint a { color: var(--accent); }
     .status-summary {
@@ -542,8 +551,10 @@
                   </div>
                 </div>
               </div>
+              <button id="ollama-starter-pack" class="secondary">Starter pack</button>
               <button id="ollama-pull">Pull</button>
             </div>
+            <p class="section-desc" style="margin:0.5rem 0 0;font-size:0.8rem;">Starter pack: reasoning + coding + embedding (deepseek-r1:7b, deepseek-coder:6.7b, nomic-embed-text)</p>
             <div class="last-updated" id="ollama-last-updated"></div>
             <div id="ollama-progress" class="progress-area" style="display:none;">
               <div class="progress-bar"><div class="fill" id="ollama-progress-bar" style="width:0%"></div></div>
@@ -770,6 +781,66 @@
 
     document.getElementById('ollama-select-dropdown').onclick = (e) => e.stopPropagation();
 
+    async function pullOllamaModel(name, btn, prog, logEl, barEl) {
+      logEl.textContent = `Pulling ${name}...`;
+      barEl.style.width = '0%';
+      const r = await fetch('/api/ollama/pull', {
+        method: 'POST',
+        cache: 'no-store',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ model: name })
+      });
+      const reader = r.body.getReader();
+      const dec = new TextDecoder();
+      let buf = '', out = '';
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        buf += dec.decode(value, { stream: true });
+        const lines = buf.split('\n');
+        buf = lines.pop() || '';
+        for (const line of lines) {
+          if (!line.trim()) continue;
+          try {
+            const j = JSON.parse(line);
+            if (j.status) out += j.status + '\n';
+            if (j.completed != null && j.total && j.total > 0) {
+              barEl.style.width = Math.round((j.completed / j.total) * 100) + '%';
+            }
+          } catch (_) {}
+        }
+        logEl.textContent = out || 'Pulling...';
+        logEl.scrollTop = logEl.scrollHeight;
+      }
+      barEl.style.width = '100%';
+      logEl.textContent += '\n✓ Done.';
+    }
+
+    document.getElementById('ollama-starter-pack').onclick = async () => {
+      const STARTER_PACK = ['deepseek-r1:7b', 'deepseek-coder:6.7b', 'nomic-embed-text'];
+      const btn = document.getElementById('ollama-starter-pack');
+      const pullBtn = document.getElementById('ollama-pull');
+      const prog = document.getElementById('ollama-progress');
+      const logEl = document.getElementById('ollama-log');
+      const barEl = document.getElementById('ollama-progress-bar');
+      btn.disabled = true;
+      pullBtn.disabled = true;
+      prog.style.display = 'block';
+      logEl.textContent = 'Starting Starter pack...';
+      try {
+        for (const name of STARTER_PACK) {
+          await pullOllamaModel(name, btn, prog, logEl, barEl);
+        }
+        toast('Starter pack complete', 'success');
+        await loadOllamaModels();
+      } catch (e) {
+        logEl.textContent += '\nError: ' + e.message;
+        toast('Starter pack failed: ' + e.message, 'error');
+      }
+      btn.disabled = false;
+      pullBtn.disabled = false;
+    };
+
     document.getElementById('ollama-pull').onclick = async () => {
       const name = getSelectedOllamaModel();
       if (!name) { toast('Enter a model name', 'error'); return; }
@@ -778,43 +849,11 @@
       const logEl = document.getElementById('ollama-log');
       const barEl = document.getElementById('ollama-progress-bar');
       btn.disabled = true;
+      document.getElementById('ollama-starter-pack').disabled = true;
       prog.style.display = 'block';
       logEl.textContent = 'Connecting...';
-      barEl.style.width = '0%';
-      let lastPct = 0;
       try {
-        const r = await fetch('/api/ollama/pull', {
-          method: 'POST',
-          cache: 'no-store',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model: name })
-        });
-        const reader = r.body.getReader();
-        const dec = new TextDecoder();
-        let buf = '', out = '';
-        while (true) {
-          const { done, value } = await reader.read();
-          if (done) break;
-          buf += dec.decode(value, { stream: true });
-          const lines = buf.split('\n');
-          buf = lines.pop() || '';
-          for (const line of lines) {
-            if (!line.trim()) continue;
-            try {
-              const j = JSON.parse(line);
-              if (j.status) out += j.status + '\n';
-              if (j.completed != null && j.total && j.total > 0) {
-                const pct = Math.round((j.completed / j.total) * 100);
-                lastPct = pct;
-                barEl.style.width = pct + '%';
-              }
-            } catch (_) {}
-          }
-          logEl.textContent = out || 'Pulling...';
-          logEl.scrollTop = logEl.scrollHeight;
-        }
-        barEl.style.width = '100%';
-        logEl.textContent += '\n✓ Done.';
+        await pullOllamaModel(name, btn, prog, logEl, barEl);
         toast(`Pulled ${name}`, 'success');
         setSelectedOllamaModel('');
         await loadOllamaModels();
@@ -823,6 +862,7 @@
         toast('Pull failed: ' + e.message, 'error');
       }
       btn.disabled = false;
+      document.getElementById('ollama-starter-pack').disabled = false;
     };
 
     document.getElementById('comfyui-pull').onclick = async () => {

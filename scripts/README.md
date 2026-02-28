@@ -6,7 +6,8 @@ Setup and maintenance scripts for the LLM-toolkit stack.
 
 | Script | Purpose |
 |--------|---------|
-| `ensure_dirs.ps1` | Creates all data directories (`data/`, `models/`) for bind mounts. Run before first `docker compose up`. |
+| `ensure_dirs.ps1` | Creates all data directories (`data/`, `models/`) for bind mounts. **Windows.** Run before first `docker compose up`. |
+| `ensure_dirs.sh` | Same as above. **Linux/Mac.** Run: `./scripts/ensure_dirs.sh` |
 
 ## ComfyUI
 
@@ -18,14 +19,19 @@ Setup and maintenance scripts for the LLM-toolkit stack.
 
 From the repo root:
 
+**Windows (PowerShell):**
 ```powershell
-# Set project path (Windows)
 $env:BASE_PATH = "F:/LLM-toolkit"
-$env:DATA_PATH = "F:/LLM-toolkit/data"   # optional override
-
-# Create directories
 .\scripts\ensure_dirs.ps1
+```
 
-# OpenClaw workspace (if using openclaw/)
+**Linux/Mac:**
+```bash
+export BASE_PATH="$HOME/LLM-toolkit"
+./scripts/ensure_dirs.sh
+```
+
+**OpenClaw workspace** (if using openclaw/):
+```powershell
 .\openclaw\scripts\ensure_openclaw_workspace.ps1
 ```
