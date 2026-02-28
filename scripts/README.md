@@ -9,6 +9,13 @@ Setup and maintenance scripts for the LLM-toolkit stack.
 | `ensure_dirs.ps1` | Creates all data directories (`data/`, `models/`) for bind mounts. **Windows.** Run before first `docker compose up`. |
 | `ensure_dirs.sh` | Same as above. **Linux/Mac.** Run: `./scripts/ensure_dirs.sh` |
 
+## MCP Gateway
+
+| Script | Purpose |
+|--------|---------|
+| `mcp_add.ps1` / `mcp_add.sh` | Add an MCP server (e.g. `./scripts/mcp_add.sh fetch`). Gateway reloads in ~10s without container restart. |
+| `mcp_remove.ps1` / `mcp_remove.sh` | Remove an MCP server. Gateway reloads in ~10s. |
+
 ## ComfyUI
 
 | Script | Purpose |

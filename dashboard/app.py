@@ -202,7 +202,7 @@ SERVICES = [
     {"id": "webui", "name": "Open WebUI", "port": 3000, "url": "http://localhost:3000", "check": "http://open-webui:8080",
      "hint": "Depends on Ollama. Check: docker compose logs open-webui"},
     {"id": "mcp", "name": "MCP Gateway", "port": 8811, "url": "http://localhost:8811", "check": "http://mcp-gateway:8811/mcp",
-     "hint": "Add MCP_GATEWAY_SERVERS in .env. Connect at http://localhost:8811/mcp — see mcp/README.md"},
+     "hint": "Add/remove tools from the dashboard. Connect at http://localhost:8811/mcp — see mcp/README.md"},
     {"id": "comfyui", "name": "ComfyUI", "port": 8188, "url": "http://localhost:8188", "check": "http://comfyui:8188",
      "hint": "Requires NVIDIA GPU. No GPU? Remove deploy block from docker-compose. Pull LTX-2 via dashboard."},
     {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
@@ -220,6 +220,96 @@ async def _check_service(url: str) -> tuple[bool, str]:
             return (r.status_code < 500, "")
     except Exception as e:
         return (False, str(e))
+
+
+MCP_GATEWAY_SERVERS = os.environ.get("MCP_GATEWAY_SERVERS", "duckduckgo")
+MCP_CONFIG_PATH = os.environ.get("MCP_CONFIG_PATH")
+MCP_CATALOG = [
+    "duckduckgo", "fetch", "dockerhub", "github-official", "brave", "playwright",
+    "mongodb", "postgres", "stripe", "notion", "grafana", "elasticsearch",
+    "documentation", "perplexity", "excalidraw", "miro", "neo4j",
+]
+
+
+def _mcp_config_path() -> Path | None:
+    """Path to MCP servers config file (when dashboard has volume mounted)."""
+    if not MCP_CONFIG_PATH:
+        return None
+    p = Path(MCP_CONFIG_PATH)
+    return p if p.parent.exists() else None
+
+
+def _read_mcp_servers() -> list[str]:
+    """Read enabled servers from config file or env."""
+    path = _mcp_config_path()
+    if path:
+        if path.exists():
+            raw = path.read_text().strip().replace("\r", "").replace("\n", ",")
+            return [s.strip() for s in raw.split(",") if s.strip()]
+        # Migrate: init file from .env on first run
+        path.parent.mkdir(parents=True, exist_ok=True)
+        initial = ",".join(s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()) or "duckduckgo"
+        path.write_text(initial)
+        return [s.strip() for s in initial.split(",") if s.strip()]
+    return [s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()]
+
+
+def _write_mcp_servers(servers: list[str]) -> Path:
+    """Write servers to config file. Raises if not in dynamic mode."""
+    path = _mcp_config_path()
+    if not path:
+        raise HTTPException(status_code=409, detail="MCP config not in dynamic mode (no volume)")
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(",".join(servers))
+    return path
+
+
+@app.get("/api/mcp/servers")
+async def mcp_servers():
+    """List enabled MCP servers and catalog for adding."""
+    servers = _read_mcp_servers()
+    dynamic = _mcp_config_path() is not None
+    return {"enabled": servers, "catalog": MCP_CATALOG, "dynamic": dynamic, "ok": True}
+
+
+class McpAddRequest(BaseModel):
+    server: str
+
+
+class McpRemoveRequest(BaseModel):
+    server: str
+
+
+@app.post("/api/mcp/add")
+async def mcp_add(req: McpAddRequest):
+    """Add an MCP server. Takes effect in ~10s without container restart."""
+    server = req.server.strip().lower()
+    if not server:
+        raise HTTPException(status_code=400, detail="Server name required")
+    if server not in MCP_CATALOG:
+        raise HTTPException(status_code=400, detail=f"Unknown server. Use one of: {', '.join(MCP_CATALOG)}")
+    servers = _read_mcp_servers()
+    if server in servers:
+        return {"status": "already_enabled", "servers": servers}
+    servers.append(server)
+    _write_mcp_servers(servers)
+    return {"status": "added", "servers": servers}
+
+
+@app.post("/api/mcp/remove")
+async def mcp_remove(req: McpRemoveRequest):
+    """Remove an MCP server. Takes effect in ~10s without container restart."""
+    server = req.server.strip().lower()
+    if not server:
+        raise HTTPException(status_code=400, detail="Server name required")
+    servers = _read_mcp_servers()
+    if server not in servers:
+        return {"status": "already_removed", "servers": servers}
+    servers = [s for s in servers if s != server]
+    if not servers:
+        raise HTTPException(status_code=400, detail="Cannot remove last server. Add another first.")
+    _write_mcp_servers(servers)
+    return {"status": "removed", "servers": servers}
 
 
 @app.get("/api/services")
