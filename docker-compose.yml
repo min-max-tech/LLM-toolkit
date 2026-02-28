@@ -26,6 +26,8 @@ services:
       - ollama
     ports:
       - "8080:8080"
+    extra_hosts:
+      - "host.docker.internal:host-gateway"
     environment:
       - OLLAMA_URL=http://ollama:11434
       - MODELS_DIR=/models
@@ -123,16 +125,15 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
 
   mcp-gateway:
-    image: docker/mcp-gateway:latest
+    build: ./mcp
+    image: llm-toolkit-mcp-gateway:latest
     container_name: mcp-gateway
     restart: unless-stopped
-    entrypoint: ["/bin/sh", "/mcp-scripts/gateway-wrapper.sh"]
     environment:
       - MCP_CONFIG_FILE=/mcp-config/servers.txt
       - MCP_GATEWAY_PORT=8811
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${BASE_PATH:-.}/mcp:/mcp-scripts:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
     ports:
       - "${MCP_GATEWAY_PORT:-8811}:8811"
