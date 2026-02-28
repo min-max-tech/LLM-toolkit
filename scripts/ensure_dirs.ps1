@@ -20,4 +20,30 @@ foreach ($d in $dirs) {
     New-Item -ItemType Directory -Force -Path $d | Out-Null
     Write-Host "OK $d"
 }
+
+# Ensure openclaw/.env exists with a valid token (required for OpenClaw service)
+$openclawEnv = Join-Path $base "openclaw\.env"
+$openclawExample = Join-Path $base "openclaw\.env.example"
+$needsCreate = -not (Test-Path $openclawEnv)
+$needsToken = $false
+if ((Test-Path $openclawEnv)) {
+    $existing = Get-Content $openclawEnv -Raw -ErrorAction SilentlyContinue
+    $needsToken = $existing -and $existing -match 'change-me-to-a-long-random-token'
+}
+if ($needsCreate -or $needsToken) {
+    $token = -join ((1..32 | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }))
+    $content = if (Test-Path $openclawExample) { Get-Content $openclawExample -Raw } else { $null }
+    if ($content) {
+        $content = $content -replace 'OPENCLAW_GATEWAY_TOKEN=change-me-to-a-long-random-token', "OPENCLAW_GATEWAY_TOKEN=$token"
+        $content = $content -replace 'BASE_PATH=[^\r\n]*', "BASE_PATH=$($base -replace '\\', '/')"
+        Set-Content -Path $openclawEnv -Value $content -NoNewline
+    } else {
+        Set-Content -Path $openclawEnv -Value @"
+BASE_PATH=$($base -replace '\\', '/')
+OPENCLAW_GATEWAY_TOKEN=$token
+"@
+    }
+    Write-Host "OK openclaw/.env ($(if ($needsCreate) { 'created' } else { 'token fixed' }))"
+}
+
 Write-Host "Directories ready."

@@ -28,39 +28,26 @@ cd F:\LLM-toolkit
 # 2. Create .env (edit BASE_PATH to match your install path)
 copy .env.example .env
 
-# 3. Create data directories
+# 3. Create data directories and openclaw/.env (required for OpenClaw)
 .\scripts\ensure_dirs.ps1
 
-# 4. Start — pick what you need via profiles
-docker compose --profile dashboard up -d   # Dashboard + Ollama (unified model UI)
-# docker compose --profile ollama --profile openclaw up -d   # OpenClaw + Ollama only
-# docker compose --profile ollama --profile openclaw --profile webui up -d   # + chat UI
-# docker compose --profile ollama --profile openclaw --profile models up -d  # + pull models
-# docker compose --profile ollama --profile openclaw --profile comfyui up -d  # + ComfyUI
-# docker compose --profile ollama --profile openclaw --profile n8n up -d     # + n8n
+# 4. Start all services
+docker compose up -d
 ```
 
-| Profiles | Services |
-|----------|----------|
-| `dashboard` | **Unified dashboard** — model management, service links — [localhost:8080](http://localhost:8080) |
-| `ollama` | Ollama LLM runtime |
-| `openclaw` | OpenClaw gateway — [localhost:18789](http://localhost:18789) |
-| `webui` | Open WebUI chat — [localhost:3000](http://localhost:3000) |
-| `models` | Pull Ollama models on first start |
-| `comfyui` | ComfyUI + LTX-2 models |
-| `n8n` | N8N workflow automation |
+All services start by default. Open the **dashboard** at [localhost:8080](http://localhost:8080) to manage models and see service status.
 
-## Dashboard (recommended)
+**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI requires an NVIDIA GPU; OpenClaw needs `openclaw/.env` (created by step 3).
+
+## Dashboard
 
 The **dashboard** at [localhost:8080](http://localhost:8080) gives you a single web UI to:
 
 - **View all models** — Ollama (LLM) and ComfyUI (LTX-2) in one place
-- **Pull models** — no CLI needed; type a model name and click Pull
+- **Pull models** — searchable dropdown with 150+ Ollama models; or type any model name
 - **Jump to services** — Open WebUI, ComfyUI, N8N, OpenClaw
 
-```powershell
-docker compose --profile dashboard up -d
-```
+**Not seeing updates?** After pulling code changes, rebuild: `docker compose build dashboard && docker compose up -d`
 
 ## Ollama models
 
@@ -115,13 +102,12 @@ All data is stored under `BASE_PATH` via bind mounts — no Docker named volumes
 
 ## OpenClaw
 
-[OpenClaw](openclaw/) is a personal AI assistant, now integrated in the main compose. Use `--profile openclaw` (with `--profile ollama`). See [openclaw/README.md](openclaw/README.md) for token setup.
+[OpenClaw](openclaw/) is a personal AI assistant, integrated in the main compose. See [openclaw/README.md](openclaw/README.md) for token setup.
 
 ## Commands
 
 ```powershell
-docker compose --profile ollama --profile openclaw up -d   # Ollama + OpenClaw
-docker compose logs -f ollama                              # View logs
-docker exec llm-toolkit-ollama-1 ollama pull <model>   # Pull a model
-docker compose down                                        # Stop
+docker compose up -d      # Start all services
+docker compose logs -f ollama
+docker compose down       # Stop
 ```
