@@ -30,9 +30,12 @@ services:
       - OLLAMA_URL=http://ollama:11434
       - MODELS_DIR=/models
       - SCRIPTS_DIR=/scripts
+      - MCP_CONFIG_PATH=/mcp-config/servers.txt
+      - MCP_GATEWAY_SERVERS=${MCP_GATEWAY_SERVERS:-duckduckgo}
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
 
   open-webui:
     image: ghcr.io/open-webui/open-webui:v0.8.4
@@ -123,12 +126,14 @@ services:
     image: docker/mcp-gateway:latest
     container_name: mcp-gateway
     restart: unless-stopped
-    command:
-      - --transport=streaming
-      - --servers=${MCP_GATEWAY_SERVERS:-duckduckgo}
-      - --port=8811
+    entrypoint: ["/bin/sh", "/mcp-scripts/gateway-wrapper.sh"]
+    environment:
+      - MCP_CONFIG_FILE=/mcp-config/servers.txt
+      - MCP_GATEWAY_PORT=8811
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
+      - ${BASE_PATH:-.}/mcp:/mcp-scripts:ro
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
     ports:
       - "${MCP_GATEWAY_PORT:-8811}:8811"
     # Optional: mount secrets for MCPs that need API keys (e.g. github-official, brave)

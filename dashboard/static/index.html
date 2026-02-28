@@ -128,6 +128,9 @@
     .mcp-howto-content p { margin-bottom: 0.5rem; }
     .mcp-howto-content p:last-child { margin-bottom: 0; }
     .mcp-howto code { background: var(--bg); padding: 0.15rem 0.4rem; border-radius: 4px; font-size: 0.8em; }
+    .mcp-howto .btn-copy { margin-left: 0.25rem; padding: 0.2rem 0.5rem; font-size: 0.75rem; }
+    .mcp-add-row { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+    .mcp-add-row select { padding: 0.4rem 0.6rem; background: var(--bg); border: 1px solid var(--border); border-radius: var(--radius-sm); color: var(--text); font-size: 0.85rem; }
     .services {
       display: grid;
       grid-template-columns: repeat(6, minmax(0, 1fr));
@@ -288,6 +291,7 @@
       transition: all 0.2s;
     }
     .pill:hover { border-color: var(--accent); color: var(--accent); }
+    .mcp-remove-btn:hover { border-color: var(--danger); color: var(--danger); }
     .model-select-wrap {
       position: relative;
       flex: 1;
@@ -512,12 +516,29 @@
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
       </div>
-      <details class="mcp-howto">
-        <summary>MCP Gateway — How to use</summary>
+      <details class="mcp-howto" open>
+        <summary>MCP Gateway — Deploy tools</summary>
         <div class="mcp-howto-content">
-          <p><strong>Open WebUI:</strong> Admin Settings → External Tools → Add Server → Type: MCP (Streamable HTTP) → URL: <code>http://localhost:8811/mcp</code></p>
-          <p><strong>Cursor / Claude Desktop:</strong> Add MCP server with URL <code>http://localhost:8811/mcp</code> (Streamable HTTP)</p>
-          <p><strong>Add more tools:</strong> Set <code>MCP_GATEWAY_SERVERS=duckduckgo,fetch,dockerhub</code> in <code>.env</code>, then restart <code>mcp-gateway</code></p>
+          <p><strong>Enabled tools:</strong> <span id="mcp-enabled"></span></p>
+          <div id="mcp-dynamic-row" class="mcp-add-row" style="margin-top:0.75rem;display:none;">
+            <select id="mcp-add-select">
+              <option value="">Add a tool...</option>
+            </select>
+            <button type="button" id="mcp-add-btn">Add</button>
+            <span id="mcp-remove-list"></span>
+          </div>
+          <div id="mcp-static-row" style="margin-top:0.75rem;display:none;">
+            <p><strong>Add tool:</strong> Run from repo root — <code id="mcp-add-cmd">./scripts/mcp_add.sh fetch</code> <button type="button" class="btn-copy" id="mcp-add-copy" title="Copy">Copy</button></p>
+            <p><strong>Remove:</strong> <code id="mcp-remove-cmd">./scripts/mcp_remove.sh fetch</code> <button type="button" class="btn-copy" id="mcp-remove-copy" title="Copy">Copy</button></p>
+            <div class="mcp-add-row">
+              <select id="mcp-add-select-static">
+                <option value="">Add a tool...</option>
+              </select>
+              <button type="button" id="mcp-add-btn-static" class="secondary">Copy add command</button>
+            </div>
+          </div>
+          <p style="margin-top:0.75rem;"><strong>Connect:</strong> Open WebUI → Admin Settings → External Tools → MCP (Streamable HTTP) → <code>http://localhost:8811/mcp</code>. Cursor/Claude: same URL.</p>
+          <p><a href="https://hub.docker.com/mcp" target="_blank" rel="noopener">Browse 200+ tools in Docker MCP Catalog</a></p>
         </div>
       </details>
     </section>
@@ -601,6 +622,42 @@
       if (bytes >= 1e9) return (bytes / 1e9).toFixed(1) + ' GB';
       if (bytes >= 1e6) return (bytes / 1e6).toFixed(0) + ' MB';
       return (bytes / 1e3).toFixed(0) + ' KB';
+    }
+
+    let mcpEnabled = [];
+    let mcpCatalog = [];
+    let mcpDynamic = false;
+
+    async function loadMcpServers() {
+      try {
+        const r = await api('/api/mcp/servers');
+        const d = await r.json();
+        mcpEnabled = d.enabled || [];
+        mcpCatalog = d.catalog || [];
+        mcpDynamic = d.dynamic === true;
+        document.getElementById('mcp-enabled').textContent = mcpEnabled.length ? mcpEnabled.join(', ') : 'none';
+        const sel = document.getElementById('mcp-add-select');
+        const selStatic = document.getElementById('mcp-add-select-static');
+        const opts = '<option value="">Add a tool...</option>' + mcpCatalog
+          .filter(s => !mcpEnabled.includes(s))
+          .map(s => `<option value="${s}">${s}</option>`)
+          .join('');
+        if (sel) sel.innerHTML = opts;
+        if (selStatic) selStatic.innerHTML = opts;
+        const firstNotEnabled = mcpCatalog.find(s => !mcpEnabled.includes(s));
+        document.getElementById('mcp-add-cmd').textContent = './scripts/mcp_add.sh ' + (firstNotEnabled || 'fetch');
+        document.getElementById('mcp-remove-cmd').textContent = mcpEnabled[0] ? './scripts/mcp_remove.sh ' + mcpEnabled[0] : './scripts/mcp_remove.sh fetch';
+        document.getElementById('mcp-dynamic-row').style.display = mcpDynamic ? 'flex' : 'none';
+        document.getElementById('mcp-static-row').style.display = mcpDynamic ? 'none' : 'block';
+        const removeList = document.getElementById('mcp-remove-list');
+        if (removeList && mcpDynamic) {
+          removeList.innerHTML = mcpEnabled.length ? mcpEnabled.map(s =>
+            ` <button type="button" class="pill mcp-remove-btn" data-server="${s}">${s} ✕</button>`
+          ).join('') : '';
+        }
+      } catch (_) {
+        document.getElementById('mcp-enabled').textContent = '?';
+      }
     }
 
     async function loadServices() {
@@ -899,9 +956,56 @@
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
       if (!ollamaLibrary.length) await loadOllamaLibrary();
-      await Promise.all([loadServices(), loadOllamaModels(), loadComfyuiModels()]);
+      await Promise.all([loadServices(), loadOllamaModels(), loadComfyuiModels(), loadMcpServers()]);
       btn.classList.remove('loading');
     }
+
+    document.getElementById('mcp-add-select')?.addEventListener('change', function() {
+      document.getElementById('mcp-add-cmd').textContent = './scripts/mcp_add.sh ' + (this.value || 'fetch');
+    });
+    document.getElementById('mcp-add-btn')?.addEventListener('click', async () => {
+      const v = document.getElementById('mcp-add-select')?.value;
+      if (!v) { toast('Select a tool to add', 'error'); return; }
+      try {
+        const r = await api('/api/mcp/add', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server: v }) });
+        const d = await r.json();
+        if (!r.ok) { toast(d.detail || 'Failed to add', 'error'); return; }
+        toast(d.status === 'already_enabled' ? `${v} already enabled` : `Added ${v}. Reloading in ~10s.`, 'success');
+        await loadMcpServers();
+      } catch (e) {
+        toast('Failed to add', 'error');
+      }
+    });
+    document.getElementById('mcp-add-select-static')?.addEventListener('change', function() {
+      if (this.value) document.getElementById('mcp-add-cmd').textContent = './scripts/mcp_add.sh ' + this.value;
+    });
+    document.getElementById('mcp-add-btn-static')?.addEventListener('click', () => {
+      const v = document.getElementById('mcp-add-select-static')?.value || 'fetch';
+      const cmd = './scripts/mcp_add.sh ' + v;
+      navigator.clipboard?.writeText(cmd).then(() => toast('Copied: ' + cmd, 'success')).catch(() => toast(cmd));
+    });
+    document.getElementById('mcp-add-copy')?.addEventListener('click', () => {
+      const cmd = document.getElementById('mcp-add-cmd').textContent;
+      navigator.clipboard?.writeText(cmd).then(() => toast('Copied', 'success')).catch(() => toast(cmd));
+    });
+    document.getElementById('mcp-remove-copy')?.addEventListener('click', () => {
+      const cmd = document.getElementById('mcp-remove-cmd').textContent;
+      navigator.clipboard?.writeText(cmd).then(() => toast('Copied', 'success')).catch(() => toast(cmd));
+    });
+    document.getElementById('mcp-remove-list')?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.mcp-remove-btn');
+      if (!btn) return;
+      const server = btn.dataset.server;
+      try {
+        const r = await api('/api/mcp/remove', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ server }) });
+        const d = await r.json();
+        if (!r.ok) { toast(d.detail || 'Failed to remove', 'error'); return; }
+        toast(d.status === 'already_removed' ? `${server} already removed` : `Removed ${server}. Reloading in ~10s.`, 'success');
+        await loadMcpServers();
+      } catch (e) {
+        toast('Failed to remove', 'error');
+      }
+    });
 
     document.getElementById('refresh-btn').onclick = refresh;
 
