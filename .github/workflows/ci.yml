@@ -15,10 +15,10 @@ jobs:
         with:
           fetch-depth: 0
 
-      - name: Run Gitleaks
-        uses: gitleaks/gitleaks-action@v2
-        env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+      - name: Secret scanning (TruffleHog)
+        uses: trufflesecurity/trufflehog@main
+        with:
+          extra_args: --results=verified,unknown --fail
 
   compose-validate:
     name: Docker Compose validation

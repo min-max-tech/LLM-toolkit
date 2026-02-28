@@ -1,6 +1,6 @@
 # LLM-toolkit
 
-Hey, I am Cam, I made this repo to simplify my local-LLM setup.
+Hey, I am Cam, I made this repo to simplify my local-LLM setup. I wanted a bunch of tools setup in a single spot -- and of course, all dockerized. 
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command, all on one drive.
 
