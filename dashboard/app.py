@@ -207,7 +207,8 @@ SERVICES = [
      "hint": "Requires NVIDIA GPU. No GPU? Remove deploy block from docker-compose. Pull LTX-2 via dashboard."},
     {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
      "hint": "Check: docker compose logs n8n"},
-    {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789", "check": "http://openclaw-gateway:18789",
+    {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789",
+     "check": "http://host.docker.internal:18789/",
      "hint": "Run ensure_dirs.ps1 (Windows) or ensure_dirs.sh (Linux/Mac) to create openclaw/.env. Check: docker compose logs openclaw-gateway"},
 ]
 
@@ -219,6 +220,13 @@ async def _check_service(url: str) -> tuple[bool, str]:
             r = await client.get(url)
             return (r.status_code < 500, "")
     except Exception as e:
+        err = str(e).lower()
+        # Connection refused = service down
+        if "connection refused" in err or "connection reset" in err:
+            return (False, str(e))
+        # RemoteProtocolError, connection closed/disconnected = we reached the server (e.g. WebSocket gateway)
+        if "remoteprotocolerror" in err or "protocol" in err or "closed" in err or "disconnected" in err:
+            return (True, "")
         return (False, str(e))
 
 
