@@ -122,8 +122,8 @@ def main() -> int:
     else:
         gw = providers["gateway"]
         if isinstance(gw, dict):
-            if gw.get("api") != "openai-completions":
-                gw["api"] = "openai-completions"
+            if gw.get("api") != GATEWAY_PROVIDER["api"]:
+                gw["api"] = GATEWAY_PROVIDER["api"]
                 modified = True
             # Always sync from gateway (all Ollama models)
             gw["models"] = gateway_models
