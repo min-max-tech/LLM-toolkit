@@ -7,8 +7,7 @@ services:
     restart: unless-stopped
     environment:
       - OLLAMA_HOST=0.0.0.0:11434
-    ports:
-      - "11434:11434"
+    # Host port not exposed by default (backend-only). To expose for Cursor/direct use: -f docker-compose.ollama-expose.yml
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/ollama:/root/.ollama
     healthcheck:
@@ -257,6 +256,8 @@ services:
   n8n:
     image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n}
     restart: unless-stopped
+    # Run as non-root (n8n image uses node user; 1000:1000 matches typical node uid)
+    user: "1000:1000"
     depends_on:
       - mcp-gateway
     ports:
@@ -331,6 +332,10 @@ services:
   openclaw-config-sync:
     image: python:3.12-alpine
     restart: "no"
+    env_file:
+      - .env
+    environment:
+      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
       - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
@@ -437,3 +442,6 @@ networks:
     name: ai-toolkit-frontend
   backend:
     name: ai-toolkit-backend
+    # Backend-only containers (ollama, ops-controller) have no outbound internet.
+    # If DNS or healthchecks fail, set internal: false or see docs/runbooks/SECURITY_HARDENING.md
+    internal: true

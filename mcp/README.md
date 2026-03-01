@@ -134,6 +134,10 @@ MCP servers like `github-official` or `brave` need API keys. Use Docker secrets:
 
 See [Docker MCP Gateway secrets](https://github.com/docker/mcp-gateway/tree/main/examples/secrets) for details.
 
+## Policy (allowlist)
+
+The file `data/mcp/registry.json` defines metadata per server, including **`allow_clients`**. An empty list means the server is disabled by policy; `["*"]` allows all clients; a list of IDs (e.g. `["dashboard", "openclaw"]`) restricts which clients can use that server. The dashboard sends `X-Client-ID: dashboard` when calling the gateway (e.g. for health checks). Future enforcement: a gateway wrapper or proxy can read `registry.json` and allow/deny requests by `X-Client-ID`; until then this is the policy source for tests and documentation.
+
 ## Requirements
 
 - **Docker socket:** The gateway needs `/var/run/docker.sock` to spawn MCP server containers.

@@ -1258,7 +1258,7 @@
         el.textContent = d.ok ? 'gateway ok' : 'gateway unreachable';
         el.className = 'badge ' + (d.ok ? 'badge-success' : 'badge-error');
         el.title = d.gateway_error || 'Gateway reachable';
-        // Per-server status: add status dot to chips
+        // Per-server status: add status dot to chips (green=ok, yellow=degraded, red=fail)
         if (chipsEl && d.servers && d.servers.length) {
           const byId = {};
           d.servers.forEach(s => { byId[s.id] = s; });
@@ -1270,11 +1270,14 @@
               if (!dot) {
                 dot = document.createElement('span');
                 dot.className = 'mcp-chip-status';
-                dot.style.cssText = 'width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-right:4px;';
+                dot.setAttribute('aria-hidden', 'true');
+                dot.style.cssText = 'width:8px;height:8px;border-radius:50%;flex-shrink:0;margin-right:6px;';
                 chip.insertBefore(dot, chip.firstChild);
               }
-              dot.style.background = info.ok ? 'var(--success)' : 'var(--danger)';
-              dot.title = info.status || (info.ok ? 'running' : info.error || 'unknown');
+              const statusLabel = info.status || (info.ok ? 'running' : info.error || 'unknown');
+              const isDegraded = !info.ok && statusLabel !== 'unknown' && statusLabel !== 'unreachable';
+              dot.style.background = info.ok ? 'var(--success)' : (isDegraded ? 'var(--warning)' : 'var(--danger)');
+              dot.title = statusLabel;
             }
           });
         }

@@ -5,6 +5,13 @@ on:
     branches: [main]
   pull_request:
     branches: [main]
+  workflow_dispatch:
+    inputs:
+      run_compose_smoke:
+        description: "Run compose smoke test (Docker required)"
+        required: false
+        default: false
+        type: boolean
 
 jobs:
   secret-scan:
@@ -20,6 +27,25 @@ jobs:
         with:
           extra_args: --results=verified,unknown
 
+  pytest:
+    name: Pytest
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Run tests
+        run: python -m pytest tests/ -v
+        env:
+          RUN_COMPOSE_SMOKE: "0"
+
   compose-validate:
     name: Docker Compose validation
     runs-on: ubuntu-latest
@@ -32,3 +58,29 @@ jobs:
           echo "BASE_PATH=." > .env
           echo "OPENCLAW_GATEWAY_TOKEN=placeholder-for-ci" >> .env
           docker compose config
+
+  compose-smoke:
+    name: Compose smoke (optional)
+    runs-on: ubuntu-latest
+    if: github.event.inputs.run_compose_smoke == 'true'
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install dependencies
+        run: pip install -r requirements-dev.txt
+
+      - name: Create .env
+        run: |
+          echo "BASE_PATH=." > .env
+          echo "OPENCLAW_GATEWAY_TOKEN=placeholder" >> .env
+
+      - name: Run smoke tests
+        run: python -m pytest tests/test_compose_smoke.py -v
+        env:
+          RUN_COMPOSE_SMOKE: "1"
+        timeout-minutes: 10

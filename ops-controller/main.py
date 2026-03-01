@@ -16,6 +16,7 @@ app = FastAPI(title="Ops Controller", version="1.0.0")
 COMPOSE_PROJECT = os.environ.get("COMPOSE_PROJECT", "ai-toolkit")
 OPS_CONTROLLER_TOKEN = os.environ.get("OPS_CONTROLLER_TOKEN", "")
 AUDIT_LOG_PATH = Path(os.environ.get("AUDIT_LOG_PATH", "/data/audit.log"))
+AUDIT_LOG_MAX_BYTES = int(os.environ.get("AUDIT_LOG_MAX_BYTES", "10485760"))  # 10MB default
 
 # Services we allow operations on (allowlist)
 ALLOWED_SERVICES = {
@@ -40,6 +41,22 @@ async def verify_token(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
+def _maybe_rotate_audit_log() -> None:
+    """If audit log exceeds AUDIT_LOG_MAX_BYTES, rotate: .log -> .log.1, start fresh."""
+    try:
+        if not AUDIT_LOG_PATH.exists():
+            return
+        if AUDIT_LOG_PATH.stat().st_size < AUDIT_LOG_MAX_BYTES:
+            return
+        parent = AUDIT_LOG_PATH.parent
+        rotated = AUDIT_LOG_PATH.with_suffix(AUDIT_LOG_PATH.suffix + ".1")
+        if rotated.exists():
+            rotated.unlink()
+        AUDIT_LOG_PATH.rename(rotated)
+    except Exception:
+        pass
+
+
 def _audit(
     action: str,
     resource: str = "",
@@ -48,9 +65,10 @@ def _audit(
     correlation_id: str = "",
     metadata: dict | None = None,
 ):
-    """Append to audit log. Schema: docs/audit/SCHEMA.md."""
+    """Append to audit log. Schema: docs/audit/SCHEMA.md. Rotates by size when over limit."""
     try:
         AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
+        _maybe_rotate_audit_log()
         entry = {
             "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "action": action,

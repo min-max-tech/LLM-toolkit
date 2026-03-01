@@ -1,8 +1,9 @@
 #!/usr/bin/env python3
-"""Merge gateway provider into openclaw.json if missing. Ensures dashboard monitoring works."""
+"""Merge gateway provider into openclaw.json if missing. Injects OPENCLAW_GATEWAY_TOKEN from env when set."""
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -52,6 +53,17 @@ def main() -> int:
                 gw["headers"]["X-Service-Name"] = "openclaw"
                 modified = True
                 msg = "added X-Service-Name to gateway provider"
+
+    # Inject gateway auth token from env so it lives in .env, not in committed config
+    gateway = data.setdefault("gateway", {})
+    auth = gateway.setdefault("auth", {})
+    if isinstance(auth, dict):
+        token = os.environ.get("OPENCLAW_GATEWAY_TOKEN", "").strip()
+        if token and auth.get("token") != token:
+            auth["token"] = token
+            auth["mode"] = "token"
+            modified = True
+            msg = "injected gateway token from OPENCLAW_GATEWAY_TOKEN"
 
     if not modified:
         return 0

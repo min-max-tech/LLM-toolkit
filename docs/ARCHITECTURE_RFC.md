@@ -652,7 +652,6 @@ LLM-toolkit/
 │   └── test_compose_smoke.py  # NEW — see M2
 ├── docs/
 │   ├── ARCHITECTURE_RFC.md    ✓ this file
-│   ├── OPENCLAW_PERFORMANCE_AUDIT.md  ✓
 │   ├── audit/SCHEMA.md        ✓
 │   └── runbooks/
 │       ├── TROUBLESHOOTING.md ✓
@@ -685,7 +684,7 @@ LLM-toolkit/
 | **M2** | ✅ Done | Ops Controller: start/stop/restart/logs/pull/audit; dashboard calls controller; bearer auth |
 | **M3** | ✅ Done | MCP registry.json + health API; cap_drop/read_only hardening; model list cache; Open WebUI → gateway default |
 | **M4** | ✅ Done | Explicit Docker networks (frontend/backend); correlation IDs (X-Request-ID → audit); vLLM compose profile; smoke tests |
-| **M5** | 🔲 Next | Dashboard UI: MCP health badges per tool; optional SSRF script; MCP policy/allowlist tests |
+| **M5** | 🔶 Partial | Dashboard: MCP health dots (green/yellow/red) + SSRF script; MCP policy tests when gateway supports allowlist |
 
 ---
 
@@ -781,11 +780,11 @@ Security/audit checklist for M3:
 
 ---
 
-### M5 — Next (Optional)
+### M5 — Next (Partial ✅)
 
-- **Dashboard UI:** Render MCP health badges (green/yellow/red) in the MCP section using `GET /api/mcp/health`.
-- **SSRF script:** Optional `scripts/ssrf-egress-block.sh` (or PowerShell) that applies iptables/DOCKER-USER rules from SECURITY_HARDENING.md.
-- **Policy tests:** pytest for MCP allowlist behavior when registry `allow_clients` is enforced (if gateway supports it).
+- **Dashboard UI:** ✅ MCP health dots (green/yellow/red) per tool; gateway badge "gateway ok" / "gateway unreachable"; degraded state (yellow) for non-running container status.
+- **SSRF script:** ✅ `scripts/ssrf-egress-block.sh` (Linux/WSL2) — auto-detect subnet, `--dry-run` / `--remove`; `scripts/ssrf-egress-block.ps1` (Windows) — guidance only. Runbook updated to reference scripts.
+- **Policy tests:** pytest for MCP allowlist behavior when registry `allow_clients` is enforced (deferred until gateway supports it).
 
 ---
 

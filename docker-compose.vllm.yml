@@ -6,7 +6,8 @@ name: ai-toolkit
 services:
   vllm:
     profiles: [vllm]
-    image: ${VLLM_IMAGE:-vllm/vllm-openai:latest}
+    # Pinned digest for supply-chain safety. Override with VLLM_IMAGE for a different tag/digest.
+    image: ${VLLM_IMAGE:-vllm/vllm-openai@sha256:89523c8293bc02a4dfaaa80079a5347dc3952464a33a501d5de329921eea7ec7}
     restart: unless-stopped
     environment:
       - MODEL=${VLLM_MODEL:-meta-llama/Llama-3.2-3B-Instruct}

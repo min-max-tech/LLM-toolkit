@@ -60,5 +60,5 @@ Audit events record privileged actions (service lifecycle, model ops, MCP change
 
 - **Path:** `data/ops-controller/audit.log`
 - **Format:** One JSON object per line (JSONL)
-- **Rotation:** By size (e.g. 10MB) or time; document in runbooks
+- **Rotation:** When file size exceeds `AUDIT_LOG_MAX_BYTES` (default 10MB), the ops-controller renames the current log to `audit.log.1` and starts a new file. Only one rotated file is kept. Set `AUDIT_LOG_MAX_BYTES` in the ops-controller environment to change the limit (e.g. `5242880` for 5MB).
 - **Export:** `GET /audit?limit=50` (ops-controller, auth required)

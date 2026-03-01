@@ -27,6 +27,14 @@ No GPU required for chat (Ollama runs on CPU, slower but works).
 
 `docker compose up -d` — all services (Ollama, Open WebUI, ComfyUI, n8n, OpenClaw, MCP Gateway).
 
+### Direct Ollama (Cursor, CLI)
+
+By default Ollama is backend-only (no host port). To expose it on the host (e.g. for Cursor or `ollama run` from your machine):
+
+- Start with the Ollama-expose override:  
+  `docker compose -f docker-compose.yml -f docker-compose.ollama-expose.yml up -d`
+- Use `http://localhost:11434` in Cursor or run `ollama run <model>` locally.
+
 ### Optional: vLLM (OpenAI-compatible server)
 
 Use vLLM as an additional model provider (e.g. for Llama, Mistral via Hugging Face):

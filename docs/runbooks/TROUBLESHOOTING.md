@@ -76,6 +76,11 @@ curl -s http://localhost:8811/mcp
 - **Cause:** n8n's internal Python task runner is for debugging; production expects an external Python runner.
 - **Fix:** No action required. Use the JS Task Runner for workflows; for Python nodes, see [n8n external task runner docs](https://docs.n8n.io/hosting/configuration/task-runners/#setting-up-external-mode).
 
+### OpenClaw usage not showing in dashboard throughput
+
+- **Cause:** Throughput is only recorded when requests go through the **model gateway**. If OpenClaw uses the **ollama** provider (direct), traffic bypasses the gateway.
+- **Fix:** In OpenClaw Settings → Model, select a model from the **gateway** provider (e.g. `gateway/ollama/deepseek-r1:7b`). Config sync ensures the gateway provider exists in `data/openclaw/openclaw.json`; refresh the model list or restart OpenClaw if you only see `ollama/` models.
+
 ## OpenClaw gateway tool
 
 ### "Missing raw parameter" (config.patch)
