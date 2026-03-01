@@ -7,6 +7,7 @@ import os
 import subprocess
 import threading
 import time
+import urllib.request
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
@@ -65,6 +66,21 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 SCRIPTS_DIR = Path(os.environ.get("SCRIPTS_DIR", "/scripts"))
 
+# Ollama library: fetched from community JSON (all pullable model:tag names)
+OLLAMA_LIBRARY_URL = os.environ.get(
+    "OLLAMA_LIBRARY_URL",
+    "https://yuma-shintani.github.io/ollama-model-library/model.json",
+)
+OLLAMA_LIBRARY_CACHE_TTL = float(os.environ.get("OLLAMA_LIBRARY_CACHE_TTL_SEC", "86400"))  # 24h
+_ollama_library_cache: list[str] = []
+_ollama_library_ts: float = 0.0
+
+# Fallback when fetch fails (minimal curated list)
+OLLAMA_LIBRARY_FALLBACK = [
+    "llama3.2", "llama3.1", "deepseek-r1:7b", "qwen2.5:7b", "qwen3:14b", "qwen3:14b-q4_K_M",
+    "mistral", "nomic-embed-text", "phi4", "gemma3",
+]
+
 # Background ComfyUI pull status
 _comfyui_status: dict = {"running": False, "output": "", "done": False, "success": None}
 
@@ -76,54 +92,60 @@ class PullRequest(BaseModel):
 # --- Ollama ---
 
 
-# Ollama library — models available at registry.ollama.ai (no public API, so we maintain a curated list)
-OLLAMA_LIBRARY = [
-    "llama3.2", "llama3.1", "llama3", "llama2", "llama4",
-    "deepseek-r1:7b", "deepseek-r1:70b", "deepseek-coder:6.7b", "deepseek-coder-v2",
-    "deepseek-v3", "deepseek-v3.1", "deepseek-v3.2", "deepseek-v2", "deepseek-llm",
-    "qwen2.5:7b", "qwen2.5:14b", "qwen2.5:32b", "qwen2.5:72b", "qwen2.5-coder", "qwen2.5vl",
-    "qwen3", "qwen3.5", "qwen3-coder", "qwen3-vl", "qwen3-next", "qwen3-embedding",
-    "qwen2", "qwen2-math", "qwen", "codeqwen",
-    "gemma3", "gemma2:9b", "gemma2:27b", "gemma", "embeddinggemma",
-    "mistral", "mistral-nemo", "mistral-large", "mistral-small", "mistral-small3.1", "mistral-small3.2",
-    "mixtral", "codestral", "ministral-3",
-    "phi3", "phi3.5", "phi4", "phi4-mini", "phi4-reasoning", "phi4-mini-reasoning", "phi",
-    "nomic-embed-text", "nomic-embed-text-v2-moe", "mxbai-embed-large", "bge-m3", "bge-large",
-    "snowflake-arctic-embed", "snowflake-arctic-embed2", "granite-embedding", "paraphrase-multilingual",
-    "codellama", "starcoder", "starcoder2", "sqlcoder", "wizardcoder", "magicoder", "codegemma",
-    "llava", "llava-llama3", "llava-phi3", "bakllava", "minicpm-v", "moondream",
-    "tinyllama", "smollm2", "smollm", "all-minilm", "dolphin3", "dolphin-phi", "dolphin-llama3",
-    "dolphin-mixtral", "dolphin-mistral", "dolphincoder", "tinydolphin",
-    "olmo2", "olmo-3", "olmo-3.1", "yi", "yi-coder", "glm4", "glm-4.6", "glm-4.7", "glm-4.7-flash",
-    "glm-5", "glm-ocr", "minimax-m2", "minimax-m2.1", "minimax-m2.5", "kimi-k2", "kimi-k2.5",
-    "kimi-k2-thinking", "granite3.1-moe", "granite3.2", "granite3.2-vision", "granite3.3",
-    "granite3.1-dense", "granite3-dense", "granite4", "granite-code", "granite3-guardian",
-    "command-r", "command-r7b", "command-r-plus", "command-a", "command-r7b-arabic",
-    "devstral", "devstral-small-2", "devstral-2", "codestral",
-    "gpt-oss", "gpt-oss-safeguard", "cogito", "cogito-2.1", "gemini-3-flash-preview",
-    "nexusraven", "firefunction-v2", "llama3-groq-tool-use", "llama-guard3",
-    "wizardlm2", "wizardlm", "wizard-math", "wizard-vicuna", "wizard-vicuna-uncensored",
-    "internlm2", "exaone-deep", "exaone3.5", "aya", "aya-expanse",
-    "falcon", "falcon2", "falcon3", "solar", "solar-pro", "vicuna", "openchat",
-    "nous-hermes", "nous-hermes2", "nous-hermes2-mixtral", "openhermes", "neural-chat",
-    "orca-mini", "orca2", "stable-beluga", "stablelm2", "stablelm-zephyr", "stable-code",
-    "xwinlm", "llama2-chinese", "llama3-chatqa", "llama-pro", "yarn-llama2", "yarn-mistral",
-    "phind-codellama", "opencoder", "openthinker", "deepcoder", "qwq",
-    "llama2-uncensored", "everythinglm", "reflection", "meditron", "medllama2",
-    "samantha-mistral", "r1-1776", "athene-v2", "nemotron", "nemotron-mini", "nemotron-3-nano",
-    "dbrx", "goliath", "megadolphin", "alfred", "marco-o1", "sailor2",
-    "smallthinker", "deepseek-v2.5", "phi4-mini-reasoning", "shieldgemma",
-    "reader-lm", "qwen3-next", "translategemma", "functiongemma",
-    "duckdb-nsql", "nuextract", "mistrallite", "bespoke-minicheck", "tulu3",
-    "notux", "notus", "codebooga", "open-orca-platypus2", "codeup", "mathstral",
-    "deepseek-ocr", "solar-pro", "rnj-1", "hermes3", "zephyr",
-]
+def _fetch_ollama_library() -> list[str]:
+    """Fetch pullable model names from Ollama registry. Uses community JSON; caches 24h."""
+    global _ollama_library_cache, _ollama_library_ts
+    now = time.monotonic()
+    if _ollama_library_cache and (now - _ollama_library_ts) < OLLAMA_LIBRARY_CACHE_TTL:
+        return _ollama_library_cache
+
+    urls = [OLLAMA_LIBRARY_URL]
+    for url in urls:
+        try:
+            req = urllib.request.Request(url, headers={"Accept": "application/json"})
+            with urllib.request.urlopen(req, timeout=15) as resp:
+                data = json.loads(resp.read().decode())
+        except Exception:
+            continue
+
+        names: set[str] = set()
+        if isinstance(data, list):
+            # yuma-shintani format: [{"name":"llama3.1","tags":[{"name":"llama3.1:8b"},...]}, ...]
+            for item in data:
+                if isinstance(item, dict):
+                    base = (item.get("name") or "").strip()
+                    tags = item.get("tags") or []
+                    for t in tags:
+                        if isinstance(t, dict) and t.get("name"):
+                            names.add(str(t["name"]).strip())
+                    if base:
+                        names.add(base)  # e.g. llama3.1 -> llama3.1:latest
+        elif isinstance(data, dict):
+            # Official format: {"library": {"llama3.1": {"tags": ["8b","70b"]}, ...}}
+            lib = data.get("library") or data
+            if isinstance(lib, dict):
+                for base, meta in lib.items():
+                    if isinstance(meta, dict):
+                        for tag in meta.get("tags") or []:
+                            names.add(f"{base}:{tag}" if tag else base)
+                    else:
+                        names.add(base)
+
+        if names:
+            _ollama_library_cache = sorted(names)
+            _ollama_library_ts = now
+            return _ollama_library_cache
+
+    _ollama_library_cache = OLLAMA_LIBRARY_FALLBACK
+    _ollama_library_ts = now
+    return _ollama_library_cache
 
 
 @app.get("/api/ollama/library")
 async def ollama_library():
-    """List models available in the Ollama registry (curated)."""
-    return {"models": sorted(set(OLLAMA_LIBRARY)), "ok": True}
+    """List models available in the Ollama registry (fetched programmatically, cached 24h)."""
+    models = _fetch_ollama_library()
+    return {"models": models, "ok": True}
 
 
 @app.get("/api/ollama/models")
@@ -147,7 +169,8 @@ async def ollama_delete(req: PullRequest):
         raise HTTPException(status_code=400, detail="Invalid model name")
     async with AsyncClient(timeout=60.0) as client:
         try:
-            r = await client.delete(
+            r = await client.request(
+                "DELETE",
                 f"{OLLAMA_URL.rstrip('/')}/api/delete",
                 json={"name": name},
             )
