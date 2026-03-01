@@ -347,11 +347,29 @@ services:
   openclaw-plugin-install:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
     restart: "no"
+    depends_on:
+      openclaw-config-sync:
+        condition: service_completed_successfully
     environment:
       HOME: /home/node
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/home/node/.openclaw
-    command: ["plugins", "install", "openclaw-mcp-bridge", "--pin"]
+    command: ["plugins", "install", "openclaw-mcp-bridge"]
+    networks:
+      - frontend
+
+  # Add MCP plugin config to openclaw.json after plugin-install (config-sync removes it
+  # so plugin-install can run; this step adds it back for the gateway).
+  openclaw-plugin-config:
+    image: python:3.12-alpine
+    restart: "no"
+    depends_on:
+      openclaw-plugin-install:
+        condition: service_completed_successfully
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
+      - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
+    entrypoint: ["python3", "/scripts/add_mcp_plugin_config.py"]
     networks:
       - frontend
 
@@ -368,8 +386,6 @@ services:
       openclaw-workspace-sync:
         condition: service_completed_successfully
       openclaw-config-sync:
-        condition: service_completed_successfully
-      openclaw-plugin-install:
         condition: service_completed_successfully
     env_file:
       - .env

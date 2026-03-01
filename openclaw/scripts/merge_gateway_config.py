@@ -54,6 +54,17 @@ def main() -> int:
                 modified = True
                 msg = "added X-Service-Name to gateway provider"
 
+    # Remove MCP plugin refs from plugins.entries if present, so plugin-install
+    # can run without config validation failing (config references plugin before it's installed)
+    plugins = data.get("plugins", {})
+    entries = plugins.get("entries", {}) if isinstance(plugins, dict) else {}
+    for key in ("openclaw-mcp-bridge", "plugin-mcp-client"):
+        if isinstance(entries, dict) and key in entries:
+            del entries[key]
+            modified = True
+            msg = f"removed {key} from plugins.entries (will be re-added after install)"
+            break
+
     # Inject gateway auth token from env so it lives in .env, not in committed config
     gateway = data.setdefault("gateway", {})
     auth = gateway.setdefault("auth", {})
