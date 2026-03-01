@@ -69,6 +69,18 @@ Servers that need API keys require extra setup (see [Secrets](#secrets)).
 
 Add MCP server with URL `http://localhost:8811/mcp` (Streamable HTTP).
 
+### N8N
+
+Use the built-in **MCP Client Tool** node in your AI agent workflows:
+
+1. Add an **AI Agent** (or similar) node to your workflow.
+2. Add an **MCP Client Tool** sub-node to the agent.
+3. Create credentials: **Transport** → HTTP Streamable.
+4. **URL:** `http://mcp-gateway:8811/mcp` (use the Docker service name — n8n runs in the same network).
+5. Save and run. The agent can now call tools from the MCP Gateway (web search, fetch, etc.).
+
+See [n8n MCP Client Tool docs](https://docs.n8n.io/integrations/builtin/cluster-nodes/sub-nodes/n8n-nodes-langchain.toolmcp/).
+
 ### OpenClaw
 
 Add to `data/openclaw/openclaw.json`:

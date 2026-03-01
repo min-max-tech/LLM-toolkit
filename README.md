@@ -147,7 +147,7 @@ All data is stored under `BASE_PATH` via bind mounts — no Docker named volumes
 
 ## MCP (Model Context Protocol)
 
-The [MCP Gateway](mcp/) exposes shared MCP tools (web search, GitHub, etc.) to all services. Add servers via `MCP_GATEWAY_SERVERS` in `.env`. Connect Open WebUI, Cursor, and OpenClaw to `http://localhost:8811/mcp`. See [mcp/README.md](mcp/README.md).
+The [MCP Gateway](mcp/) exposes shared MCP tools (web search, GitHub, etc.) to all services. Add servers via `MCP_GATEWAY_SERVERS` in `.env`. Connect Open WebUI, N8N, Cursor, and OpenClaw to `http://localhost:8811/mcp`. See [mcp/README.md](mcp/README.md).
 
 ## OpenClaw
 
