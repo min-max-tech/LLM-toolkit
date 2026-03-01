@@ -4,6 +4,8 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import time
+import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
@@ -16,6 +18,11 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/")
 VLLM_URL = os.environ.get("VLLM_URL", "").rstrip("/")  # e.g. http://vllm:8000
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "ollama")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").rstrip("/")
+MODEL_CACHE_TTL = float(os.environ.get("MODEL_CACHE_TTL_SEC", "60"))
+
+# TTL model list cache: avoids hitting Ollama on every /v1/models call.
+_model_cache: list = []
+_model_cache_ts: float = 0.0
 
 
 def _model_provider_and_id(name: str) -> tuple[str, str]:
@@ -87,7 +94,15 @@ def _record_throughput(
 
 @app.get("/v1/models")
 async def list_models():
-    """List models in OpenAI format. Aggregates from Ollama and vLLM (when configured)."""
+    """List models in OpenAI format. Aggregates from Ollama and vLLM (when configured).
+    Results are cached for MODEL_CACHE_TTL_SEC seconds to reduce Ollama load.
+    """
+    global _model_cache, _model_cache_ts
+
+    # Serve from cache if still fresh
+    if MODEL_CACHE_TTL > 0 and _model_cache and (time.monotonic() - _model_cache_ts) < MODEL_CACHE_TTL:
+        return {"object": "list", "data": _model_cache}
+
     objects = []
 
     # Ollama
@@ -127,7 +142,23 @@ async def list_models():
         except Exception:
             pass
 
+    if objects:
+        _model_cache = objects
+        _model_cache_ts = time.monotonic()
+    elif _model_cache:
+        # Provider unreachable but we have a stale cache — serve it rather than empty
+        return {"object": "list", "data": _model_cache}
+
     return {"object": "list", "data": objects}
+
+
+@app.delete("/v1/cache")
+async def invalidate_cache():
+    """Invalidate the model list cache. Useful after pulling or deleting models."""
+    global _model_cache, _model_cache_ts
+    _model_cache = []
+    _model_cache_ts = 0.0
+    return {"ok": True, "message": "Model list cache invalidated"}
 
 
 @app.get("/health")
@@ -179,6 +210,7 @@ async def chat_completions(request: Request, body: dict[str, Any]):
         request.headers.get("Origin"),
         request.headers.get("X-Service-Name") or request.headers.get("X-Client-Id"),
     )
+    req_id = request.headers.get("X-Request-ID") or f"req-{uuid.uuid4().hex[:12]}"
     messages = body.get("messages", [])
     stream = body.get("stream", False)
 
@@ -196,11 +228,11 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                         r.raise_for_status()
                         async for chunk in r.aiter_bytes():
                             yield chunk
-            return StreamingResponse(
-                vllm_stream(),
-                media_type="text/event-stream",
-                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-            )
+        return StreamingResponse(
+            vllm_stream(),
+            media_type="text/event-stream",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Request-ID": req_id},
+        )
         async with AsyncClient(timeout=600.0) as client:
             r = await client.post(
                 f"{VLLM_URL}/v1/chat/completions",
@@ -208,7 +240,9 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                 headers={"Content-Type": "application/json"},
             )
             r.raise_for_status()
-            return r.json()
+            resp = r.json()
+            resp["_request_id"] = req_id
+            return resp
 
     # Ollama
     ollama_body = {"model": model_id, "messages": messages, "stream": stream}
@@ -261,7 +295,7 @@ async def chat_completions(request: Request, body: dict[str, Any]):
         return StreamingResponse(
             generate(),
             media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Request-ID": req_id},
         )
 
     # Non-streaming

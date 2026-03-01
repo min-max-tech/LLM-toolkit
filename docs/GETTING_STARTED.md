@@ -27,6 +27,18 @@ No GPU required for chat (Ollama runs on CPU, slower but works).
 
 `docker compose up -d` — all services (Ollama, Open WebUI, ComfyUI, n8n, OpenClaw, MCP Gateway).
 
+### Optional: vLLM (OpenAI-compatible server)
+
+Use vLLM as an additional model provider (e.g. for Llama, Mistral via Hugging Face):
+
+1. Start with the vLLM profile:  
+   `docker compose -f docker-compose.yml -f docker-compose.vllm.yml --profile vllm up -d`
+2. Set in `.env`: `VLLM_URL=http://vllm:8000`
+3. Restart model-gateway: `docker compose restart model-gateway`
+4. In clients (Open WebUI, OpenClaw), choose models with prefix `vllm/<model-id>` (e.g. `vllm/meta-llama/Llama-3.2-3B-Instruct`).
+
+See [docker-compose.vllm.yml](../docker-compose.vllm.yml) for `VLLM_MODEL` and resource limits.
+
 ## Tailscale access
 
 For single user or small group over Tailscale:

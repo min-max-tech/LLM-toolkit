@@ -84,7 +84,29 @@ See [n8n MCP Client Tool docs](https://docs.n8n.io/integrations/builtin/cluster-
 
 ### OpenClaw
 
-Add to `data/openclaw/openclaw.json`:
+Many OpenClaw builds (e.g. 2026.2.x from `ghcr.io/phioranex/openclaw-docker`) **do not accept a top-level `mcp` key** in `openclaw.json`. Use the **openclaw-mcp-bridge** plugin instead.
+
+**Recommended — plugin (works when top-level `mcp` is rejected):**
+
+Add to `plugins.entries` in `data/openclaw/openclaw.json`:
+
+```json
+"openclaw-mcp-bridge": {
+  "enabled": true,
+  "config": {
+    "servers": {
+      "gateway": {
+        "url": "http://mcp-gateway:8811/mcp"
+      }
+    },
+    "debug": false
+  }
+}
+```
+
+Ensure `"plugins": { "enabled": true, "entries": { ... } }` and restart the gateway. When using the main repo `docker compose`, the gateway runs with an entrypoint that installs `openclaw-mcp-bridge` from npm on first start (into the mounted config dir), so no custom image is needed. The plugin discovers tools from the MCP gateway and registers them as native OpenClaw tools (e.g. `gateway__duckduckgo_search`). Standalone OpenClaw: run `openclaw plugins install openclaw-mcp-bridge --pin` once, then restart. See [openclaw-mcp-bridge on npm](https://www.npmjs.com/package/openclaw-mcp-bridge).
+
+**Alternative — top-level `mcp` (only if your OpenClaw version supports it):**
 
 ```json
 {
@@ -98,6 +120,8 @@ Add to `data/openclaw/openclaw.json`:
   }
 }
 ```
+
+If the gateway reports an unrecognized key or fails to start, remove the `mcp` block and use the plugin config above.
 
 ## Secrets
 

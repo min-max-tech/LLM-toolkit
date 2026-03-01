@@ -4,7 +4,7 @@ Hey, I am Cam, I made this repo to simplify my local-LLM setup. I wanted a bunch
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), auto-detects hardware for best performance.
 
-→ [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture RFC](docs/ARCHITECTURE_RFC.md)
+→ [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture RFC](docs/ARCHITECTURE_RFC.md) · [Repository state](REPOSITORY_STATE.md)
 
 ## Services
 

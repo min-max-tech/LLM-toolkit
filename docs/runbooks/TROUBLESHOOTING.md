@@ -143,6 +143,12 @@ curl -s http://localhost:8811/mcp
 
 **Fix:** Ensure the agent always passes `targetUrl` when using the browser tool. In this repo, `openclaw/workspace/AGENTS.md` instructs the agent to always pass `targetUrl` for browser open/navigate. If the agent still loops, try phrasing the user request so the URL is explicit (e.g. "Open https://www.ai-ml-news.com/today and summarize the top AI headlines") or use MCP web search (DuckDuckGo) instead for news lookup. Upstream: [openclaw/openclaw#14700](https://github.com/openclaw/openclaw/issues/14700), [#19964](https://github.com/openclaw/openclaw/issues/19964).
 
+### OpenClaw agent says it will do something but then stops (no tool call)
+
+**Cause:** The agent acknowledged the request but did not actually invoke the MCP tool (e.g. DuckDuckGo). Common with smaller models or when the prompt doesn't force a tool call.
+
+**Fix:** (1) In `openclaw/workspace/AGENTS.md` we instruct the agent to call the search tool immediately and return results, not only say it will. Sync the workspace (`docker compose up openclaw-workspace-sync`) and start a new session. (2) Phrase the request so a tool is required: e.g. "Search DuckDuckGo for 'AI news March 1 2026' and list the top 5 headlines with links." (3) Check gateway logs: `docker compose logs openclaw-gateway` for MCP or tool errors. (4) Confirm the MCP gateway is reachable from the OpenClaw container and that `duckduckgo` is in `data/mcp/servers.txt`.
+
 ## Log Locations
 
 | Service        | Logs                    |
@@ -156,7 +162,7 @@ curl -s http://localhost:8811/mcp
 ### OpenClaw: "Invalid config ... Unrecognized key: mcp"
 
 - **Cause:** Some OpenClaw versions do not support a top-level `mcp` key in `openclaw.json`. Adding it can make the gateway reject the config and fail WebSocket connections (code 4008).
-- **Fix:** Remove the `mcp` block from `data/openclaw/openclaw.json` if present. Configure MCP via OpenClaw’s UI or the version’s documented config (e.g. under agents or a different path). See [openclaw/README.md](../../openclaw/README.md).
+- **Fix:** Remove the `mcp` block from `data/openclaw/openclaw.json` if present. Use the **openclaw-mcp-bridge** plugin instead: add the plugin config under `plugins.entries` in `openclaw.json` as described in [mcp/README.md](../../mcp/README.md#openclaw). This repo’s `data/openclaw/openclaw.json` is pre-configured with the plugin pointing at `http://mcp-gateway:8811`. See [openclaw/README.md](../../openclaw/README.md).
 
 ## Escalation
 

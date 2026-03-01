@@ -784,12 +784,19 @@ OPS_CONTROLLER_URL = os.environ.get("OPS_CONTROLLER_URL", "http://ops-controller
 OPS_CONTROLLER_TOKEN = os.environ.get("OPS_CONTROLLER_TOKEN", "")
 
 
-async def _ops_request(method: str, path: str, **kwargs) -> tuple[int, dict]:
-    """Proxy request to ops controller. Returns (status_code, json_body)."""
+async def _ops_request(
+    method: str, path: str, request: Request | None = None, **kwargs
+) -> tuple[int, dict]:
+    """Proxy request to ops controller. Returns (status_code, json_body).
+    Forwards X-Request-ID when present for audit correlation.
+    """
     if not OPS_CONTROLLER_TOKEN:
         return 503, {"detail": "OPS_CONTROLLER_TOKEN not configured"}
     url = f"{OPS_CONTROLLER_URL.rstrip('/')}{path}"
-    headers = {"Authorization": f"Bearer {OPS_CONTROLLER_TOKEN}", **kwargs.pop("headers", {})}
+    extra = kwargs.pop("headers", {})
+    if request and request.headers.get("X-Request-ID"):
+        extra = {**extra, "X-Request-ID": request.headers["X-Request-ID"]}
+    headers = {"Authorization": f"Bearer {OPS_CONTROLLER_TOKEN}", **extra}
     try:
         async with AsyncClient(timeout=30.0) as client:
             r = await client.request(method, url, headers=headers, **kwargs)
@@ -803,51 +810,59 @@ async def _ops_request(method: str, path: str, **kwargs) -> tuple[int, dict]:
 
 
 @app.post("/api/ops/services/{service_id}/start")
-async def ops_start(service_id: str):
+async def ops_start(service_id: str, request: Request):
     """Start a service via ops controller."""
     ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
-    code, data = await _ops_request("POST", f"/services/{ops_id}/start", json={"confirm": True})
+    code, data = await _ops_request(
+        "POST", f"/services/{ops_id}/start", request=request, json={"confirm": True}
+    )
     if code >= 400:
         raise HTTPException(status_code=code, detail=data.get("detail", data))
     return data
 
 
 @app.post("/api/ops/services/{service_id}/stop")
-async def ops_stop(service_id: str):
+async def ops_stop(service_id: str, request: Request):
     """Stop a service via ops controller."""
     ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
-    code, data = await _ops_request("POST", f"/services/{ops_id}/stop", json={"confirm": True})
+    code, data = await _ops_request(
+        "POST", f"/services/{ops_id}/stop", request=request, json={"confirm": True}
+    )
     if code >= 400:
         raise HTTPException(status_code=code, detail=data.get("detail", data))
     return data
 
 
 @app.post("/api/ops/services/{service_id}/restart")
-async def ops_restart(service_id: str):
+async def ops_restart(service_id: str, request: Request):
     """Restart a service via ops controller."""
     ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
-    code, data = await _ops_request("POST", f"/services/{ops_id}/restart", json={"confirm": True})
+    code, data = await _ops_request(
+        "POST", f"/services/{ops_id}/restart", request=request, json={"confirm": True}
+    )
     if code >= 400:
         raise HTTPException(status_code=code, detail=data.get("detail", data))
     return data
 
 
 @app.get("/api/ops/services/{service_id}/logs")
-async def ops_logs(service_id: str, tail: int = 100):
+async def ops_logs(service_id: str, request: Request, tail: int = 100):
     """Get service logs via ops controller."""
     ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
-    code, data = await _ops_request("GET", f"/services/{ops_id}/logs?tail={tail}")
+    code, data = await _ops_request(
+        "GET", f"/services/{ops_id}/logs?tail={tail}", request=request
+    )
     if code >= 400:
         raise HTTPException(status_code=code, detail=data.get("detail", data))
     return data
 
 
 @app.get("/api/ops/available")
-async def ops_available():
+async def ops_available(request: Request):
     """Check if ops controller is configured and reachable."""
     if not OPS_CONTROLLER_TOKEN:
         return {"available": False, "reason": "OPS_CONTROLLER_TOKEN not set"}
-    code, _ = await _ops_request("GET", "/health")
+    code, _ = await _ops_request("GET", "/health", request=request)
     return {"available": code == 200}
 
 

@@ -24,6 +24,8 @@ services:
           memory: 8G
     # GPU: add deploy via docker-compose.compute.yml (run scripts/detect_hardware.py)
     # Pin digest: OLLAMA_IMAGE=ollama/ollama:0.17.4@sha256:1edb4ab90ebbe34b484bb120ab8de22601f463834bfeca7f5a2de2ca6dad13ee
+    networks:
+      - backend
 
   model-gateway:
     build: ./model-gateway
@@ -31,6 +33,11 @@ services:
     pull_policy: build
     restart: unless-stopped
     user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     depends_on:
       ollama:
         condition: service_healthy
@@ -41,6 +48,7 @@ services:
       - VLLM_URL=${VLLM_URL:-}
       - DEFAULT_PROVIDER=ollama
       - DASHBOARD_URL=http://dashboard:8080
+      - MODEL_CACHE_TTL_SEC=${MODEL_CACHE_TTL_SEC:-60}
     ports:
       - "${MODEL_GATEWAY_PORT:-11435}:11435"
     healthcheck:
@@ -57,12 +65,17 @@ services:
       options:
         max-size: "10m"
         max-file: "3"
+    networks:
+      - frontend
+      - backend
 
   ops-controller:
     build: ./ops-controller
     image: ai-toolkit-ops-controller:latest
     pull_policy: build
     restart: unless-stopped
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     deploy:
       resources:
         limits:
@@ -89,11 +102,18 @@ services:
         max-size: "10m"
         max-file: "3"
     # No host port - dashboard calls internally. Add "9000:9000" for debugging.
+    networks:
+      - backend
 
   dashboard:
     build: ./dashboard
     restart: unless-stopped
     user: "1000:1000"
+    read_only: true
+    tmpfs:
+      - /tmp
+    cap_drop: [ALL]
+    security_opt: [no-new-privileges:true]
     depends_on:
       ollama:
         condition: service_healthy
@@ -120,6 +140,7 @@ services:
       - MODELS_DIR=/models
       - SCRIPTS_DIR=/scripts
       - MCP_CONFIG_PATH=/mcp-config/servers.txt
+      - MCP_GATEWAY_URL=http://mcp-gateway:8811
       - MCP_GATEWAY_SERVERS=${MCP_GATEWAY_SERVERS:-duckduckgo}
       - OPS_CONTROLLER_URL=http://ops-controller:9000
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
@@ -129,6 +150,9 @@ services:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
+    networks:
+      - frontend
+      - backend
 
   open-webui:
     image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.4}
@@ -148,12 +172,15 @@ services:
       timeout: 10s
       retries: 3
     environment:
-      # Use model gateway for OpenAI-compatible API, or Ollama directly
+      # Use model gateway for OpenAI-compatible API (recommended), or Ollama directly
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
-      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
-      - WEBUI_AUTH=False
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-http://model-gateway:11435/v1}
+      # Auth: True by default. Set WEBUI_AUTH=False in .env for single-user local use.
+      - WEBUI_AUTH=${WEBUI_AUTH:-True}
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data
+    networks:
+      - frontend
 
   model-puller:
     profiles: [models]
@@ -180,6 +207,8 @@ services:
             -d "{\"model\":\"$$m\",\"stream\":false}"
         done
         echo "Done."
+    networks:
+      - backend
 
   comfyui-model-puller:
     profiles: [comfyui-models]
@@ -191,6 +220,8 @@ services:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
     command: ["python3", "/scripts/comfyui/pull_comfyui_models.py"]
+    networks:
+      - frontend
 
   comfyui:
     image: ${COMFYUI_IMAGE:-yanwk/comfyui-boot:cpu}
@@ -208,6 +239,11 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       - CLI_ARGS=--cpu
       - PYTORCH_CUDA_ALLOC_CONF=
@@ -215,6 +251,8 @@ services:
       - ${BASE_PATH:-.}/data/comfyui-storage:/root
       - ${BASE_PATH:-.}/models/comfyui:/root/ComfyUI/models
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/root/ComfyUI/output
+    networks:
+      - frontend
 
   n8n:
     image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n}
@@ -232,12 +270,19 @@ services:
       interval: 30s
       timeout: 10s
       retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
+    networks:
+      - frontend
 
   mcp-gateway:
     build: ./mcp
@@ -270,6 +315,8 @@ services:
     # Optional: mount secrets for MCPs that need API keys (e.g. github-official, brave)
     # secrets: [mcp_secrets]
     # Uncomment and create mcp/.env with GITHUB_PERSONAL_ACCESS_TOKEN etc.
+    networks:
+      - frontend
 
   openclaw-workspace-sync:
     image: alpine:3
@@ -278,6 +325,8 @@ services:
       - ${BASE_PATH:-.}/openclaw/workspace:/templates:ro
       - ${OPENCLAW_WORKSPACE_DIR:-${BASE_PATH:-.}/data/openclaw/workspace}:/workspace
     entrypoint: ["/bin/sh", "-c", "cp -f /templates/SOUL.md /templates/AGENTS.md /templates/TOOLS.md /workspace/ 2>/dev/null || true"]
+    networks:
+      - frontend
 
   openclaw-config-sync:
     image: python:3.12-alpine
@@ -286,6 +335,20 @@ services:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
       - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
     entrypoint: ["python3", "/scripts/merge_gateway_config.py"]
+    networks:
+      - frontend
+
+  # Install MCP bridge plugin into mounted config (image entrypoint runs openclaw correctly).
+  openclaw-plugin-install:
+    image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
+    restart: "no"
+    environment:
+      HOME: /home/node
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/home/node/.openclaw
+    command: ["plugins", "install", "openclaw-mcp-bridge", "--pin"]
+    networks:
+      - frontend
 
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
@@ -300,6 +363,8 @@ services:
       openclaw-workspace-sync:
         condition: service_completed_successfully
       openclaw-config-sync:
+        condition: service_completed_successfully
+      openclaw-plugin-install:
         condition: service_completed_successfully
     env_file:
       - .env
@@ -322,7 +387,25 @@ services:
     tty: true
     init: true
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 2G
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:18789"]
+      start_period: 60s
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     command: ["gateway", "--allow-unconfigured"]
+    networks:
+      - frontend
+      - backend
 
   openclaw-cli:
     profiles: [openclaw-cli]
@@ -346,3 +429,11 @@ services:
     tty: true
     init: true
     entrypoint: ["node", "/app/dist/index.js"]
+    networks:
+      - frontend
+
+networks:
+  frontend:
+    name: ai-toolkit-frontend
+  backend:
+    name: ai-toolkit-backend

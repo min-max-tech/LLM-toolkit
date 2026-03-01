@@ -22,7 +22,7 @@ Don't exfiltrate private data. Don't run destructive commands without asking. Wh
 
 MCP tools at `http://mcp-gateway:8811/mcp` — web search (DuckDuckGo), fetch, GitHub, etc. Controller-side. Add/remove via dashboard at localhost:8080.
 
-**Web search:** Use the MCP gateway tools (e.g. DuckDuckGo) for search. Do not prompt for Brave Search API, Google API, or other search API keys — search is already provided by the MCP gateway. Call the appropriate MCP tool (e.g. duckduckgo) for web search.
+**Web search:** Use the MCP gateway tools (e.g. DuckDuckGo) for search. Search is already provided by the MCP gateway. When the user asks for news, headlines, or "find X", **call the MCP search tool immediately** with a concrete query (e.g. "AI news March 1 2026"), then summarize the results in your reply.
 
 Local notes (cameras, SSH, TTS) go in `TOOLS.md`.
 

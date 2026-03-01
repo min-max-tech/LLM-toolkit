@@ -1,0 +1,2 @@
+# Ensure shell scripts use LF so they run in Linux containers
+openclaw/scripts/docker-entrypoint.sh text eol=lf

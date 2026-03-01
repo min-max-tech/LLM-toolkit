@@ -51,6 +51,11 @@ Audit events record privileged actions (service lifecycle, model ops, MCP change
 {"ts":"2025-02-28T12:36:00.000Z","action":"logs","resource":"model-gateway","actor":"dashboard","result":"ok","correlation_id":"req-abc123"}
 ```
 
+**With metadata (e.g. logs tail count):**
+```json
+{"ts":"2025-02-28T12:37:00.000Z","action":"logs","resource":"dashboard","actor":"dashboard","result":"ok","detail":"","correlation_id":"req-xyz","metadata":{"tail":100}}
+```
+
 ## Storage
 
 - **Path:** `data/ops-controller/audit.log`

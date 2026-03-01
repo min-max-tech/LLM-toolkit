@@ -3,7 +3,7 @@ from __future__ import annotations
 
 import json
 import os
-from datetime import datetime
+from datetime import datetime, timezone
 from pathlib import Path
 
 import docker
@@ -46,12 +46,13 @@ def _audit(
     result: str = "ok",
     detail: str = "",
     correlation_id: str = "",
+    metadata: dict | None = None,
 ):
     """Append to audit log. Schema: docs/audit/SCHEMA.md."""
     try:
         AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         entry = {
-            "ts": datetime.utcnow().isoformat() + "Z",
+            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
             "action": action,
             "resource": resource or "",
             "actor": "dashboard",
@@ -60,6 +61,8 @@ def _audit(
         }
         if correlation_id:
             entry["correlation_id"] = correlation_id
+        if metadata:
+            entry["metadata"] = metadata
         with open(AUDIT_LOG_PATH, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception:
@@ -120,8 +123,16 @@ class ConfirmBody(BaseModel):
     dry_run: bool = False
 
 
+def _correlation_id(request: Request) -> str:
+    """Extract X-Request-ID for audit correlation."""
+    return (request.headers.get("X-Request-ID") or "").strip()
+
+
 @app.post("/services/{service_id}/start")
-async def service_start(service_id: str, body: ConfirmBody, _: None = Depends(verify_token)):
+async def service_start(
+    service_id: str, body: ConfirmBody, request: Request,
+    _: None = Depends(verify_token),
+):
     if service_id not in ALLOWED_SERVICES:
         raise HTTPException(status_code=400, detail=f"Service {service_id} not in allowlist")
     if body.dry_run:
@@ -137,14 +148,20 @@ async def service_start(service_id: str, body: ConfirmBody, _: None = Depends(ve
             c.start()
         except Exception as e:
             errs.append(str(e))
-    _audit("start", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "")
+    _audit(
+        "start", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "",
+        correlation_id=_correlation_id(request),
+    )
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "service": service_id, "action": "started"}
 
 
 @app.post("/services/{service_id}/stop")
-async def service_stop(service_id: str, body: ConfirmBody, _: None = Depends(verify_token)):
+async def service_stop(
+    service_id: str, body: ConfirmBody, request: Request,
+    _: None = Depends(verify_token),
+):
     if service_id not in ALLOWED_SERVICES:
         raise HTTPException(status_code=400, detail=f"Service {service_id} not in allowlist")
     if body.dry_run:
@@ -160,14 +177,20 @@ async def service_stop(service_id: str, body: ConfirmBody, _: None = Depends(ver
             c.stop(timeout=30)
         except Exception as e:
             errs.append(str(e))
-    _audit("stop", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "")
+    _audit(
+        "stop", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "",
+        correlation_id=_correlation_id(request),
+    )
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "service": service_id, "action": "stopped"}
 
 
 @app.post("/services/{service_id}/restart")
-async def service_restart(service_id: str, body: ConfirmBody, _: None = Depends(verify_token)):
+async def service_restart(
+    service_id: str, body: ConfirmBody, request: Request,
+    _: None = Depends(verify_token),
+):
     if service_id not in ALLOWED_SERVICES:
         raise HTTPException(status_code=400, detail=f"Service {service_id} not in allowlist")
     if body.dry_run:
@@ -183,28 +206,39 @@ async def service_restart(service_id: str, body: ConfirmBody, _: None = Depends(
             c.restart(timeout=30)
         except Exception as e:
             errs.append(str(e))
-    _audit("restart", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "")
+    _audit(
+        "restart", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "",
+        correlation_id=_correlation_id(request),
+    )
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "service": service_id, "action": "restarted"}
 
 
 @app.get("/services/{service_id}/logs")
-async def service_logs(service_id: str, tail: int = 100, _: None = Depends(verify_token)):
+async def service_logs(
+    service_id: str, request: Request, tail: int = 100,
+    _: None = Depends(verify_token),
+):
     """Tail service logs. Auth required."""
     if service_id not in ALLOWED_SERVICES:
         raise HTTPException(status_code=400, detail=f"Service {service_id} not in allowlist")
     containers = _containers_for_service(service_id)
     if not containers:
         raise HTTPException(status_code=404, detail=f"No container found for service {service_id}")
+    tail_n = min(tail, 500)
     lines = []
     for c in containers:
         try:
-            out = c.logs(tail=min(tail, 500), timestamps=True).decode("utf-8", errors="replace")
+            out = c.logs(tail=tail_n, timestamps=True).decode("utf-8", errors="replace")
             lines.append(f"=== {c.name} ===\n{out}")
         except Exception as e:
             lines.append(f"=== {c.name} ===\nError: {e}")
-    _audit("logs", service_id, "ok", "")
+    _audit(
+        "logs", service_id, "ok", "",
+        correlation_id=_correlation_id(request),
+        metadata={"tail": tail_n},
+    )
     return {"logs": "\n".join(lines), "service": service_id}
 
 
@@ -213,7 +247,7 @@ class PullBody(BaseModel):
 
 
 @app.post("/images/pull")
-async def images_pull(body: PullBody, _: None = Depends(verify_token)):
+async def images_pull(body: PullBody, request: Request, _: None = Depends(verify_token)):
     svcs = [s for s in body.services if s in ALLOWED_SERVICES]
     if not svcs:
         raise HTTPException(status_code=400, detail="No allowed services specified")
@@ -225,7 +259,10 @@ async def images_pull(body: PullBody, _: None = Depends(verify_token)):
                 c.image.pull()
             except Exception as e:
                 errs.append(f"{svc}: {e}")
-    _audit("pull", ",".join(svcs), "error" if errs else "ok", "; ".join(errs) if errs else "")
+    _audit(
+        "pull", ",".join(svcs), "error" if errs else "ok", "; ".join(errs) if errs else "",
+        correlation_id=_correlation_id(request),
+    )
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "services": svcs}
