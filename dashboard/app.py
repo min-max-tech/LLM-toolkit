@@ -94,6 +94,28 @@ async def ollama_models():
             return {"models": [], "ok": False, "error": str(e)}
 
 
+@app.post("/api/ollama/delete")
+async def ollama_delete(req: PullRequest):
+    """Delete an Ollama model. model can include tag (e.g. llama3.2 or deepseek-r1:7b)."""
+    name = (req.model or "").strip()
+    if not name or "/" in name or ".." in name:
+        raise HTTPException(status_code=400, detail="Invalid model name")
+    async with AsyncClient(timeout=60.0) as client:
+        try:
+            r = await client.delete(
+                f"{OLLAMA_URL.rstrip('/')}/api/delete",
+                json={"name": name},
+            )
+            if r.status_code == 404:
+                raise HTTPException(status_code=404, detail=f"Model '{name}' not found")
+            r.raise_for_status()
+            return {"ok": True, "message": f"Model '{name}' deleted"}
+        except HTTPException:
+            raise
+        except Exception as e:
+            raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}")
+
+
 @app.post("/api/ollama/pull")
 async def ollama_pull(req: PullRequest):
     """Stream Ollama model pull progress."""
@@ -166,6 +188,28 @@ def _run_comfyui_pull():
     finally:
         _comfyui_status["running"] = False
         _comfyui_status["done"] = True
+
+
+COMFYUI_CATEGORIES = ("checkpoints", "loras", "text_encoders", "latent_upscale_models")
+
+
+@app.delete("/api/comfyui/models/{category}/{filename:path}")
+async def comfyui_delete(category: str, filename: str):
+    """Delete a ComfyUI model file. category: checkpoints, loras, text_encoders, latent_upscale_models."""
+    if category not in COMFYUI_CATEGORIES:
+        raise HTTPException(status_code=400, detail=f"Invalid category. Must be one of: {COMFYUI_CATEGORIES}")
+    if not filename or ".." in filename or "/" in filename or "\\" in filename:
+        raise HTTPException(status_code=400, detail="Invalid filename")
+    path = MODELS_DIR / category / filename
+    if not path.exists():
+        raise HTTPException(status_code=404, detail=f"Model '{filename}' not found in {category}")
+    if not path.is_file():
+        raise HTTPException(status_code=400, detail="Not a file")
+    try:
+        path.unlink()
+        return {"ok": True, "message": f"Deleted {category}/{filename}"}
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
 
 
 @app.get("/api/comfyui/models")

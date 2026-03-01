@@ -552,6 +552,20 @@
     .model-item:hover { background: var(--surface-hover); }
     .model-item .name { color: var(--fg); }
     .model-item .meta { color: var(--muted); font-size: var(--text-xs); }
+    .btn-model-delete {
+      flex-shrink: 0;
+      width: 24px;
+      height: 24px;
+      padding: 0;
+      border: none;
+      background: transparent;
+      color: var(--muted);
+      font-size: 18px;
+      line-height: 1;
+      cursor: pointer;
+      border-radius: var(--radius-sm);
+    }
+    .btn-model-delete:hover { color: var(--danger); background: var(--surface-hover); }
     .model-category { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: 0.05em; color: var(--muted); margin-top: var(--space-1); }
     .pull-area {
       padding: var(--space-4) var(--space-5);
@@ -1286,8 +1300,9 @@
         document.getElementById('ollama-last-updated').textContent = 'Updated ' + new Date().toLocaleTimeString();
         el.innerHTML = ollamaModels.map(m => `
           <div class="model-item">
-            <span class="name">${m.name}</span>
+            <span class="name">${escapeHtml(m.name)}</span>
             <span class="meta">${formatSize(m.size || 0)}</span>
+            <button type="button" class="btn-model-delete" data-model="${escapeHtml(m.name)}" title="Delete model" aria-label="Delete ${escapeHtml(m.name)}">×</button>
           </div>
         `).join('');
         populateThroughputModelSelect();
@@ -1474,10 +1489,11 @@
           ${models.map(m => `
             <div class="model-item">
               <div>
-                <span class="name">${m.name}</span>
-                <div class="model-category">${cat.replace(/_/g, ' ')}</div>
+                <span class="name">${escapeHtml(m.name)}</span>
+                <div class="model-category">${escapeHtml(cat.replace(/_/g, ' '))}</div>
               </div>
               <span class="meta">${m.size_mb} MB</span>
+              <button type="button" class="btn-model-delete" data-category="${escapeHtml(cat)}" data-filename="${escapeHtml(m.name)}" title="Delete model" aria-label="Delete ${escapeHtml(m.name)}">×</button>
             </div>
           `).join('')}
         `).join('');
@@ -1767,6 +1783,54 @@
 
     document.getElementById('refresh-btn').onclick = refresh;
     document.getElementById('throughput-run-btn').onclick = runThroughputBenchmark;
+
+    document.getElementById('ollama-models')?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.btn-model-delete[data-model]');
+      if (!btn) return;
+      e.preventDefault();
+      const model = btn.dataset.model;
+      if (!model || !confirm(`Delete Ollama model "${model}"? This cannot be undone.`)) return;
+      btn.disabled = true;
+      try {
+        const r = await api('/api/ollama/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+        const d = await r.json();
+        if (r.ok) {
+          toast(d.message || 'Model deleted');
+          loadOllamaModels();
+          loadThroughputStats();
+        } else {
+          toast((d.detail || 'Delete failed') + '', 'error');
+        }
+      } catch (err) {
+        toast('Delete failed: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
+    document.getElementById('comfyui-models')?.addEventListener('click', async (e) => {
+      const btn = e.target.closest('.btn-model-delete[data-category]');
+      if (!btn) return;
+      e.preventDefault();
+      const cat = btn.dataset.category;
+      const filename = btn.dataset.filename;
+      if (!cat || !filename || !confirm(`Delete ComfyUI model "${filename}" from ${cat}? This cannot be undone.`)) return;
+      btn.disabled = true;
+      try {
+        const r = await api('/api/comfyui/models/' + encodeURIComponent(cat) + '/' + encodeURIComponent(filename), { method: 'DELETE' });
+        const d = await r.json();
+        if (r.ok) {
+          toast(d.message || 'Model deleted');
+          loadComfyuiModels();
+        } else {
+          toast((d.detail || 'Delete failed') + '', 'error');
+        }
+      } catch (err) {
+        toast('Delete failed: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById('rebuild-hint').onclick = () => {
       const cmd = 'docker compose build dashboard; docker compose up -d';
