@@ -10,7 +10,7 @@ Snapshot of the AI-toolkit repo for context and onboarding. See [docs/ARCHITECTU
 
 | Service | Port (host) | Role | Networks |
 |--------|-------------|------|----------|
-| ollama | 11434 | LLM inference (Ollama API) | backend |
+| ollama | — (optional: use -f docker-compose.ollama-expose.yml) | LLM inference (Ollama API) | backend |
 | model-gateway | 11435 | OpenAI-compatible proxy (Ollama + vLLM) | frontend, backend |
 | ops-controller | — (internal) | Start/stop/restart/logs/audit; docker.sock | backend |
 | dashboard | 8080 | Model/MCP/ops UI; no docker.sock | frontend, backend |
@@ -33,7 +33,7 @@ Snapshot of the AI-toolkit repo for context and onboarding. See [docs/ARCHITECTU
 |------|---------|
 | `data/mcp/servers.txt` | Enabled MCP servers (comma-separated); hot-reload |
 | `data/mcp/registry.json` | MCP server metadata (scopes, allow_clients, env_schema) |
-| `data/ops-controller/audit.log` | JSONL audit log (privileged actions) |
+| `data/ops-controller/audit.log` | JSONL audit log (privileged actions); rotates at 10MB to `audit.log.1` |
 | `data/openclaw/` | OpenClaw config and workspace (gitignored) |
 | `.env` | Secrets and overrides (gitignored); copy from .env.example |
 
@@ -72,7 +72,7 @@ Run: `python -m pytest tests/ -v`
 | M2 | ✅ | Ops Controller + dashboard integration |
 | M3 | ✅ | MCP registry, cap_drop/read_only, model cache, Open WebUI default |
 | M4 | ✅ | Networks, X-Request-ID → audit, vLLM profile, smoke tests |
-| M5 | 🔲 | Dashboard MCP health badges in UI; optional SSRF script; policy tests |
+| M5 | 🔶 Partial | MCP health badges (green/yellow/red dots) + SSRF script; policy tests pending |
 
 ---
 

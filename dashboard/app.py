@@ -419,13 +419,23 @@ def _read_mcp_registry() -> dict:
 MCP_GATEWAY_URL = os.environ.get("MCP_GATEWAY_URL", "http://mcp-gateway:8811")
 
 
+def _mcp_catalog_from_registry() -> list[str]:
+    """Build catalog from registry.json when present; otherwise use MCP_CATALOG."""
+    reg = _read_mcp_registry()
+    keys = list(reg.get("servers", {}).keys())
+    if keys:
+        return sorted(keys)
+    return MCP_CATALOG.copy()
+
+
 @app.get("/api/mcp/servers")
 async def mcp_servers():
     """List enabled MCP servers and catalog for adding."""
     servers = _read_mcp_servers()
     dynamic = _mcp_config_path() is not None
     registry = _read_mcp_registry()
-    return {"enabled": servers, "catalog": MCP_CATALOG, "dynamic": dynamic, "registry": registry, "ok": True}
+    catalog = _mcp_catalog_from_registry()
+    return {"enabled": servers, "catalog": catalog, "dynamic": dynamic, "registry": registry, "ok": True}
 
 
 @app.get("/api/mcp/health")
@@ -436,7 +446,10 @@ async def mcp_health():
     gateway_error = ""
     try:
         async with AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{MCP_GATEWAY_URL.rstrip('/')}/mcp")
+            r = await client.get(
+                f"{MCP_GATEWAY_URL.rstrip('/')}/mcp",
+                headers={"X-Client-ID": "dashboard"},
+            )
             gateway_ok = r.status_code < 500
             if not gateway_ok:
                 gateway_error = f"HTTP {r.status_code}"
