@@ -464,6 +464,6 @@ networks:
     name: ai-toolkit-frontend
   backend:
     name: ai-toolkit-backend
-    # Backend-only containers (ollama, ops-controller) have no outbound internet.
-    # If DNS or healthchecks fail, set internal: false or see docs/runbooks/SECURITY_HARDENING.md
-    internal: true
+    # internal: false required for Ollama to pull models from registry.ollama.ai.
+    # Set internal: true for air-gapped security (model pulls will fail).
+    internal: false
