@@ -176,6 +176,14 @@ services:
       - ${OPENCLAW_WORKSPACE_DIR:-${BASE_PATH:-.}/data/openclaw/workspace}:/workspace
     entrypoint: ["/bin/sh", "-c", "cp -f /templates/SOUL.md /templates/AGENTS.md /templates/TOOLS.md /workspace/ 2>/dev/null || true"]
 
+  openclaw-config-sync:
+    image: python:3.12-alpine
+    restart: "no"
+    volumes:
+      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
+      - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
+    entrypoint: ["python3", "/scripts/merge_gateway_config.py"]
+
   openclaw-gateway:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
     container_name: openclaw-gateway
@@ -187,6 +195,8 @@ services:
       mcp-gateway:
         condition: service_started
       openclaw-workspace-sync:
+        condition: service_completed_successfully
+      openclaw-config-sync:
         condition: service_completed_successfully
     env_file:
       - openclaw/.env
