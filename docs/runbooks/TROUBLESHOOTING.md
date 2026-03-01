@@ -169,6 +169,11 @@ curl -s http://localhost:8811/mcp
 - **Cause:** Some OpenClaw versions do not support a top-level `mcp` key in `openclaw.json`. Adding it can make the gateway reject the config and fail WebSocket connections (code 4008).
 - **Fix:** Remove the `mcp` block from `data/openclaw/openclaw.json` if present. Use the **openclaw-mcp-bridge** plugin instead: add the plugin config under `plugins.entries` in `openclaw.json` as described in [mcp/README.md](../../mcp/README.md#openclaw). This repo’s `data/openclaw/openclaw.json` is pre-configured with the plugin pointing at `http://mcp-gateway:8811`. See [openclaw/README.md](../../openclaw/README.md).
 
+### openclaw-plugin-install fails (plugin manifest not found / exit 1)
+
+- **Cause:** The `openclaw-mcp-bridge` npm package (v0.1.0) omits `openclaw.plugin.json` from its published files, so OpenClaw 2026.2.x fails validation. The gateway **still starts** (it no longer blocks on plugin-install).
+- **Fix:** The stack runs without MCP tools in OpenClaw. To enable MCP, install from source or wait for an npm update. See [mcp/README.md](../../mcp/README.md#openclaw). Then add the plugin config and `docker compose restart openclaw-gateway`.
+
 ## Escalation
 
 - **Security**: See [SECURITY.md](../../SECURITY.md) (pre-deploy checklist, break-glass)
