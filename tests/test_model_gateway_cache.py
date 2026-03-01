@@ -134,6 +134,7 @@ def _streaming_client():
         yield '{"message": {"role": "assistant", "content": "Hi there"}, "done": true, "eval_count": 2, "eval_duration": 500000000}'
 
     fake_resp = MagicMock()
+    fake_resp.status_code = 200  # Required for resp.status_code >= 400 check in main.py
     fake_resp.aiter_lines = fake_aiter_lines
     fake_resp.__aenter__ = AsyncMock(return_value=fake_resp)
     fake_resp.__aexit__ = AsyncMock(return_value=None)
