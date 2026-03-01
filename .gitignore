@@ -1,6 +1,5 @@
 .env
 .env.compute
-openclaw/.env
 mcp/.env
 docker-compose.compute.yml
 models/

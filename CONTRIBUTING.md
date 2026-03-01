@@ -11,8 +11,8 @@ Thank you for your interest in contributing.
 
 ## Security Notes for Contributors
 
-- **Never commit secrets.** Do not add `.env`, `openclaw/.env`, API keys, tokens, or credentials to the repository.
-- Use `.env.example` and `openclaw/.env.example` as templates with placeholder values only.
+- **Never commit secrets.** Do not add `.env`, API keys, tokens, or credentials to the repository.
+- Use `.env.example` as the template with placeholder values only.
 - If you need to test with real credentials, use local `.env` files (gitignored) and never push them.
 
 ## What We Accept

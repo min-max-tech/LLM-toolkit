@@ -313,7 +313,7 @@ SERVICES = [
      "hint": "Check: docker compose logs n8n"},
     {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789",
      "check": "http://host.docker.internal:18789/",
-     "hint": "Run ensure_dirs.ps1 (Windows) or ensure_dirs.sh (Linux/Mac) to create openclaw/.env. Check: docker compose logs openclaw-gateway"},
+     "hint": "Run ensure_dirs.ps1 (Windows) or ensure_dirs.sh (Linux/Mac) to ensure .env has OPENCLAW_GATEWAY_TOKEN. Check: docker compose logs openclaw-gateway"},
 ]
 
 

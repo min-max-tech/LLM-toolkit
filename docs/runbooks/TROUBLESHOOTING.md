@@ -121,11 +121,11 @@ curl -s http://localhost:8811/mcp
    Wait until logs show the gateway is listening (e.g. `docker compose logs -f openclaw-gateway`).
 
 3. **Re-pair clients** as needed:
-   - **Browser:** Open the gateway URL (e.g. http://localhost:18789) in a private/incognito window or clear site data for that URL, then reconnect and paste the gateway token from `openclaw/.env` (`OPENCLAW_GATEWAY_TOKEN`). Approve the device if prompted.
+   - **Browser:** Open the gateway URL (e.g. http://localhost:18789) in a private/incognito window or clear site data for that URL, then reconnect and paste the gateway token from the project root `.env` (`OPENCLAW_GATEWAY_TOKEN`). Approve the device if prompted.
    - **Agent backend:** Reconnect from the agent (e.g. Cursor / OpenClaw integration); if it shows a new device/pairing request, approve it (see step 4).
 
 4. **Optional — list/approve/remove devices:**  
-   When running the CLI via Docker, the CLI uses local discovery and hits the wrong host. Use the helper script (from repo root), which passes `--url ws://openclaw-gateway:18789` and `--token` from `openclaw/.env`:
+   When running the CLI via Docker, the CLI uses local discovery and hits the wrong host. Use the helper script (from repo root), which passes `--url ws://openclaw-gateway:18789` and `--token` from the project root `.env`:
    ```powershell
    .\openclaw\scripts\run-cli.ps1 devices list
    # Approve a pending device (replace DEVICE_ID with the actual id from the list):
@@ -135,7 +135,13 @@ curl -s http://localhost:8811/mcp
    ```
    If you see `gateway closed (1006)` or "Gateway target: ws://172.18.0.x", you are not using the script (or the script failed to read the token). Use `run-cli.ps1` so the CLI targets the gateway container.
 
-**Prevention:** Pin the gateway token so it does not change on restart: set `OPENCLAW_GATEWAY_TOKEN` in `openclaw/.env` and keep it unchanged. See [ClawTank: device token mismatch](https://clawtank.dev/blog/openclaw-device-token-mismatch-fix).
+**Prevention:** Pin the gateway token so it does not change on restart: set `OPENCLAW_GATEWAY_TOKEN` in the project root `.env` and keep it unchanged. See [ClawTank: device token mismatch](https://clawtank.dev/blog/openclaw-device-token-mismatch-fix).
+
+### OpenClaw browser tool: agent stuck in a loop ("Opening browser..." / "Navigating...")
+
+**Cause:** Known OpenClaw bug: the browser tool schema marks `targetUrl` as optional, but the runtime requires it for `open` and `navigate`. The agent omits `targetUrl`, gets "targetUrl required", and retries repeatedly (often for minutes).
+
+**Fix:** Ensure the agent always passes `targetUrl` when using the browser tool. In this repo, `openclaw/workspace/AGENTS.md` instructs the agent to always pass `targetUrl` for browser open/navigate. If the agent still loops, try phrasing the user request so the URL is explicit (e.g. "Open https://www.ai-ml-news.com/today and summarize the top AI headlines") or use MCP web search (DuckDuckGo) instead for news lookup. Upstream: [openclaw/openclaw#14700](https://github.com/openclaw/openclaw/issues/14700), [#19964](https://github.com/openclaw/openclaw/issues/19964).
 
 ## Log Locations
 

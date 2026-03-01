@@ -36,7 +36,7 @@ Services bind to `0.0.0.0` to allow access from other machines on your network. 
 
 ### Secrets
 
-- **Never commit** `.env`, `openclaw/.env`, or `mcp/.env`. They are gitignored.
+- **Never commit** `.env` or `mcp/.env`. They are gitignored.
 - Use `.env.example` as a template; copy to `.env` and fill in values locally.
 - API keys (OpenAI, Anthropic, etc.) and tokens should only live in `.env` files, never in the repository.
 
@@ -47,8 +47,8 @@ All runtime data is stored under `BASE_PATH/data/` via bind mounts. Ensure appro
 ## Pre-deployment checklist
 
 - [ ] `OPS_CONTROLLER_TOKEN` set (generate: `openssl rand -hex 32`)
-- [ ] `OPENCLAW_GATEWAY_TOKEN` set in `openclaw/.env`
-- [ ] `.env` and `openclaw/.env` not committed (in `.gitignore`)
+- [ ] `OPENCLAW_GATEWAY_TOKEN` set in project root `.env`
+- [ ] `.env` not committed (in `.gitignore`)
 - [ ] Ops controller port (9000) not exposed to host/network
 - [ ] Dashboard bound to localhost or Tailscale-only when multi-user
 

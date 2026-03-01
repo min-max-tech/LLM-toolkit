@@ -31,6 +31,4 @@ jobs:
           # Create minimal .env for validation (BASE_PATH required)
           echo "BASE_PATH=." > .env
           echo "OPENCLAW_GATEWAY_TOKEN=placeholder-for-ci" >> .env
-          mkdir -p openclaw
-          cp openclaw/.env.example openclaw/.env 2>/dev/null || true
           docker compose config

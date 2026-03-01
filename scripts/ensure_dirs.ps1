@@ -31,29 +31,35 @@ if (-not (Test-Path $openclawConfig) -and (Test-Path $openclawConfigExample)) {
     Write-Host "OK openclaw config (Ollama provider)"
 }
 
-# Ensure openclaw/.env exists with a valid token (required for OpenClaw service)
-$openclawEnv = Join-Path $base "openclaw\.env"
-$openclawExample = Join-Path $base "openclaw\.env.example"
-$needsCreate = -not (Test-Path $openclawEnv)
+# Ensure root .env has OPENCLAW_GATEWAY_TOKEN (required for OpenClaw service)
+$rootEnv = Join-Path $base ".env"
+$rootExample = Join-Path $base ".env.example"
+$needsCreate = -not (Test-Path $rootEnv)
 $needsToken = $false
-if ((Test-Path $openclawEnv)) {
-    $existing = Get-Content $openclawEnv -Raw -ErrorAction SilentlyContinue
-    $needsToken = $existing -and $existing -match 'change-me-to-a-long-random-token'
+if ((Test-Path $rootEnv)) {
+    $existing = Get-Content $rootEnv -Raw -ErrorAction SilentlyContinue
+    $needsToken = $existing -and ($existing -match 'OPENCLAW_GATEWAY_TOKEN=change-me|OPENCLAW_GATEWAY_TOKEN=\s*$' -or -not ($existing -match 'OPENCLAW_GATEWAY_TOKEN=.+'))
 }
 if ($needsCreate -or $needsToken) {
     $token = -join ((1..32 | ForEach-Object { '{0:x2}' -f (Get-Random -Maximum 256) }))
-    $content = if (Test-Path $openclawExample) { Get-Content $openclawExample -Raw } else { $null }
-    if ($content) {
-        $content = $content -replace 'OPENCLAW_GATEWAY_TOKEN=change-me-to-a-long-random-token', "OPENCLAW_GATEWAY_TOKEN=$token"
-        $content = $content -replace 'BASE_PATH=[^\r\n]*', "BASE_PATH=$($base -replace '\\', '/')"
-        Set-Content -Path $openclawEnv -Value $content -NoNewline
+    if ($needsCreate -and (Test-Path $rootExample)) {
+        Copy-Item $rootExample $rootEnv -Force
+    }
+    if (Test-Path $rootEnv) {
+        $content = Get-Content $rootEnv -Raw
+        if ($content -match 'OPENCLAW_GATEWAY_TOKEN=') {
+            $content = $content -replace 'OPENCLAW_GATEWAY_TOKEN=[^\r\n]*', "OPENCLAW_GATEWAY_TOKEN=$token"
+        } else {
+            $content = $content.TrimEnd() + "`n# OpenClaw gateway auth (pinned; do not change unless re-pairing all devices)`nOPENCLAW_GATEWAY_TOKEN=$token`n"
+        }
+        Set-Content -Path $rootEnv -Value $content -NoNewline
     } else {
-        Set-Content -Path $openclawEnv -Value @"
+        Set-Content -Path $rootEnv -Value @"
 BASE_PATH=$($base -replace '\\', '/')
 OPENCLAW_GATEWAY_TOKEN=$token
 "@
     }
-    Write-Host "OK openclaw/.env ($(if ($needsCreate) { 'created' } else { 'token fixed' }))"
+    Write-Host "OK .env ($(if ($needsCreate) { 'created' } else { 'OPENCLAW_GATEWAY_TOKEN set' }))"
 }
 
 # Auto-detect GPU and generate docker-compose.compute.yml

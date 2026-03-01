@@ -89,7 +89,7 @@ docker compose up -d model-gateway dashboard
 ### OpenClaw
 
 ```bash
-# Update OPENCLAW_IMAGE in openclaw/.env
+# Update OPENCLAW_IMAGE in project root .env (optional)
 docker compose pull openclaw-gateway
 docker compose up -d openclaw-gateway
 ```

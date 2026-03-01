@@ -38,35 +38,37 @@ if [[ ! -f "$openclaw_config" && -f "$openclaw_config_example" ]]; then
   echo "OK openclaw config (Ollama provider)"
 fi
 
-# Ensure openclaw/.env exists with a valid token (required for OpenClaw service)
-openclaw_env="$base/openclaw/.env"
-openclaw_example="$base/openclaw/.env.example"
+# Ensure root .env has OPENCLAW_GATEWAY_TOKEN (required for OpenClaw service)
+root_env="$base/.env"
+root_example="$base/.env.example"
 needs_create=false
 needs_token=false
 
-if [[ ! -f "$openclaw_env" ]]; then
+if [[ ! -f "$root_env" ]]; then
   needs_create=true
-elif grep -q 'change-me-to-a-long-random-token' "$openclaw_env" 2>/dev/null; then
+elif grep -q 'OPENCLAW_GATEWAY_TOKEN=change-me\|^OPENCLAW_GATEWAY_TOKEN=[[:space:]]*$' "$root_env" 2>/dev/null; then
+  needs_token=true
+elif ! grep -q '^OPENCLAW_GATEWAY_TOKEN=[a-zA-Z0-9]' "$root_env" 2>/dev/null; then
   needs_token=true
 fi
 
 if [[ "$needs_create" == "true" || "$needs_token" == "true" ]]; then
   token=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 32)
-  if [[ -f "$openclaw_example" ]]; then
-    while IFS= read -r line; do
-      if [[ "$line" =~ ^BASE_PATH= ]]; then
-        echo "BASE_PATH=$base"
-      elif [[ "$line" =~ change-me-to-a-long-random-token ]]; then
-        echo "OPENCLAW_GATEWAY_TOKEN=$token"
-      else
-        echo "$line"
-      fi
-    done < "$openclaw_example" > "$openclaw_env.tmp"
-    mv "$openclaw_env.tmp" "$openclaw_env"
-  else
-    echo -e "BASE_PATH=$base\nOPENCLAW_GATEWAY_TOKEN=$token" > "$openclaw_env"
+  if [[ "$needs_create" == "true" && -f "$root_example" ]]; then
+    cp "$root_example" "$root_env"
   fi
-  echo "OK openclaw/.env ($([[ "$needs_create" == "true" ]] && echo 'created' || echo 'token fixed'))"
+  if [[ -f "$root_env" ]]; then
+    if grep -q 'OPENCLAW_GATEWAY_TOKEN=' "$root_env" 2>/dev/null; then
+      sed -i.bak "s/^OPENCLAW_GATEWAY_TOKEN=.*/OPENCLAW_GATEWAY_TOKEN=$token/" "$root_env" && rm -f "$root_env.bak"
+    else
+      echo "" >> "$root_env"
+      echo "# OpenClaw gateway auth (pinned; do not change unless re-pairing all devices)" >> "$root_env"
+      echo "OPENCLAW_GATEWAY_TOKEN=$token" >> "$root_env"
+    fi
+  else
+    echo -e "BASE_PATH=$base\nOPENCLAW_GATEWAY_TOKEN=$token" > "$root_env"
+  fi
+  echo "OK .env ($([[ "$needs_create" == "true" ]] && echo 'created' || echo 'OPENCLAW_GATEWAY_TOKEN set'))"
 fi
 
 # Auto-detect GPU and generate docker-compose.compute.yml

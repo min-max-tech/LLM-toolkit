@@ -302,7 +302,7 @@ services:
       openclaw-config-sync:
         condition: service_completed_successfully
     env_file:
-      - openclaw/.env
+      - .env
     environment:
       HOME: /home/node
       TERM: xterm-256color
@@ -331,7 +331,7 @@ services:
       - ollama
       - openclaw-gateway
     env_file:
-      - openclaw/.env
+      - .env
     environment:
       HOME: /home/node
       TERM: xterm-256color

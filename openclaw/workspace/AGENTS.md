@@ -30,3 +30,7 @@ Local notes (cameras, SSH, TTS) go in `TOOLS.md`.
 
 - **config.patch** — For partial config updates. You must pass `raw` as a JSON string of the config fragment to merge (e.g. `{"agents":{"defaults":{"model":{"primary":"gateway/ollama/deepseek-r1:7b"}}}}`). Without `raw`, the tool fails with "missing raw parameter".
 - **restart** — May be disabled (`commands.restart: false`). If so, use the dashboard or `docker compose restart openclaw-gateway` instead.
+
+### Browser tool
+
+- **open / navigate** — The runtime requires `targetUrl` even though the schema may show it as optional. Always pass `targetUrl` with the full URL (e.g. `https://example.com/news`) when calling browser open or navigate. Omitting it causes "targetUrl required" and can put the agent in a retry loop.

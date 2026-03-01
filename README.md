@@ -68,7 +68,7 @@ cp .env.example .env
 
 All services start by default. Open the **dashboard** at [localhost:8080](http://localhost:8080) to manage models and see service status.
 
-**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU); OpenClaw needs `openclaw/.env` (created by step 3). See [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
+**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU); OpenClaw needs `OPENCLAW_GATEWAY_TOKEN` in the project root `.env` (ensure_dirs adds it if missing). See [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
 
 **On-demand commands** (run when you want to pull models):
 - `.\compose.ps1 run --rm model-puller` / `./compose run --rm model-puller` — pull Ollama models from `.env`
@@ -118,7 +118,7 @@ ComfyUI starts independently. LTX-2 models (~60 GB) are downloaded on demand —
 - **Open WebUI** runs with `WEBUI_AUTH=False` by default (no login). Suitable for local/single-user use. If exposing to a network, set `WEBUI_AUTH=True` in the environment.
 - **OpenClaw** requires a gateway token — generate with `openssl rand -hex 32`. For Tailscale-only access, use `docker-compose.openclaw-secure.yml` to bind to localhost. See [openclaw/OPENCLAW_SECURE.md](openclaw/OPENCLAW_SECURE.md).
 - **Ops Controller** requires `OPS_CONTROLLER_TOKEN` for dashboard start/stop/restart. Generate: `openssl rand -hex 32`.
-- Never commit `.env` or `openclaw/.env`. See [SECURITY.md](SECURITY.md) for details.
+- Never commit `.env`. See [SECURITY.md](SECURITY.md) for details.
 
 ## GPU / compute
 

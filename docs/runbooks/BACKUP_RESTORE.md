@@ -40,7 +40,7 @@ docker compose down
 tar -czvf "$ARCHIVE" \
   -C "$BASE_PATH" \
   data \
-  openclaw/.env 2>/dev/null || true
+  .env
 
 # Restart services
 docker compose up -d
@@ -58,7 +58,7 @@ tar -czvf backups/ollama-$(date +%Y%m%d).tar.gz -C "$BASE_PATH" data/ollama
 tar -czvf backups/config-$(date +%Y%m%d).tar.gz \
   -C "$BASE_PATH" \
   data/mcp data/ops-controller data/openclaw \
-  openclaw/.env
+  .env
 ```
 
 ## Restore Procedure

@@ -5,13 +5,13 @@
 param([Parameter(ValueFromRemainingArguments = $true)] $CliArgs)
 $ErrorActionPreference = "Stop"
 $base = if ($env:BASE_PATH) { $env:BASE_PATH -replace '\\', '/' } else { (Resolve-Path (Join-Path $PSScriptRoot "..\..")).Path }
-$envPath = Join-Path $base "openclaw\.env"
+$envPath = Join-Path $base ".env"
 if (-not (Test-Path $envPath)) {
-    Write-Error "openclaw\.env not found at $envPath. Create it from openclaw\.env.example and set OPENCLAW_GATEWAY_TOKEN."
+    Write-Error ".env not found at $envPath. Copy .env.example to .env and set OPENCLAW_GATEWAY_TOKEN."
 }
 $line = Get-Content $envPath -Raw | Select-String -Pattern 'OPENCLAW_GATEWAY_TOKEN=(.+)' -AllMatches
 if (-not $line -or -not $line.Matches.Groups[1].Value) {
-    Write-Error "OPENCLAW_GATEWAY_TOKEN not found in openclaw\.env"
+    Write-Error "OPENCLAW_GATEWAY_TOKEN not found in .env"
 }
 $token = $line.Matches.Groups[1].Value.Trim()
 $gatewayUrl = "ws://openclaw-gateway:18789"
