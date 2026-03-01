@@ -18,58 +18,74 @@
 
 ## SECTION 1 — Current State (Grounded)
 
+*Grounded in the codebase and this document (Section 1) as of 2025-02-28.*
+
 ### Architecture Summary
 
 ```
-┌─────────────────────────────────────────────────────────────────────────────┐
-│  Host                                                                       │
-│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────┐│
-│  │ Open WebUI  │  │   N8N       │  │  OpenClaw   │  │  Cursor / Claude     ││
-│  │ :3000       │  │ :5678       │  │ :18789      │  │  (external)          ││
-│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └──────────┬──────────┘│
-│         │                │                │                     │           │
-│         │ OLLAMA_BASE_URL │ MCP Client    │ OLLAMA + MCP        │ MCP       │
-│         │                 │               │                     │           │
-│  ┌──────▼─────────────────▼───────────────▼─────────────────────▼──────────┐│
-│  │  Docker network: ai-toolkit_default                                      ││
-│  │  ┌──────────────┐  ┌──────────────┐  ┌────────────────────────────────┐ ││
-│  │  │ Ollama       │  │ MCP Gateway  │  │ Dashboard (FastAPI)             │ ││
-│  │  │ :11434       │  │ :8811        │  │ :8080 — models, MCP, services  │ ││
-│  │  │ (native API) │  │ docker.sock  │  │ (no docker.sock)                │ ││
-│  │  └──────────────┘  └──────────────┘  └────────────────────────────────┘ ││
-│  │  ┌──────────────┐  ┌──────────────┐                                     ││
-│  │  │ ComfyUI      │  │ model-puller │                                     ││
-│  │  │ :8188        │  │ (profile)    │                                     ││
-│  │  └──────────────┘  └──────────────┘                                     ││
-│  └─────────────────────────────────────────────────────────────────────────┘│
-└─────────────────────────────────────────────────────────────────────────────┘
+┌─────────────────────────────────────────────────────────────────────────────────┐
+│  Host                                                                           │
+│  ┌─────────────┐  ┌─────────────┐  ┌─────────────┐  ┌─────────────────────────┐│
+│  │ Open WebUI  │  │   N8N       │  │  OpenClaw   │  │  Cursor / Claude        ││
+│  │ :3000       │  │ :5678       │  │ :18789      │  │  (external)             ││
+│  └──────┬──────┘  └──────┬──────┘  └──────┬──────┘  └────────────┬─────────────┘│
+│         │                │                │                      │              │
+│         │ OLLAMA_BASE_URL │ MCP Client    │ gateway provider     │ MCP         │
+│         │ or OPENAI_API  │               │ + MCP gateway        │             │
+│  ┌──────▼────────────────▼────────────────▼──────────────────────▼────────────┐│
+│  │  Docker network: ai-toolkit_default                                          ││
+│  │  ┌────────────────┐  ┌──────────────┐  ┌────────────────┐  ┌────────────┐ ││
+│  │  │ Model Gateway  │  │ MCP Gateway  │  │ Ops Controller  │  │ Dashboard  │ ││
+│  │  │ :11435         │  │ :8811        │  │ :9000 (int)     │  │ :8080      │ ││
+│  │  │ /v1/*          │  │ docker.sock  │  │ docker.sock     │  │ no sock    │ ││
+│  │  └───────┬────────┘  └──────────────┘  └────────────────┘  └─────┬──────┘ ││
+│  │          │                                                          │        ││
+│  │  ┌───────▼────────┐  ┌──────────────┐                              │        ││
+│  │  │ Ollama :11434   │  │ ComfyUI     │  Dashboard → Ops Controller    │        ││
+│  │  │ (native API)    │  │ :8188       │  for restart/logs             │        ││
+│  │  └─────────────────┘  └─────────────┘                               │        ││
+│  └─────────────────────────────────────────────────────────────────────────────┘│
+└─────────────────────────────────────────────────────────────────────────────────┘
 ```
 
-- **Ollama:** Native API at `http://ollama:11434` (no `/v1`). Open WebUI, OpenClaw, N8N each point directly to it.
-- **MCP Gateway:** Docker MCP Gateway with wrapper; reads `data/mcp/servers.txt` (comma-separated server names); reloads every 10s; mounts `docker.sock` to spawn MCP server containers.
-- **Dashboard:** FastAPI app serving static HTML + REST APIs: `/api/ollama/*`, `/api/comfyui/*`, `/api/mcp/*`, `/api/services`. No docker.sock; health checks via HTTP to services.
-- **Compose:** Single `docker-compose.yml`; `compose` / `compose.ps1` run `detect_hardware.py` then `docker compose`; optional `docker-compose.compute.yml` for GPU.
+- **Model Gateway:** Exists. OpenAI-compatible at `http://model-gateway:11435` — `/v1/models`, `/v1/chat/completions`, `/v1/embeddings`. Proxies to Ollama. Records throughput to dashboard.
+- **Ollama:** Native API at `http://ollama:11434`. Open WebUI defaults to it via `OLLAMA_BASE_URL`; OpenClaw has both `ollama` and `gateway` providers.
+- **MCP Gateway:** Docker MCP Gateway + `gateway-wrapper.sh`; reads `data/mcp/servers.txt`; reloads every 10s; mounts `docker.sock`. Does NOT read `registry.json`.
+- **Ops Controller:** Exists. Auth via `OPS_CONTROLLER_TOKEN`; `/services/{id}/restart`, `/logs`, `/audit`; audit log in `data/ops-controller/audit.log`.
+- **Dashboard:** FastAPI — `/api/ollama/*`, `/api/comfyui/*`, `/api/mcp/*`, `/api/services`, `/api/health`, `/api/ops/*`. Restart/Logs buttons when token set. No docker.sock.
+- **Compose:** `compose` / `compose.ps1` run `detect_hardware.py` then `docker compose`; `docker-compose.compute.yml` for GPU.
 
-### What Already Satisfies G1–G3
+### What Already Satisfies G1–G5
 
 | Goal | Current Support |
 |------|-----------------|
-| **G1: Any service → any model** | Partial. All services talk to Ollama directly. No unified endpoint; Open WebUI expects `OLLAMA_BASE_URL`, OpenClaw uses `OLLAMA_BASE_URL` + native API, N8N uses its own model config. No vLLM/OpenAI-compatible provider support. |
-| **G2: Shared tools with policy** | Partial. MCP Gateway shares tools via `http://mcp-gateway:8811/mcp`. Dashboard can add/remove servers via `servers.txt`. No policy (allowlist/denylist per client), no health checks, no scopes. Secrets via `mcp/.env` + Docker secrets (optional, commented out). |
-| **G3: Dashboard as control center** | Partial. Dashboard shows service health (HTTP checks), model inventory, MCP add/remove. No start/stop/restart, no logs tail, no image updates. No auth on dashboard API. |
+| **G1: Any service → any model** | Partial. Model Gateway exists; Open WebUI defaults to Ollama; OpenClaw uses gateway provider. No vLLM/OpenAI-compatible provider. |
+| **G2: Shared tools with policy** | Partial. MCP Gateway shares tools; dashboard add/remove via `servers.txt`. `registry.json.example` exists but gateway does not use it. No policy, health, or scopes. |
+| **G3: Dashboard as control center** | Good. Ops controller + Restart/Logs buttons. No Start/Stop in UI. |
+| **G4: Security + auditing** | Partial. Audit log exists (JSONL); no formal schema; no correlation IDs; dashboard unauthenticated. |
+| **G5: Docker best practices** | Partial. No explicit healthchecks in compose; no non-root; no resource limits. |
 
-### Pain Points / Gaps (Mapped to G1–G3)
+### Pain Points / Gaps (Mapped to G1–G5)
 
 | Gap | Goal | Description |
 |-----|------|-------------|
-| Multiple model endpoints | G1 | Each service configures Ollama separately. Adding vLLM or OpenAI-compatible would require per-service config. |
-| No model router | G1 | No single `/v1/chat/completions` surface; N8N/Open WebUI expect different shapes. |
-| MCP: no policy | G2 | All clients get all tools. No per-tool allowlist, rate limits, or capability scopes. |
-| MCP: no health | G2 | Failing MCP servers stay enabled; no auto-disable. |
-| MCP: secrets UX | G2 | Manual `mcp/.env` + compose secrets; no dashboard UI for secret binding. |
-| No ops control | G3 | Dashboard cannot start/stop/restart services. Users run `docker compose` manually. |
-| No audit | G3 | No record of who did what (model pull, MCP add, service restart). |
-| No dashboard auth | G3 | Dashboard API is unauthenticated; suitable for localhost only. |
+| Open WebUI defaults to Ollama | G1 | `OLLAMA_BASE_URL` default is direct Ollama; `OPENAI_API_BASE` must be set for gateway. |
+| No vLLM provider | G1 | Single provider (Ollama) only. |
+| MCP: registry unused | G2 | `registry.json` exists; gateway wrapper reads only `servers.txt`. No policy enforcement. |
+| MCP: no health | G2 | Failing MCP servers stay enabled. |
+| No Start/Stop in UI | G3 | Controller has start/stop; dashboard only exposes Restart. |
+| Audit schema informal | G4 | Log format ad-hoc; no correlation_id, no export. |
+| No dashboard auth | G4 | Dashboard API unauthenticated. |
+| No Docker hardening | G5 | Missing healthchecks, non-root, resource limits, log rotation. |
+
+### OpenClaw: Current Integration Map
+
+| Aspect | Current State |
+|--------|----------------|
+| **Models** | `openclaw.json` has `gateway` (baseUrl: `http://model-gateway:11435/v1`, api: `openai-completions`) and `ollama` (baseUrl: `http://ollama:11434`, api: `ollama`). `merge_gateway_config.py` adds gateway if missing. |
+| **MCP** | `mcp.servers.gateway` → `http://mcp-gateway:8811/mcp`, transport `streamable-http`. |
+| **Config sync** | `openclaw-config-sync` runs before gateway; merges gateway provider into `data/openclaw/openclaw.json`. |
+| **Networking** | Gateway and MCP reachable via Docker service names. |
 
 ---
 
@@ -234,6 +250,14 @@ Authorization: Bearer <token>
 
 **Safety:** All mutating actions require `confirm: true`. Optional `dry_run: true` returns planned actions without executing.
 
+#### D) Audit Event Pipeline (Schema + Storage + Export)
+
+**Schema:** See WS4. Events written to `data/ops-controller/audit.log` (JSONL, append-only).
+
+**Sources:** Ops controller (restart, start, stop, pull, logs access); future: dashboard (model pull, MCP add/remove), model gateway (optional high-value actions).
+
+**Export:** `GET /audit?limit=50&format=json` (controller). Dashboard can proxy. Optional: `?since=ISO8601` for time-range.
+
 ---
 
 ## SECTION 4 — Workstreams (Detailed)
@@ -258,7 +282,12 @@ Authorization: Bearer <token>
 - Container networking: gateway reaches `ollama:11434`; clients reach `model-gateway:11435`.
 - Auth: gateway optional API key for future; for local-first, none by default.
 - Streaming: proxy streaming responses byte-for-byte.
-- Embeddings: map `/v1/embeddings` to Ollama `/api/embeddings`.
+- Embeddings: map `/v1/embeddings` to Ollama `/api/embed`.
+
+**OpenClaw-specific:**
+- **Config keys:** `models.providers.gateway.baseUrl` = `http://model-gateway:11435/v1`; `api` = `openai-completions`; `headers.X-Service-Name` = `openclaw` (for dashboard throughput tracking).
+- **Backward compat:** `merge_gateway_config.py` adds gateway provider if missing. Existing `ollama` provider remains; users can choose gateway or ollama per model.
+- **Migration:** No breaking change. Users with only `ollama` keep working; add gateway for unified endpoint + throughput visibility.
 
 ### WS2: Shared Tools Everywhere (MCP)
 
@@ -282,6 +311,11 @@ Authorization: Bearer <token>
 - Add tool in dashboard: select from catalog or paste Docker ref; registry updated; servers.txt updated.
 - Discoverability: catalog with search; docs link to Docker MCP Catalog.
 
+**OpenClaw-specific:**
+- **MCP endpoint:** OpenClaw uses `mcp.servers.gateway.url` = `http://mcp-gateway:8811/mcp`, transport `streamable-http`. Single gateway server; all tools from MCP Gateway.
+- **Per-agent policies:** Future: registry `allow_clients` could include `openclaw`; gateway would check `X-Client-ID: openclaw` (or similar) before routing. Today: all clients get all enabled tools.
+- **Compatibility:** Existing `openclaw.json` with `mcp.servers.gateway` continues to work. No config change needed.
+
 ### WS3: Dashboard as Control Center (Ops)
 
 **Controller design:**
@@ -303,148 +337,208 @@ Authorization: Bearer <token>
 - Confirmations: destructive actions require `confirm: true` in body.
 - Failure modes: controller down → dashboard shows "Ops unavailable"; no fallback to docker.sock in dashboard.
 
+### WS4: Auditing, Security, and Threat Model (Required)
+
+**Threat model table:**
+
+| Asset | Threat | Mitigation |
+|-------|--------|------------|
+| docker.sock | Container escape, host compromise | Ops controller only; allowlist; no dashboard mount |
+| Ops controller | Token theft, privilege escalation | Token in env; no default; never expose port to network |
+| MCP tools | SSRF (browser worker → private nets) | Egress blocks: 100.64/10, 10/8, 172.16/12, 192.168/16, 169.254.169.254 |
+| Tool calls | Prompt injection via tool output | Allowlists; structured tool calls; sandbox where possible |
+| Secrets | Exfiltration via tools | No secrets in browser worker; controller-only API keys |
+| Dashboard | Unauthenticated admin | Localhost-only; add token/password for Tailscale/group use |
+
+**AuthN/AuthZ:** Local tokens (`OPS_CONTROLLER_TOKEN`, `OPENCLAW_GATEWAY_TOKEN`). Optional OAuth later. RBAC: dashboard = ops caller; controller = executor.
+
+**Audit event schema (JSON):**
+
+```json
+{
+  "ts": "2025-02-28T12:34:56.789Z",
+  "action": "restart",
+  "resource": "ollama",
+  "actor": "dashboard",
+  "result": "ok",
+  "correlation_id": "req-abc123",
+  "metadata": {"tail": 100}
+}
+```
+
+**Fields:** `ts` (ISO8601), `action` (start|stop|restart|pull|mcp_add|mcp_remove|model_pull|model_delete), `resource` (service/model/tool id), `actor` (dashboard|cli), `result` (ok|error), `correlation_id` (optional), `metadata` (extra).
+
+**Storage:** Append-only `data/ops-controller/audit.log` (JSONL). Rotate by size (e.g. 10MB) or time. Export: `GET /audit?limit=N&format=json`.
+
+**Correlation IDs:** Model gateway adds `X-Request-ID`; controller propagates; audit entries include it for tracing model→ops flows.
+
+**Secret handling:** Compose secrets or `mcp/.env` (not committed). No plaintext in dashboard UI. Document rotation in runbooks.
+
+### WS5: Best-in-Class Docker/Compose & Repo Organization (Required)
+
+**Compose hardening checklist (apply to current files):**
+
+| Check | Current | Action |
+|-------|---------|--------|
+| Non-root | Not set | Add `user: "1000:1000"` where feasible (dashboard, model-gateway) |
+| Healthchecks | Missing | Add `healthcheck` to ollama, model-gateway, dashboard, mcp-gateway |
+| Resource limits | Missing | Add `deploy.resources.limits.memory` for critical services |
+| Log rotation | Default | Add `logging: driver: json-file, options: max-size: 10m, max-file: 3` |
+| Pinned images | Partial | Ollama 0.17.4 ✓; open-webui v0.8.4 ✓; add digest for critical |
+| Read-only rootfs | No | Add `read_only: true` + tmpfs where needed (model-gateway) |
+| Drop capabilities | No | Add `cap_drop: [ALL]` where possible |
+
+**Networks/ports:** Model gateway 11435, MCP 8811, dashboard 8080 exposed. Ops controller: no host port (internal only).
+
+**Repo structure (target):**
+
+```
+LLM-toolkit/
+├── dashboard/           # existing
+├── mcp/                 # existing + registry
+├── model-gateway/       # existing
+├── ops-controller/      # existing
+├── openclaw/
+├── scripts/
+├── data/                # runtime data (gitignored)
+│   ├── mcp/
+│   ├── ops-controller/
+│   └── ...
+├── tests/               # contract + smoke tests
+├── docs/
+│   ├── ARCHITECTURE_RFC.md
+│   ├── runbooks/
+│   └── audit/
+├── docker-compose.yml
+└── .env.example
+```
+
+**Operational runbooks:** Add `docs/runbooks/BACKUP_RESTORE.md`, `UPGRADE.md`, `TROUBLESHOOTING.md` (extend existing).
+
 ---
 
 ## SECTION 5 — Implementation Plan
 
-### Milestones
+### Milestones (Current State: M1, M3 largely done)
 
-| Milestone | Outcomes | Timeline |
-|-----------|----------|----------|
-| **M0** | First PR: scaffolding, health aggregation, docs | &lt;1 day |
-| **M1** | Model Gateway (Ollama adapter), Open WebUI + OpenClaw point to it | 1–2 weeks |
-| **M2** | MCP registry + policy (allowlist, health), dashboard enhancements | 1–2 weeks |
-| **M3** | Ops Controller + dashboard ops UI, audit | 1–2 weeks |
-| **M4** | Observability (metrics, structured logs), security review | 1 week |
+| Milestone | Outcomes | Status |
+|-----------|----------|--------|
+| **M0** | First PR: audit schema + Docker hardening + docs | Next |
+| **M1** | Model Gateway, OpenClaw gateway provider | Done |
+| **M2** | MCP registry + policy (allowlist, health) | Pending |
+| **M3** | Ops Controller + dashboard Restart/Logs | Done |
+| **M4** | Observability, security review, Docker hardening | Pending |
 
 ### M0 — First PR (See Section 6)
 
-### M1 — Model Gateway
+Delivers: formal audit schema, one Docker hardening improvement, docs. No breaking changes.
 
-**User-visible:** Open WebUI and OpenClaw use `http://model-gateway:11435`; single endpoint for chat and embeddings.
+### M1 — Model Gateway ✓ (Done)
 
-**PR slices:**
-1. **PR1:** Add `model-gateway` service (Python/FastAPI). Ollama adapter: `/v1/models` → proxy Ollama tags; `/v1/chat/completions` → translate to Ollama `/api/chat`; `/v1/embeddings` → Ollama `/api/embeddings`. No streaming in first slice.
-2. **PR2:** Add streaming support for chat.
-3. **PR3:** Update Open WebUI env to `OPENAI_API_BASE=http://model-gateway:11435/v1` (or equivalent). Update OpenClaw `openclaw.json.example` with model gateway provider.
-4. **PR4:** Document migration; `.env.example` with `MODEL_GATEWAY_URL`; backward compat: if unset, services keep `OLLAMA_BASE_URL`.
+Model gateway exists. OpenClaw has gateway provider. Open WebUI can use `OPENAI_API_BASE` (opt-in).
 
-**File-level changes:**
-- Add `model-gateway/` (Dockerfile, main.py, adapters/ollama.py)
-- `docker-compose.yml`: add `model-gateway` service
-- `openclaw/openclaw.json.example`: add gateway provider
-- `.env.example`: `MODEL_GATEWAY_URL`, `OPENAI_API_BASE`
-- `docs/GETTING_STARTED.md`: update model setup
-
-**Acceptance criteria:**
-- Given model gateway running, When GET `/v1/models`, Then returns Ollama models in OpenAI format
-- Given model gateway, When POST `/v1/chat/completions` with `model: deepseek-r1:7b`, Then returns completion from Ollama
-- Given Open WebUI with `OPENAI_API_BASE` set, When user sends chat, Then response comes via gateway
+**Remaining:** Default Open WebUI to gateway in `.env.example` (optional); add vLLM adapter (future).
 
 ### M2 — MCP Registry + Policy
 
 **PR slices:**
-1. **PR1:** Add `registry.json` schema and migration from `servers.txt`. Dashboard reads registry; falls back to servers.txt if no registry.
-2. **PR2:** MCP gateway wrapper reads registry; apply `allow_clients` (initially `*` only). Add health check endpoint.
-3. **PR3:** Dashboard: health status per tool; "Configure" link for secrets.
-4. **PR4:** Rate limits and timeouts in gateway (if Docker MCP Gateway supports; else document as future).
+1. **PR1:** MCP gateway wrapper reads `registry.json` when present; fallback to `servers.txt`. No policy yet.
+2. **PR2:** Dashboard `/api/mcp/health` — probe each server; return status. Dashboard UI: health indicators.
+3. **PR3:** Apply `allow_clients` in gateway (requires proxy or Docker MCP Gateway extension; document if not feasible).
+4. **PR4:** Rate limits/timeouts — document or implement if gateway supports.
 
 **File-level changes:**
-- Add `data/mcp/registry.json.example`
-- `mcp/gateway-wrapper.sh` or new wrapper: read registry, pass to gateway
-- `dashboard/app.py`: `/api/mcp/registry`, `/api/mcp/health`
-- `dashboard/static/index.html`: health indicators, registry UI
+- `mcp/gateway-wrapper.sh`: read registry, merge with servers.txt
+- `dashboard/app.py`: `/api/mcp/health`
+- `dashboard/static/index.html`: health badges per tool
 
-### M3 — Ops Controller
+### M3 — Ops Controller ✓ (Done)
 
-**PR slices:**
-1. **PR1:** Add `ops-controller` service. Implement `/health`, `/services`, `/services/{id}/start|stop|restart` with token auth.
-2. **PR2:** Add `/services/{id}/logs`, `/images/pull`, audit log.
-3. **PR3:** Dashboard: Start/Stop/Restart/Logs buttons; call controller API.
-4. **PR4:** `OPS_CONTROLLER_TOKEN` in `.env.example`; document security.
+Controller exists. Dashboard has Restart/Logs. Audit log in place.
 
-**File-level changes:**
-- Add `ops-controller/` (Dockerfile, main.py)
-- `docker-compose.yml`: add `ops-controller`, dashboard env for controller URL/token
-- `dashboard/app.py`: proxy to controller for ops
-- `dashboard/static/index.html`: ops buttons, logs modal
+**Remaining:** Add Start/Stop buttons; formalize audit schema (M0).
 
-### M4 — Observability + Security
+### M4 — Observability + Docker Hardening
 
 **PR slices:**
-1. **PR1:** Structured JSON logs for dashboard, controller, model gateway.
-2. **PR2:** Optional `/metrics` (Prometheus) for gateway and controller.
-3. **PR3:** Security review checklist; threat model doc; least-privilege verification.
+1. **PR1:** Add healthchecks to `docker-compose.yml` for ollama, model-gateway, dashboard, mcp-gateway.
+2. **PR2:** Add log rotation: `logging: options: max-size: 10m, max-file: 3` for key services.
+3. **PR3:** Structured JSON logs (optional); `/metrics` (optional).
+4. **PR4:** Security checklist; threat model doc.
 
-**Test plan:**
-- Contract tests: model gateway `/v1/models`, `/v1/chat/completions` request/response shape
-- Smoke tests: `docker compose up -d` → all services healthy; dashboard loads; model pull works
-- Ops tests: controller restart service → verify container restarted
+**Quality bar:**
+- **Tests:** Contract test for model gateway `/v1/models`; smoke test `docker compose up -d` → health.
+- **Security:** Threat model table; least-privilege verification; no secrets in logs.
+- **Performance:** Model list &lt;2s; tool invocation &lt;30s default.
+- **Break-glass:** Document: reset `OPS_CONTROLLER_TOKEN`; restore `data/` from backup; disable MCP via servers.txt.
 
 ---
 
 ## SECTION 6 — "First PR" (Do Now)
 
-**Goal:** Improve architecture without breaking anything; create scaffolding for later work.
+**Goal:** Improve architecture without breaking anything. Formalize audit schema, add one Docker hardening improvement, document.
 
 ### Deliverable
 
-1. **Health aggregation API** — Dashboard `/api/health` returns aggregated status of all services + MCP gateway. Enables future "platform health" view.
-2. **Scaffolding** — Add `model-gateway/` and `ops-controller/` directories with minimal `README.md` and placeholder Dockerfiles (no functional code yet).
-3. **Docs** — Add `docs/ARCHITECTURE.md` (short) linking to this RFC; update `GETTING_STARTED.md` with "Architecture" section.
+1. **Audit event schema** — Define and document schema; update ops-controller to emit compliant events.
+2. **Docker hardening** — Add healthchecks to ollama, model-gateway, dashboard, mcp-gateway in `docker-compose.yml`.
+3. **Docs** — Add `docs/audit/SCHEMA.md`; link from ARCHITECTURE_RFC.
 
 ### Exact Steps
 
-1. **Add `/api/health` to dashboard**
-   - In `dashboard/app.py`, add:
+1. **Formalize audit schema**
+   - Add `docs/audit/SCHEMA.md` with JSON schema and examples.
+   - In `ops-controller/main.py`, update `_audit()` to include `resource`, `result`, optional `correlation_id`:
      ```python
-     @app.get("/api/health")
-     async def health():
-         results = []
-         for svc in SERVICES:
-             ok, err = await _check_service(svc["check"]) if svc.get("check") else (None, "")
-             results.append({"id": svc["id"], "ok": ok, "error": err})
-         all_ok = all(r["ok"] for r in results if r["ok"] is not None)
-         return {"ok": all_ok, "services": results}
+     def _audit(action: str, resource: str = "", result: str = "ok", detail: str = "", correlation_id: str = ""):
+         entry = {
+             "ts": datetime.utcnow().isoformat() + "Z",
+             "action": action,
+             "resource": resource or "",
+             "actor": "dashboard",
+             "result": result,
+             "detail": detail,
+         }
+         if correlation_id:
+             entry["correlation_id"] = correlation_id
+         ...
      ```
 
-2. **Create scaffolding**
-   - `model-gateway/README.md`: "Model Gateway — OpenAI-compatible proxy. See docs/ARCHITECTURE_RFC.md."
-   - `model-gateway/Dockerfile`: `FROM python:3.12-slim` + `CMD ["echo", "placeholder"]`
-   - `ops-controller/README.md`: "Ops Controller — Secure Docker Compose control plane. See docs/ARCHITECTURE_RFC.md."
-   - `ops-controller/Dockerfile`: Same placeholder.
+2. **Add healthchecks to docker-compose.yml**
+   - ollama: `healthcheck: test: ["CMD", "curl", "-f", "http://localhost:11434/api/version"]`
+   - model-gateway: `healthcheck: test: ["CMD", "curl", "-f", "http://localhost:11435/health"]`
+   - dashboard: `healthcheck: test: ["CMD", "curl", "-f", "http://localhost:8080/api/health"]`
+   - mcp-gateway: `healthcheck: test: ["CMD", "curl", "-f", "http://localhost:8811/mcp"]` (or wget if curl absent)
 
-3. **Add docs**
-   - `docs/ARCHITECTURE.md`: 1-page summary with diagram, link to ARCHITECTURE_RFC.md.
-   - `docs/GETTING_STARTED.md`: Add "Architecture" bullet under Next steps.
+3. **Add log rotation** (one service as example)
+   - dashboard: `logging: driver: json-file, options: {max-size: "10m", max-file: "3"}`
 
-4. **Tests**
-   - Add `tests/test_dashboard_health.py`: `GET /api/health` returns 200 and `ok` boolean.
+4. **Docs**
+   - `docs/audit/SCHEMA.md`: schema, field descriptions, example events.
 
 ### Suggested Commit Outline
 
 ```
-commit 1: Add /api/health aggregation endpoint to dashboard
-  - dashboard/app.py: add health() route
+commit 1: Add audit event schema and update ops-controller
+  - docs/audit/SCHEMA.md
+  - ops-controller/main.py: _audit() with resource, result, correlation_id
 
-commit 2: Add model-gateway and ops-controller scaffolding
-  - model-gateway/README.md, Dockerfile
-  - ops-controller/README.md, Dockerfile
+commit 2: Add healthchecks to docker-compose.yml
+  - docker-compose.yml: healthcheck for ollama, model-gateway, dashboard, mcp-gateway
 
-commit 3: Add architecture docs
-  - docs/ARCHITECTURE.md
-  - docs/GETTING_STARTED.md: link to architecture
+commit 3: Add log rotation for dashboard
+  - docker-compose.yml: logging options for dashboard
 
-commit 4: Add dashboard health API test
+commit 4: Add tests for audit and health
+  - tests/test_ops_controller_audit.py (if tests/ exists)
   - tests/test_dashboard_health.py
-  - pytest in CI or Makefile target
 ```
 
 ### Acceptance Criteria
 
-- **Given** dashboard running, **When** GET `/api/health`, **Then** returns 200 with `ok` and `services` array
-- **Given** repo root, **When** `ls model-gateway ops-controller`, **Then** both directories exist with README and Dockerfile
-- **Given** `pytest tests/`, **When** run, **Then** health test passes
+- **Given** ops-controller restarts a service, **When** audit log is read, **Then** entry has `ts`, `action`, `resource`, `actor`, `result` fields
+- **Given** `docker compose up -d`, **When** `docker compose ps`, **Then** ollama, model-gateway, dashboard show `healthy` (or `starting` then `healthy`)
+- **Given** `docs/audit/SCHEMA.md`, **When** read, **Then** schema is documented with examples
 
 ---
 
@@ -608,8 +702,8 @@ LLM-toolkit/
 │       └── audit.log      # NEW
 ├── tests/               # NEW or extend
 ├── docs/
-│   ├── ARCHITECTURE.md   # NEW
-│   └── ARCHITECTURE_RFC.md
+│   ├── ARCHITECTURE_RFC.md
+│   └── runbooks/
 ├── docker-compose.yml
 └── .env.example
 ```

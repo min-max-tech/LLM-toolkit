@@ -52,6 +52,7 @@ The scripts update the config file and the gateway reloads automatically.
 | `playwright` | Browser automation |
 | `mongodb` | MongoDB — needs connection string |
 | `postgres` | PostgreSQL — needs `DATABASE_URL` |
+| `filesystem` | File access — **requires a root directory to be configured**; otherwise you'll see `ENOENT stat ''`. Remove from servers.txt if not needed, or configure per Docker MCP docs. |
 
 Servers that need API keys require extra setup (see [Secrets](#secrets)).
 

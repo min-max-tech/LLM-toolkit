@@ -13,3 +13,6 @@ data/
 
 # Debug / temporary
 comfyui-logs.txt
+.pytest_cache
+__pycache__
+*.pyc

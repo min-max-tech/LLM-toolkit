@@ -4,7 +4,7 @@ Hey, I am Cam, I made this repo to simplify my local-LLM setup. I wanted a bunch
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), auto-detects hardware for best performance.
 
-→ [Repository structure](docs/STRUCTURE.md) · [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/TROUBLESHOOTING.md)
+→ [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture RFC](docs/ARCHITECTURE_RFC.md)
 
 ## Services
 
@@ -12,7 +12,7 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), 
 |---------|------|---------|
 | **dashboard** | 8080 | **Unified model manager** — [localhost:8080](http://localhost:8080) |
 | **ollama** | 11434 | Local LLM runtime (GPU) |
-| **model-gateway** | 11435 | OpenAI-compatible proxy — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
+| **model-gateway** | 11435 | OpenAI-compatible proxy (Ollama/vLLM) |
 | **open-webui** | 3000 | Chat UI — [localhost:3000](http://localhost:3000) |
 | **comfyui** | 8188 | Stable Diffusion / LTX-2 — [localhost:8188](http://localhost:8188) |
 | **n8n** | 5678 | Workflow automation — [localhost:5678](http://localhost:5678) |
@@ -34,7 +34,7 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), 
 6. **Pull models** — use the "Starter pack" button or select models from the dropdown.
 7. **Chat** — open [localhost:3000](http://localhost:3000) (Open WebUI).
 
-**No GPU?** Start only the core stack: `.\compose.ps1 up -d ollama dashboard open-webui` — see [Troubleshooting](docs/TROUBLESHOOTING.md).
+**No GPU?** Start only the core stack: `.\compose.ps1 up -d ollama dashboard open-webui` — see [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
 
 ## Daily use
 
@@ -68,7 +68,7 @@ cp .env.example .env
 
 All services start by default. Open the **dashboard** at [localhost:8080](http://localhost:8080) to manage models and see service status.
 
-**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU); OpenClaw needs `openclaw/.env` (created by step 3). See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+**If ComfyUI or OpenClaw fail:** The dashboard shows troubleshooting hints. ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU); OpenClaw needs `openclaw/.env` (created by step 3). See [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
 
 **On-demand commands** (run when you want to pull models):
 - `.\compose.ps1 run --rm model-puller` / `./compose run --rm model-puller` — pull Ollama models from `.env`
@@ -133,7 +133,19 @@ ComfyUI starts independently. LTX-2 models (~60 GB) are downloaded on demand —
 
 The `compose` wrapper runs detection before every command, so `.\compose.ps1 up -d` or `./compose up -d` always uses the best settings.
 
-**No GPU?** Run the minimal stack: `.\compose.ps1 up -d ollama dashboard open-webui`. ComfyUI will use CPU by default (slower). See [docs/TROUBLESHOOTING.md](docs/TROUBLESHOOTING.md).
+**No GPU?** Run the minimal stack: `.\compose.ps1 up -d ollama dashboard open-webui`. ComfyUI will use CPU by default (slower). See [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
+
+## Architecture
+
+```
+User → Dashboard / Open WebUI / N8N / OpenClaw
+         │
+         ├── Model Gateway (:11435) → Ollama / vLLM
+         ├── MCP Gateway (:8811) → shared tools
+         └── Ops Controller (:9000) → Docker Compose lifecycle
+```
+
+Local-first, single model endpoint (OpenAI-compatible), dashboard never mounts docker.sock. Full design: [docs/ARCHITECTURE_RFC.md](docs/ARCHITECTURE_RFC.md).
 
 ## Data
 
@@ -164,3 +176,25 @@ The [MCP Gateway](mcp/) exposes shared MCP tools (web search, GitHub, etc.) to a
 .\compose.ps1 logs -f ollama
 .\compose.ps1 down        # Stop
 ```
+
+## Tests
+
+```powershell
+python -m pytest tests/ -v
+# Or: make test   (Linux/Mac)
+```
+
+**Smoke test** (bring up services and verify health):
+
+```powershell
+.\scripts\smoke_test.ps1       # Windows
+./scripts/smoke_test.sh         # Linux/Mac (or: make smoke-test)
+```
+
+## Runbooks
+
+Operational runbooks in [docs/runbooks/](docs/runbooks/):
+
+- [BACKUP_RESTORE.md](docs/runbooks/BACKUP_RESTORE.md) — Backup and restore data
+- [UPGRADE.md](docs/runbooks/UPGRADE.md) — Upgrade images and config
+- [TROUBLESHOOTING.md](docs/runbooks/TROUBLESHOOTING.md) — Common issues and fixes

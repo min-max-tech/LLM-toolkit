@@ -40,17 +40,26 @@ async def verify_token(request: Request) -> None:
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
-def _audit(action: str, service: str = "", detail: str = ""):
-    """Append to audit log."""
+def _audit(
+    action: str,
+    resource: str = "",
+    result: str = "ok",
+    detail: str = "",
+    correlation_id: str = "",
+):
+    """Append to audit log. Schema: docs/audit/SCHEMA.md."""
     try:
         AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         entry = {
             "ts": datetime.utcnow().isoformat() + "Z",
             "action": action,
-            "service": service,
-            "detail": detail,
+            "resource": resource or "",
             "actor": "dashboard",
+            "result": result,
+            "detail": detail or "",
         }
+        if correlation_id:
+            entry["correlation_id"] = correlation_id
         with open(AUDIT_LOG_PATH, "a") as f:
             f.write(json.dumps(entry) + "\n")
     except Exception:
@@ -128,7 +137,7 @@ async def service_start(service_id: str, body: ConfirmBody, _: None = Depends(ve
             c.start()
         except Exception as e:
             errs.append(str(e))
-    _audit("start", service_id, "; ".join(errs) if errs else "ok")
+    _audit("start", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "")
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "service": service_id, "action": "started"}
@@ -151,7 +160,7 @@ async def service_stop(service_id: str, body: ConfirmBody, _: None = Depends(ver
             c.stop(timeout=30)
         except Exception as e:
             errs.append(str(e))
-    _audit("stop", service_id, "; ".join(errs) if errs else "ok")
+    _audit("stop", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "")
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "service": service_id, "action": "stopped"}
@@ -174,7 +183,7 @@ async def service_restart(service_id: str, body: ConfirmBody, _: None = Depends(
             c.restart(timeout=30)
         except Exception as e:
             errs.append(str(e))
-    _audit("restart", service_id, "; ".join(errs) if errs else "ok")
+    _audit("restart", service_id, "error" if errs else "ok", "; ".join(errs) if errs else "")
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "service": service_id, "action": "restarted"}
@@ -195,6 +204,7 @@ async def service_logs(service_id: str, tail: int = 100, _: None = Depends(verif
             lines.append(f"=== {c.name} ===\n{out}")
         except Exception as e:
             lines.append(f"=== {c.name} ===\nError: {e}")
+    _audit("logs", service_id, "ok", "")
     return {"logs": "\n".join(lines), "service": service_id}
 
 
@@ -215,10 +225,33 @@ async def images_pull(body: PullBody, _: None = Depends(verify_token)):
                 c.image.pull()
             except Exception as e:
                 errs.append(f"{svc}: {e}")
-    _audit("pull", ",".join(svcs), "; ".join(errs) if errs else "ok")
+    _audit("pull", ",".join(svcs), "error" if errs else "ok", "; ".join(errs) if errs else "")
     if errs:
         raise HTTPException(status_code=500, detail="; ".join(errs))
     return {"ok": True, "services": svcs}
+
+
+@app.get("/mcp/containers")
+async def mcp_containers(_: None = Depends(verify_token)):
+    """List MCP server containers (spawned by mcp-gateway). Auth required."""
+    try:
+        client = _docker_client()
+        all_containers = client.containers.list(all=True)
+        mcp_containers = []
+        for c in all_containers:
+            image = (c.image.tags[0] if c.image.tags else str(c.image)) if hasattr(c, "image") else ""
+            # MCP gateway spawns containers with mcp/* images
+            if "mcp/" in image or (hasattr(c, "name") and "mcp" in (c.name or "").lower()):
+                server_id = image.split("/")[-1].split(":")[0] if "/" in image else (c.name or "unknown")
+                mcp_containers.append({
+                    "id": server_id,
+                    "name": c.name,
+                    "status": c.status if hasattr(c, "status") else "unknown",
+                    "image": image,
+                })
+        return {"containers": mcp_containers}
+    except Exception as e:
+        return {"containers": [], "error": str(e)}
 
 
 @app.get("/audit")

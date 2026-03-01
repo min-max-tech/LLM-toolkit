@@ -79,16 +79,20 @@ See [OpenClaw Discord docs](https://docs.openclaw.ai/channels/discord) for bot t
 
 ## CLI Commands
 
+When the stack runs in Docker, the CLI must target the gateway by service name. Use the helper script (from repo root), which passes `--url ws://openclaw-gateway:18789` and token from `openclaw/.env`:
+
 ```powershell
-# Get dashboard URL and token
-docker compose run --rm openclaw-cli dashboard --no-open
+# List devices (requires gateway running)
+.\openclaw\scripts\run-cli.ps1 devices list
 
-# List devices
-docker compose run --rm openclaw-cli devices list
+# Approve a device (replace DEVICE_ID with the id from the list)
+.\openclaw\scripts\run-cli.ps1 devices approve DEVICE_ID
 
-# Approve a device
-docker compose run --rm openclaw-cli devices approve <device-id>
+# Remove a device
+.\openclaw\scripts\run-cli.ps1 devices remove DEVICE_ID
 ```
+
+For other commands (e.g. `dashboard --no-open`) that don't need to call the gateway, you can run `docker compose --profile openclaw-cli run --rm openclaw-cli ...` directly.
 
 ## Build from Source (Optional)
 

@@ -10,7 +10,8 @@ from pathlib import Path
 GATEWAY_PROVIDER = {
     "baseUrl": "http://model-gateway:11435/v1",
     "apiKey": "ollama-local",
-    "api": "openai",
+    "api": "openai-completions",
+    "models": [],
     "headers": {"X-Service-Name": "openclaw"},
 }
 
@@ -33,9 +34,17 @@ def main() -> int:
         modified = True
         msg = "added gateway provider"
     else:
-        # Ensure X-Service-Name for dashboard identification
+        # Ensure schema compliance and X-Service-Name for dashboard identification
         gw = providers["gateway"]
         if isinstance(gw, dict):
+            if gw.get("api") != "openai-completions":
+                gw["api"] = "openai-completions"
+                modified = True
+                msg = "fixed gateway provider api"
+            if "models" not in gw or not isinstance(gw.get("models"), list):
+                gw["models"] = []
+                modified = True
+                msg = "fixed gateway provider models"
             gw.setdefault("headers", {})
             if not isinstance(gw["headers"], dict):
                 gw["headers"] = {}

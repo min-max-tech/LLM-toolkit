@@ -11,28 +11,62 @@ services:
       - "11434:11434"
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/ollama:/root/.ollama
+    healthcheck:
+      # Image has no curl/wget; use ollama CLI to probe the server
+      test: ["CMD", "ollama", "list"]
+      start_period: 30s
+      interval: 15s
+      timeout: 10s
+      retries: 5
+    deploy:
+      resources:
+        limits:
+          memory: 8G
     # GPU: add deploy via docker-compose.compute.yml (run scripts/detect_hardware.py)
+    # Pin digest: OLLAMA_IMAGE=ollama/ollama:0.17.4@sha256:1edb4ab90ebbe34b484bb120ab8de22601f463834bfeca7f5a2de2ca6dad13ee
 
   model-gateway:
     build: ./model-gateway
     image: ai-toolkit-model-gateway:latest
     pull_policy: build
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
-      - ollama
-      - dashboard
+      ollama:
+        condition: service_healthy
+      dashboard:
+        condition: service_started
     environment:
       - OLLAMA_URL=http://ollama:11434
+      - VLLM_URL=${VLLM_URL:-}
       - DEFAULT_PROVIDER=ollama
       - DASHBOARD_URL=http://dashboard:8080
     ports:
       - "${MODEL_GATEWAY_PORT:-11435}:11435"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:11435/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
 
   ops-controller:
     build: ./ops-controller
     image: ai-toolkit-ops-controller:latest
     pull_policy: build
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     environment:
       - COMPOSE_PROJECT_DIR=/workspace
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
@@ -44,17 +78,43 @@ services:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${BASE_PATH:-.}:/workspace:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/ops-controller:/data
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # No host port - dashboard calls internally. Add "9000:9000" for debugging.
 
   dashboard:
     build: ./dashboard
     restart: unless-stopped
+    user: "1000:1000"
     depends_on:
-      - ollama
+      ollama:
+        condition: service_healthy
     ports:
       - "8080:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 256M
     extra_hosts:
       - "host.docker.internal:host-gateway"
+    healthcheck:
+      test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/api/health')"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     environment:
       - OLLAMA_URL=http://ollama:11434
       - MODELS_DIR=/models
@@ -63,19 +123,30 @@ services:
       - MCP_GATEWAY_SERVERS=${MCP_GATEWAY_SERVERS:-duckduckgo}
       - OPS_CONTROLLER_URL=http://ops-controller:9000
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
+      - DASHBOARD_AUTH_TOKEN=${DASHBOARD_AUTH_TOKEN:-}
+      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
 
   open-webui:
-    image: ghcr.io/open-webui/open-webui:v0.8.4
+    image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.4}
     restart: unless-stopped
     depends_on:
       - ollama
       - model-gateway
     ports:
       - "3000:8080"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8080/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       # Use model gateway for OpenAI-compatible API, or Ollama directly
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
@@ -125,9 +196,18 @@ services:
     image: ${COMFYUI_IMAGE:-yanwk/comfyui-boot:cpu}
     container_name: comfyui
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 4G
     # ComfyUI: run scripts/detect_hardware.py to auto-configure GPU (NVIDIA/AMD/Intel) or CPU
     ports:
       - "8188:8188"
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8188/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       - CLI_ARGS=--cpu
       - PYTORCH_CUDA_ALLOC_CONF=
@@ -137,12 +217,21 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/root/ComfyUI/output
 
   n8n:
-    image: docker.n8n.io/n8nio/n8n
+    image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n}
     restart: unless-stopped
     depends_on:
       - mcp-gateway
     ports:
       - "5678:5678"
+    deploy:
+      resources:
+        limits:
+          memory: 1G
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:5678/"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
     environment:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
@@ -156,6 +245,10 @@ services:
     pull_policy: build
     container_name: mcp-gateway
     restart: unless-stopped
+    deploy:
+      resources:
+        limits:
+          memory: 512M
     environment:
       - MCP_CONFIG_FILE=/mcp-config/servers.txt
       - MCP_GATEWAY_PORT=8811
@@ -164,6 +257,16 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
     ports:
       - "${MCP_GATEWAY_PORT:-8811}:8811"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:8811/mcp"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
     # Optional: mount secrets for MCPs that need API keys (e.g. github-official, brave)
     # secrets: [mcp_secrets]
     # Uncomment and create mcp/.env with GITHUB_PERSONAL_ACCESS_TOKEN etc.
@@ -226,6 +329,7 @@ services:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
     depends_on:
       - ollama
+      - openclaw-gateway
     env_file:
       - openclaw/.env
     environment:

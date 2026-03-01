@@ -1,6 +1,7 @@
 """AI-toolkit Dashboard — unified model management and service hub."""
 from __future__ import annotations
 
+import base64
 import json
 import os
 import subprocess
@@ -8,13 +9,57 @@ import threading
 import time
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import StreamingResponse
+from fastapi import FastAPI, HTTPException, Request
+from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from httpx import AsyncClient
 from pydantic import BaseModel
 
 app = FastAPI(title="AI-toolkit Dashboard", version="1.0.0")
+
+# Dashboard auth (token or password for Tailscale/group use)
+DASHBOARD_AUTH_TOKEN = os.environ.get("DASHBOARD_AUTH_TOKEN", "").strip()
+DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "").strip()
+_AUTH_REQUIRED = bool(DASHBOARD_AUTH_TOKEN or DASHBOARD_PASSWORD)
+
+
+def _verify_auth(request: Request) -> bool:
+    """Verify Authorization header. Returns True if auth passes or not required."""
+    if not _AUTH_REQUIRED:
+        return True
+    auth = request.headers.get("Authorization", "")
+    if not auth:
+        return False
+    if DASHBOARD_AUTH_TOKEN and auth.startswith("Bearer "):
+        token = auth[7:].strip()
+        return token == DASHBOARD_AUTH_TOKEN
+    if DASHBOARD_PASSWORD and auth.startswith("Basic "):
+        try:
+            decoded = base64.b64decode(auth[6:].strip()).decode()
+            _, password = decoded.split(":", 1)
+            return password == DASHBOARD_PASSWORD
+        except Exception:
+            return False
+    return False
+
+
+@app.middleware("http")
+async def auth_middleware(request: Request, call_next):
+    """Require auth for /api/* except /api/health and /api/auth/config."""
+    path = request.url.path
+    if not path.startswith("/api/"):
+        return await call_next(request)
+    if path in ("/api/health", "/api/auth/config"):
+        return await call_next(request)
+    if _AUTH_REQUIRED and not _verify_auth(request):
+        if DASHBOARD_PASSWORD:
+            return JSONResponse(
+                status_code=401,
+                content={"detail": "Authentication required"},
+                headers={"WWW-Authenticate": "Basic realm=Dashboard"},
+            )
+        return JSONResponse(status_code=401, content={"detail": "Bearer token required"})
+    return await call_next(request)
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
@@ -371,6 +416,9 @@ def _read_mcp_registry() -> dict:
     return {"servers": {}}
 
 
+MCP_GATEWAY_URL = os.environ.get("MCP_GATEWAY_URL", "http://mcp-gateway:8811")
+
+
 @app.get("/api/mcp/servers")
 async def mcp_servers():
     """List enabled MCP servers and catalog for adding."""
@@ -378,6 +426,45 @@ async def mcp_servers():
     dynamic = _mcp_config_path() is not None
     registry = _read_mcp_registry()
     return {"enabled": servers, "catalog": MCP_CATALOG, "dynamic": dynamic, "registry": registry, "ok": True}
+
+
+@app.get("/api/mcp/health")
+async def mcp_health():
+    """MCP gateway health. Probes gateway; per-server status from ops-controller when available."""
+    enabled = _read_mcp_servers()
+    gateway_ok = False
+    gateway_error = ""
+    try:
+        async with AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{MCP_GATEWAY_URL.rstrip('/')}/mcp")
+            gateway_ok = r.status_code < 500
+            if not gateway_ok:
+                gateway_error = f"HTTP {r.status_code}"
+    except Exception as e:
+        gateway_error = str(e)
+
+    # Per-server status: get from ops-controller (Docker) when token set
+    container_status: dict[str, str] = {}
+    if OPS_CONTROLLER_TOKEN:
+        code, data = await _ops_request("GET", "/mcp/containers")
+        if code == 200 and data.get("containers"):
+            for c in data["containers"]:
+                sid = c.get("id", "").split("/")[-1].split(":")[0] or c.get("name", "unknown")
+                container_status[sid] = c.get("status", "unknown")
+
+    servers = []
+    for s in enabled:
+        status = container_status.get(s, container_status.get(s.split("/")[-1]))
+        ok = status == "running" if status else gateway_ok
+        err = None if ok else (f"container: {status}" if status else gateway_error)
+        servers.append({"id": s, "ok": ok, "error": err, "status": status or ("ok" if gateway_ok else "unreachable")})
+
+    return {
+        "ok": gateway_ok,
+        "gateway": "reachable" if gateway_ok else "unreachable",
+        "gateway_error": gateway_error if not gateway_ok else None,
+        "servers": servers,
+    }
 
 
 class McpAddRequest(BaseModel):
@@ -463,6 +550,17 @@ async def services():
             "hint": svc.get("hint", ""),
         })
     return {"services": results}
+
+
+@app.get("/api/auth/config")
+async def auth_config():
+    """Return auth config for frontend. No auth required."""
+    if not _AUTH_REQUIRED:
+        return {"auth_required": False, "auth_type": None}
+    return {
+        "auth_required": True,
+        "auth_type": "bearer" if DASHBOARD_AUTH_TOKEN else "basic",
+    }
 
 
 @app.get("/api/health")
@@ -702,6 +800,26 @@ async def _ops_request(method: str, path: str, **kwargs) -> tuple[int, dict]:
             return r.status_code, data
     except Exception as e:
         return 503, {"detail": str(e)}
+
+
+@app.post("/api/ops/services/{service_id}/start")
+async def ops_start(service_id: str):
+    """Start a service via ops controller."""
+    ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
+    code, data = await _ops_request("POST", f"/services/{ops_id}/start", json={"confirm": True})
+    if code >= 400:
+        raise HTTPException(status_code=code, detail=data.get("detail", data))
+    return data
+
+
+@app.post("/api/ops/services/{service_id}/stop")
+async def ops_stop(service_id: str):
+    """Stop a service via ops controller."""
+    ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
+    code, data = await _ops_request("POST", f"/services/{ops_id}/stop", json={"confirm": True})
+    if code >= 400:
+        raise HTTPException(status_code=code, detail=data.get("detail", data))
+    return data
 
 
 @app.post("/api/ops/services/{service_id}/restart")

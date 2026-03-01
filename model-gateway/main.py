@@ -1,4 +1,4 @@
-"""Model Gateway — OpenAI-compatible proxy for Ollama and future providers."""
+"""Model Gateway — OpenAI-compatible proxy for Ollama, vLLM, and future providers."""
 from __future__ import annotations
 
 import asyncio
@@ -13,15 +13,25 @@ from httpx import AsyncClient
 app = FastAPI(title="Model Gateway", version="1.0.0")
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/")
+VLLM_URL = os.environ.get("VLLM_URL", "").rstrip("/")  # e.g. http://vllm:8000
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "ollama")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").rstrip("/")
 
 
+def _model_provider_and_id(name: str) -> tuple[str, str]:
+    """Return (provider, model_id). Provider: ollama, vllm. Model ID is unprefixed."""
+    if "/" in name:
+        prefix, rest = name.split("/", 1)
+        if prefix.lower() == "vllm" and VLLM_URL:
+            return ("vllm", rest)
+        return ("ollama", rest)
+    return (DEFAULT_PROVIDER, name)
+
+
 def _ollama_model_id(name: str) -> str:
     """Strip provider prefix if present (ollama/deepseek-r1:7b -> deepseek-r1:7b)."""
-    if "/" in name:
-        return name.split("/", 1)[1]
-    return name
+    _, model_id = _model_provider_and_id(name)
+    return model_id
 
 
 def _service_from_headers(origin: str | None, x_service: str | None) -> str:
@@ -77,39 +87,67 @@ def _record_throughput(
 
 @app.get("/v1/models")
 async def list_models():
-    """List models in OpenAI format. Aggregates from Ollama."""
+    """List models in OpenAI format. Aggregates from Ollama and vLLM (when configured)."""
+    objects = []
+
+    # Ollama
     async with AsyncClient(timeout=30.0) as client:
         try:
             r = await client.get(f"{OLLAMA_URL}/api/tags")
             r.raise_for_status()
             data = r.json()
-            models = data.get("models", [])
+            for m in data.get("models", []):
+                name = m.get("name", "")
+                if name:
+                    objects.append({
+                        "id": f"ollama/{name}",
+                        "object": "model",
+                        "created": m.get("modified_at", 0) or 0,
+                        "owned_by": "ollama",
+                    })
         except Exception:
-            models = []
+            pass
 
-    objects = []
-    for m in models:
-        name = m.get("name", "")
-        if not name:
-            continue
-        objects.append({
-            "id": f"{DEFAULT_PROVIDER}/{name}" if DEFAULT_PROVIDER else name,
-            "object": "model",
-            "created": m.get("modified_at", 0) or 0,
-            "owned_by": DEFAULT_PROVIDER or "ollama",
-        })
+    # vLLM (OpenAI-compatible /v1/models)
+    if VLLM_URL:
+        try:
+            async with AsyncClient(timeout=30.0) as client:
+                r = await client.get(f"{VLLM_URL}/v1/models")
+                if r.status_code < 500:
+                    data = r.json()
+                    for m in data.get("data", []):
+                        mid = m.get("id", "")
+                        if mid:
+                            objects.append({
+                                "id": f"vllm/{mid}" if "/" not in mid else mid,
+                                "object": "model",
+                                "created": m.get("created", 0) or 0,
+                                "owned_by": "vllm",
+                            })
+        except Exception:
+            pass
+
     return {"object": "list", "data": objects}
 
 
 @app.get("/health")
 async def health():
-    """Gateway health check."""
+    """Gateway health check. OK if at least one provider is reachable."""
+    ok = False
     try:
         async with AsyncClient(timeout=3.0) as client:
             r = await client.get(f"{OLLAMA_URL}/api/version")
-            return {"ok": r.status_code < 500}
+            ok = ok or r.status_code < 500
     except Exception:
-        return {"ok": False}
+        pass
+    if VLLM_URL:
+        try:
+            async with AsyncClient(timeout=3.0) as client:
+                r = await client.get(f"{VLLM_URL}/health")
+                ok = ok or r.status_code < 500
+        except Exception:
+            pass
+    return {"ok": ok}
 
 
 # --- Chat ---
@@ -134,16 +172,45 @@ def _stream_chunk_openai(obj: dict) -> str:
 
 @app.post("/v1/chat/completions")
 async def chat_completions(request: Request, body: dict[str, Any]):
-    """Chat completion. Proxies to Ollama /api/chat."""
+    """Chat completion. Proxies to Ollama or vLLM based on model prefix."""
     model = body.get("model", "")
+    provider, model_id = _model_provider_and_id(model)
     service = _service_from_headers(
         request.headers.get("Origin"),
         request.headers.get("X-Service-Name") or request.headers.get("X-Client-Id"),
     )
     messages = body.get("messages", [])
     stream = body.get("stream", False)
-    model_id = _ollama_model_id(model)
 
+    # vLLM: native OpenAI format — proxy directly
+    if provider == "vllm" and VLLM_URL:
+        if stream:
+            async def vllm_stream():
+                async with AsyncClient(timeout=600.0) as client:
+                    async with client.stream(
+                        "POST",
+                        f"{VLLM_URL}/v1/chat/completions",
+                        json={**body, "model": model_id},
+                        headers={"Content-Type": "application/json"},
+                    ) as r:
+                        r.raise_for_status()
+                        async for chunk in r.aiter_bytes():
+                            yield chunk
+            return StreamingResponse(
+                vllm_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+            )
+        async with AsyncClient(timeout=600.0) as client:
+            r = await client.post(
+                f"{VLLM_URL}/v1/chat/completions",
+                json={**body, "model": model_id},
+                headers={"Content-Type": "application/json"},
+            )
+            r.raise_for_status()
+            return r.json()
+
+    # Ollama
     ollama_body = {"model": model_id, "messages": messages, "stream": stream}
 
     if stream:
@@ -232,16 +299,28 @@ async def chat_completions(request: Request, body: dict[str, Any]):
 
 @app.post("/v1/embeddings")
 async def embeddings(body: dict[str, Any]):
-    """Embeddings. Proxies to Ollama /api/embed."""
+    """Embeddings. Proxies to Ollama or vLLM based on model prefix."""
     model = body.get("model", "")
+    provider, model_id = _model_provider_and_id(model)
     inp = body.get("input", "")
-    model_id = _ollama_model_id(model)
 
     if isinstance(inp, str):
         inp = [inp]
     if not inp:
         return {"object": "list", "data": [], "model": model}
 
+    # vLLM: native OpenAI format
+    if provider == "vllm" and VLLM_URL:
+        async with AsyncClient(timeout=120.0) as client:
+            r = await client.post(
+                f"{VLLM_URL}/v1/embeddings",
+                json={**body, "model": model_id},
+                headers={"Content-Type": "application/json"},
+            )
+            r.raise_for_status()
+            return r.json()
+
+    # Ollama
     ollama_body = {"model": model_id, "input": inp}
     async with AsyncClient(timeout=120.0) as client:
         r = await client.post(f"{OLLAMA_URL}/api/embed", json=ollama_body)

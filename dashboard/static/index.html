@@ -96,6 +96,25 @@
       transition: transform 0.2s;
     }
     .skip-link:focus { transform: translateY(0); outline: 2px solid var(--fg); outline-offset: 2px; }
+    .modal-overlay {
+      position: fixed; inset: 0; background: rgba(0,0,0,0.7); display: flex; align-items: center; justify-content: center;
+      z-index: 9999; padding: var(--space-4);
+    }
+    .modal-overlay .modal-content {
+      background: var(--bg-elevated); border: 1px solid var(--border); border-radius: var(--radius);
+      padding: var(--space-6); box-shadow: var(--shadow-lg);
+    }
+    .modal-overlay .modal-content h2 { margin: 0 0 var(--space-3); font-size: var(--text-xl); }
+    .modal-overlay .modal-content p { margin: 0 0 var(--space-4); color: var(--fg-muted); font-size: var(--text-sm); }
+    .modal-overlay .modal-content input {
+      width: 100%; padding: var(--space-3); margin-bottom: var(--space-4);
+      background: var(--surface); border: 1px solid var(--border); border-radius: var(--radius-sm);
+      color: var(--fg); font-size: var(--text-base);
+    }
+    .modal-overlay .modal-content button {
+      width: 100%; padding: var(--space-3); background: var(--accent); color: #0a0a0a;
+      border: none; border-radius: var(--radius-sm); font-weight: 600; cursor: pointer;
+    }
     body::before {
       content: '';
       position: fixed;
@@ -305,8 +324,8 @@
       50% { opacity: 0.7; }
     }
     .service .status.fail { background: var(--danger); }
-    .service .label { flex: 1; font-size: 0.95rem; font-weight: 500; }
-    .service .external { opacity: 0.4; font-size: 0.75rem; }
+    .service .label { flex: 1; font-size: 0.95rem; font-weight: 500; min-width: 0; }
+    .service .external { opacity: 0.4; font-size: 0.75rem; flex-shrink: 0; }
     .service-card {
       display: flex;
       flex-direction: column;
@@ -320,6 +339,13 @@
     }
     .service-card:hover { border-color: var(--accent); box-shadow: 0 0 0 1px var(--accent-dim); }
     .service-card.fail { border-color: var(--danger); background: var(--danger-dim); }
+    .service-card .service-name {
+      font-size: var(--text-base);
+      font-weight: 600;
+      color: var(--fg);
+      margin-bottom: var(--space-2);
+      letter-spacing: 0.01em;
+    }
     .service-card .row {
       display: flex;
       align-items: center;
@@ -327,13 +353,19 @@
       min-width: 0;
     }
     .service-card .row .service {
+      display: flex;
+      align-items: center;
+      gap: var(--space-2);
       min-width: 0;
       overflow: hidden;
+      flex: 1;
     }
     .service-card .row .service .label {
       overflow: hidden;
       text-overflow: ellipsis;
       white-space: nowrap;
+      color: var(--fg);
+      min-width: 4rem;
     }
     .service-card .hint {
       font-size: var(--text-sm);
@@ -931,7 +963,7 @@
         <summary>MCP Gateway — Deploy tools</summary>
         <div class="mcp-howto-content">
           <div class="mcp-section">
-            <div class="mcp-section-label">Enabled tools</div>
+            <div class="mcp-section-label">Enabled tools <span id="mcp-gateway-status" class="badge badge-muted" title="Gateway status">—</span></div>
             <div class="mcp-enabled-chips" id="mcp-enabled-chips">
               <span class="mcp-empty-hint" id="mcp-empty-hint">None — add from catalog or paste a URL below</span>
             </div>
@@ -1093,8 +1125,64 @@
 
   <div class="toast-container" id="toasts" role="region" aria-label="Notifications" aria-live="polite"></div>
 
+  <div id="auth-modal" class="modal-overlay" style="display:none;" role="dialog" aria-labelledby="auth-modal-title" aria-modal="true">
+    <div class="modal-content" style="max-width:360px;">
+      <h2 id="auth-modal-title">Dashboard login</h2>
+      <p>Enter the shared token to access the dashboard.</p>
+      <form id="auth-form" onsubmit="return submitAuth(event)">
+        <input type="password" id="auth-token-input" placeholder="Token" autocomplete="current-password" aria-label="Token" />
+        <button type="submit">Continue</button>
+      </form>
+    </div>
+  </div>
+
   <script>
-    const api = (path, opts = {}) => fetch(path, { cache: 'no-store', ...opts, headers: { 'Accept': 'application/json', ...opts.headers } });
+    let authConfig = { auth_required: false, auth_type: null };
+    const AUTH_STORAGE_KEY = 'dashboard_auth_token';
+
+    async function loadAuthConfig() {
+      try {
+        const r = await fetch('/api/auth/config', { cache: 'no-store' });
+        authConfig = await r.json();
+      } catch (_) { authConfig = { auth_required: false }; }
+    }
+
+    function getAuthHeaders() {
+      if (!authConfig.auth_required || authConfig.auth_type !== 'bearer') return {};
+      const t = sessionStorage.getItem(AUTH_STORAGE_KEY);
+      return t ? { 'Authorization': 'Bearer ' + t } : {};
+    }
+
+    function showAuthModal() {
+      document.getElementById('auth-modal').style.display = 'flex';
+      document.getElementById('auth-token-input').focus();
+    }
+
+    function hideAuthModal() {
+      document.getElementById('auth-modal').style.display = 'none';
+    }
+
+    function submitAuth(e) {
+      e.preventDefault();
+      const input = document.getElementById('auth-token-input');
+      const token = (input?.value || '').trim();
+      if (!token) return false;
+      sessionStorage.setItem(AUTH_STORAGE_KEY, token);
+      hideAuthModal();
+      window.dispatchEvent(new Event('auth-ready'));
+      return false;
+    }
+
+    const api = (path, opts = {}) => {
+      const headers = { 'Accept': 'application/json', ...getAuthHeaders(), ...opts.headers };
+      return fetch(path, { cache: 'no-store', ...opts, headers }).then(async r => {
+        if (r.status === 401 && authConfig.auth_required && authConfig.auth_type === 'bearer') {
+          sessionStorage.removeItem(AUTH_STORAGE_KEY);
+          showAuthModal();
+        }
+        return r;
+      });
+    };
 
     let ollamaModels = [];
     let ollamaLibrary = [];
@@ -1137,7 +1225,7 @@
         if (chipsEl) {
           emptyHint.style.display = mcpEnabled.length ? 'none' : 'inline';
           chipsEl.innerHTML = mcpEnabled.length ? mcpEnabled.map(s =>
-            `<span class="mcp-chip" title="${escapeHtml(s)}"><span>${escapeHtml(s)}</span><button type="button" class="mcp-chip-remove mcp-remove-btn" data-server="${escapeHtml(s)}" aria-label="Remove ${escapeHtml(s)}">×</button></span>`
+            `<span class="mcp-chip" title="${escapeHtml(s)}" data-server="${escapeHtml(s)}"><span>${escapeHtml(s)}</span><button type="button" class="mcp-chip-remove mcp-remove-btn" data-server="${escapeHtml(s)}" aria-label="Remove ${escapeHtml(s)}">×</button></span>`
           ).join('') : '';
         }
         const sel = document.getElementById('mcp-add-select');
@@ -1153,9 +1241,46 @@
         document.getElementById('mcp-remove-cmd').textContent = mcpEnabled[0] ? './scripts/mcp_remove.sh ' + mcpEnabled[0] : './scripts/mcp_remove.sh fetch';
         document.getElementById('mcp-dynamic-row').style.display = mcpDynamic ? 'block' : 'none';
         document.getElementById('mcp-static-row').style.display = mcpDynamic ? 'none' : 'block';
+        loadMcpHealth();
       } catch (_) {
         const chipsEl = document.getElementById('mcp-enabled-chips');
         if (chipsEl) chipsEl.innerHTML = '<span class="mcp-empty-hint">Could not load</span>';
+      }
+    }
+
+    async function loadMcpHealth() {
+      const el = document.getElementById('mcp-gateway-status');
+      const chipsEl = document.getElementById('mcp-enabled-chips');
+      if (!el) return;
+      try {
+        const r = await api('/api/mcp/health');
+        const d = await r.json();
+        el.textContent = d.ok ? 'gateway ok' : 'gateway unreachable';
+        el.className = 'badge ' + (d.ok ? 'badge-success' : 'badge-error');
+        el.title = d.gateway_error || 'Gateway reachable';
+        // Per-server status: add status dot to chips
+        if (chipsEl && d.servers && d.servers.length) {
+          const byId = {};
+          d.servers.forEach(s => { byId[s.id] = s; });
+          chipsEl.querySelectorAll('.mcp-chip').forEach(chip => {
+            const serverId = chip.dataset.server || chip.querySelector('span')?.textContent?.trim();
+            const info = byId[serverId] || byId[serverId?.split('/').pop()];
+            let dot = chip.querySelector('.mcp-chip-status');
+            if (info) {
+              if (!dot) {
+                dot = document.createElement('span');
+                dot.className = 'mcp-chip-status';
+                dot.style.cssText = 'width:6px;height:6px;border-radius:50%;flex-shrink:0;margin-right:4px;';
+                chip.insertBefore(dot, chip.firstChild);
+              }
+              dot.style.background = info.ok ? 'var(--success)' : 'var(--danger)';
+              dot.title = info.status || (info.ok ? 'running' : info.error || 'unknown');
+            }
+          });
+        }
+      } catch (_) {
+        el.textContent = 'unknown';
+        el.className = 'badge badge-muted';
       }
     }
 
@@ -1188,13 +1313,16 @@
           : `${okCount}/${total} services running — see hints on failed cards`;
         el.innerHTML = services.map(s => `
           <div class="service-card ${s.ok ? '' : 'fail'}" data-service-id="${escapeHtml(s.id)}">
+            <div class="service-name">${escapeHtml(s.name)}</div>
             <div class="row">
-              <a href="${s.url}" target="_blank" rel="noopener" class="service" style="flex:1;text-decoration:none;color:inherit;" aria-label="Open ${s.name} (opens in new tab)">
+              <a href="${s.url}" target="_blank" rel="noopener" class="service" style="flex:1;text-decoration:none;color:inherit;min-width:0;" aria-label="Open ${s.name} (opens in new tab)">
                 <span class="status ${s.ok ? 'ok' : 'fail'}" aria-hidden="true"></span>
-                <span class="label">${s.name}</span>
+                <span class="label">${escapeHtml(s.name)}</span>
                 <span class="external" aria-hidden="true">↗</span>
               </a>
               ${opsAvailable ? `
+                <button type="button" class="btn-icon btn-ops-start" data-service-id="${escapeHtml(s.id)}" title="Start" aria-label="Start ${s.name}">▶</button>
+                <button type="button" class="btn-icon btn-ops-stop" data-service-id="${escapeHtml(s.id)}" title="Stop" aria-label="Stop ${s.name}">⏹</button>
                 <button type="button" class="btn-icon btn-ops-restart" data-service-id="${escapeHtml(s.id)}" title="Restart" aria-label="Restart ${s.name}">↻</button>
                 <button type="button" class="btn-icon btn-ops-logs" data-service-id="${escapeHtml(s.id)}" title="View logs" aria-label="View logs for ${s.name}">📋</button>
               ` : ''}
@@ -1202,6 +1330,50 @@
             ${!s.ok && s.hint ? `<div class="hint">${s.hint}</div>` : ''}
           </div>
         `).join('');
+        el.querySelectorAll('.btn-ops-start').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = btn.dataset.serviceId;
+            btn.classList.add('loading');
+            try {
+              const r = await api('/api/ops/services/' + id + '/start', { method: 'POST' });
+              const d = await r.json();
+              if (r.ok) {
+                toast(id + ' started');
+                loadServices();
+              } else {
+                toast((d.detail || 'Failed') + '', 'error');
+              }
+            } catch (err) {
+              toast('Start failed: ' + (err.message || err), 'error');
+            } finally {
+              btn.classList.remove('loading');
+            }
+          });
+        });
+        el.querySelectorAll('.btn-ops-stop').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = btn.dataset.serviceId;
+            btn.classList.add('loading');
+            try {
+              const r = await api('/api/ops/services/' + id + '/stop', { method: 'POST' });
+              const d = await r.json();
+              if (r.ok) {
+                toast(id + ' stopped');
+                loadServices();
+              } else {
+                toast((d.detail || 'Failed') + '', 'error');
+              }
+            } catch (err) {
+              toast('Stop failed: ' + (err.message || err), 'error');
+            } finally {
+              btn.classList.remove('loading');
+            }
+          });
+        });
         el.querySelectorAll('.btn-ops-restart').forEach(btn => {
           btn.addEventListener('click', async (e) => {
             e.preventDefault();
@@ -1837,8 +2009,16 @@
       navigator.clipboard?.writeText(cmd).then(() => toast('Rebuild command copied to clipboard', 'success')).catch(() => toast(cmd));
     };
 
-    loadOllamaLibrary().then(() => refresh());
-    setInterval(refresh, 15000);
+    (async function init() {
+      await loadAuthConfig();
+      if (authConfig.auth_required && authConfig.auth_type === 'bearer' && !sessionStorage.getItem(AUTH_STORAGE_KEY)) {
+        showAuthModal();
+        window.addEventListener('auth-ready', () => { loadOllamaLibrary().then(() => refresh()); }, { once: true });
+      } else {
+        loadOllamaLibrary().then(() => refresh());
+      }
+      setInterval(refresh, 15000);
+    })();
   </script>
 </body>
 </html>
