@@ -544,11 +544,10 @@ Also re-check destinations on redirects and protect against DNS rebinding.
 
 **Enforcement:** Apply outside the container where possible (host firewall / `DOCKER-USER` chain), not just in-container rules.
 
-### Telegram Stance
+### Discord Stance
 
-- **Yes**, Telegram interaction is still possible
-- Telegram is an **input channel into the controller** (same workflows as UI), gated by allowlists/pairing policies
-- Telegram should **not** talk directly to the browser worker
+- **Yes**, Discord is the default input channel into the controller (same workflows as UI), gated by allowlists/pairing policies
+- Discord should **not** talk directly to the browser worker
 
 ### API Interaction Stance
 
