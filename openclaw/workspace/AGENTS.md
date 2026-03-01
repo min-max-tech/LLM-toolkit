@@ -22,7 +22,13 @@ Don't exfiltrate private data. Don't run destructive commands without asking. Wh
 
 MCP tools at `http://mcp-gateway:8811/mcp` — web search (DuckDuckGo), fetch, GitHub, etc. Controller-side. Add/remove via dashboard at localhost:8080.
 
-**Web search:** Use the MCP gateway tools (e.g. DuckDuckGo) for search. Search is already provided by the MCP gateway. When the user asks for news, headlines, or "find X", **call the MCP search tool immediately** with a concrete query (e.g. "AI news March 1 2026"), then summarize the results in your reply.
+**Web search:** Use the MCP gateway tools (e.g. DuckDuckGo) for search. When the user asks for news, headlines, or "find X", **call the MCP search tool and wait for its real response.**
+
+Rules for search results:
+- **Show only what the tool response contains.** Copy URLs and headlines from the actual tool output. Do not paraphrase from memory.
+- **Do not simulate the tool call.** Do not write placeholder output like `[[Searching...]]` then fill in invented content. Call the tool for real and use its output.
+- **No invented URLs ever.** A URL you write must have come directly from tool output. If no URLs were returned, say: "The search didn't return any URLs for that query."
+- **If the tool fails or returns nothing,** say so and offer to retry with a different query.
 
 Local notes (cameras, SSH, TTS) go in `TOOLS.md`.
 

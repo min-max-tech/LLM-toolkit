@@ -28,6 +28,8 @@ DEFAULT_GATEWAY_MODELS = [
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
     {"id": "ollama/nomic-embed-text:latest", "name": "Nomic Embed", "reasoning": False, "input": ["text"],
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 8192, "maxTokens": 8192},
+    {"id": "ollama/qwen3:14b", "name": "Qwen3 14B", "reasoning": False, "input": ["text"],
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 32768, "maxTokens": 8192},
 ]
 
 MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435")
