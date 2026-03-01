@@ -81,6 +81,21 @@ curl -s http://localhost:8811/mcp
 - **Cause:** Throughput is only recorded when requests go through the **model gateway**. If OpenClaw uses the **ollama** provider (direct), traffic bypasses the gateway.
 - **Fix:** In OpenClaw Settings → Model, select a model from the **gateway** provider (e.g. `gateway/ollama/deepseek-r1:7b`). Config sync ensures the gateway provider exists in `data/openclaw/openclaw.json`; refresh the model list or restart OpenClaw if you only see `ollama/` models.
 
+### OpenClaw chat blank / no response
+
+- **Symptoms:** Assistant bubbles stay empty; `chat.send 53ms` in openclaw-gateway logs; simple prompts like "What is 2+2?" fail.
+- **Cause:** Model gateway was forwarding `gateway/ollama/model:tag` or `ollama/model:tag` directly to Ollama; Ollama expects the bare model name (e.g. `qwen2.5:7b`).
+- **Fix:** Ensure model-gateway is rebuilt and restarted with the prefix-stripping fix:
+  ```powershell
+  docker compose build model-gateway --no-cache
+  docker compose up -d model-gateway
+  ```
+- **Verify:** Direct test should succeed:
+  ```powershell
+  Invoke-RestMethod -Uri "http://localhost:11435/v1/chat/completions" -Method POST -ContentType "application/json" -Body '{"model":"gateway/ollama/qwen2.5:7b","messages":[{"role":"user","content":"Hi"}],"stream":false}' -TimeoutSec 120
+  ```
+  If you see `choices` with `finish_reason: stop`, the gateway is working. Then retry OpenClaw chat (refresh the page if needed).
+
 ## OpenClaw gateway tool
 
 ### "Missing raw parameter" (config.patch)

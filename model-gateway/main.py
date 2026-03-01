@@ -14,6 +14,20 @@ from httpx import AsyncClient
 
 app = FastAPI(title="Model Gateway", version="1.0.0")
 
+import logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger("gateway")
+
+
+@app.middleware("http")
+async def log_requests(request: Request, call_next):
+    if request.url.path != "/health":
+        logger.info(">>> %s %s from=%s", request.method, request.url.path, request.client.host if request.client else "?")
+    response = await call_next(request)
+    if request.url.path != "/health":
+        logger.info("<<< %s %s status=%s", request.method, request.url.path, response.status_code)
+    return response
+
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434").rstrip("/")
 VLLM_URL = os.environ.get("VLLM_URL", "").rstrip("/")  # e.g. http://vllm:8000
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "ollama")
@@ -244,11 +258,14 @@ async def chat_completions(request: Request, body: dict[str, Any]):
             resp["_request_id"] = req_id
             return resp
 
-    # Ollama
-    ollama_body = {"model": model_id, "messages": messages, "stream": stream}
+    # Ollama: strip provider prefix (ollama/qwen2.5:7b -> qwen2.5:7b)
+    ollama_model = _ollama_model_id(model_id)
+    ollama_body = {"model": ollama_model, "messages": messages, "stream": stream}
 
     if stream:
         async def generate():
+            chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+            first_sent = False
             prev = ""
             last_eval_count = 0
             last_eval_duration = 0
@@ -256,6 +273,10 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                 async with client.stream(
                     "POST", f"{OLLAMA_URL}/api/chat", json=ollama_body
                 ) as resp:
+                    if resp.status_code >= 400:
+                        err_body = await resp.aread()
+                        logger.error("Ollama chat error status=%d body=%s", resp.status_code, err_body[:500])
+                        return
                     async for line in resp.aiter_lines():
                         if not line or line == "data: [DONE]":
                             continue
@@ -277,10 +298,14 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                             delta_text = content[len(prev):] if len(content) >= len(prev) else content
                             prev = content
                             if delta_text:
-                                delta = {"content": delta_text, "role": "assistant"}
+                                delta = {"content": delta_text}
+                                if not first_sent:
+                                    delta["role"] = "assistant"
+                                    first_sent = True
                                 chunk = {
-                                    "id": "chatcmpl-gateway",
+                                    "id": chunk_id,
                                     "object": "chat.completion.chunk",
+                                    "created": int(time.time()),
                                     "model": model,
                                     "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
                                 }
@@ -289,7 +314,13 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                             continue
             if last_eval_count and last_eval_duration:
                 _record_throughput(model_id, last_eval_count, last_eval_duration, service)
-            yield _stream_chunk_openai({"choices": [{"delta": {}, "finish_reason": "stop"}]})
+            yield _stream_chunk_openai({
+                "id": chunk_id,
+                "object": "chat.completion.chunk",
+                "created": int(time.time()),
+                "model": model,
+                "choices": [{"delta": {}, "finish_reason": "stop"}],
+            })
             yield "data: [DONE]\n\n"
 
         return StreamingResponse(
@@ -324,7 +355,110 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                 "finish_reason": "stop",
             }
         ],
-        "usage": data.get("eval_count", {}),
+        "usage": {
+            "prompt_tokens": data.get("prompt_eval_count", 0),
+            "completion_tokens": eval_count,
+            "total_tokens": data.get("prompt_eval_count", 0) + eval_count,
+        },
+    }
+
+
+# --- Legacy Completions (redirect to chat) ---
+
+
+@app.post("/v1/completions")
+async def completions_compat(request: Request, body: dict[str, Any]):
+    """Legacy text completions — convert to chat format and proxy."""
+    logger.warning(">>> /v1/completions called (legacy); converting to chat format. model=%s", body.get("model", ""))
+    prompt = body.get("prompt", "")
+    if isinstance(prompt, list):
+        prompt = "\n".join(str(p) for p in prompt)
+    chat_body = {
+        "model": body.get("model", ""),
+        "messages": [{"role": "user", "content": prompt}],
+        "stream": body.get("stream", False),
+    }
+    for k in ("max_tokens", "temperature", "top_p", "stop"):
+        if k in body:
+            chat_body[k] = body[k]
+    return await chat_completions(request, chat_body)
+
+
+# --- Responses API (OpenAI Responses format) ---
+
+
+@app.post("/v1/responses")
+async def responses_api(request: Request, body: dict[str, Any]):
+    """OpenAI Responses API — convert to chat completions and proxy."""
+    logger.info(">>> /v1/responses called; converting to chat format. model=%s stream=%s", body.get("model", ""), body.get("stream", False))
+
+    messages: list[dict] = []
+    instructions = body.get("instructions", "")
+    if instructions:
+        messages.append({"role": "system", "content": instructions})
+
+    def _content_to_str(c: Any) -> str:
+        """Ollama expects content as string; Responses API may send array of parts."""
+        if isinstance(c, str):
+            return c
+        if isinstance(c, list):
+            parts = []
+            for p in c:
+                if isinstance(p, dict) and "text" in p:
+                    parts.append(str(p["text"]))
+                elif isinstance(p, str):
+                    parts.append(p)
+            return "\n".join(parts) if parts else ""
+        return str(c) if c is not None else ""
+
+    inp = body.get("input", "")
+    if isinstance(inp, str) and inp:
+        messages.append({"role": "user", "content": inp})
+    elif isinstance(inp, list):
+        for item in inp:
+            if isinstance(item, dict):
+                messages.append({"role": item.get("role", "user"), "content": _content_to_str(item.get("content"))})
+            elif isinstance(item, str):
+                messages.append({"role": "user", "content": item})
+
+    stream = body.get("stream", False)
+    chat_body: dict[str, Any] = {
+        "model": body.get("model", ""),
+        "messages": messages,
+        "stream": stream,
+    }
+    for k in ("max_tokens", "max_output_tokens", "temperature", "top_p", "stop"):
+        if k in body:
+            chat_body[k] = body[k]
+
+    chat_response = await chat_completions(request, chat_body)
+
+    if stream or isinstance(chat_response, StreamingResponse):
+        return chat_response
+
+    resp_id = f"resp-{uuid.uuid4().hex[:12]}"
+    choice = chat_response.get("choices", [{}])[0] if isinstance(chat_response, dict) else {}
+    content = choice.get("message", {}).get("content", "")
+    usage = chat_response.get("usage", {}) if isinstance(chat_response, dict) else {}
+
+    return {
+        "id": resp_id,
+        "object": "response",
+        "created_at": int(time.time()),
+        "model": body.get("model", ""),
+        "output": [
+            {
+                "type": "message",
+                "role": "assistant",
+                "content": [{"type": "output_text", "text": content}],
+            }
+        ],
+        "usage": {
+            "input_tokens": usage.get("prompt_tokens", 0),
+            "output_tokens": usage.get("completion_tokens", 0),
+            "total_tokens": usage.get("total_tokens", 0),
+        },
+        "status": "completed",
     }
 
 
@@ -354,8 +488,9 @@ async def embeddings(body: dict[str, Any]):
             r.raise_for_status()
             return r.json()
 
-    # Ollama
-    ollama_body = {"model": model_id, "input": inp}
+    # Ollama: strip provider prefix (ollama/qwen2.5:7b -> qwen2.5:7b)
+    ollama_model = _ollama_model_id(model_id)
+    ollama_body = {"model": ollama_model, "input": inp}
     async with AsyncClient(timeout=120.0) as client:
         r = await client.post(f"{OLLAMA_URL}/api/embed", json=ollama_body)
         r.raise_for_status()

@@ -46,13 +46,12 @@ EXTENSIONS_DIR = Path("/config/extensions/openclaw-mcp-bridge")
 
 
 def _ensure_plugin_manifest() -> None:
-    """Write openclaw.plugin.json if the npm package didn't ship one."""
+    """Write openclaw.plugin.json if missing. Creates the extensions dir if needed."""
     manifest_path = EXTENSIONS_DIR / "openclaw.plugin.json"
     if manifest_path.exists():
         return
-    if not EXTENSIONS_DIR.exists():
-        return
     try:
+        EXTENSIONS_DIR.mkdir(parents=True, exist_ok=True)
         manifest_path.write_text(json.dumps(PLUGIN_MANIFEST, indent=2), encoding="utf-8")
         print(f"add_mcp_plugin_config: created missing {manifest_path}")
     except OSError as e:

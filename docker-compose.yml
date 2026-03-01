@@ -334,10 +334,14 @@ services:
   openclaw-config-sync:
     image: python:3.12-alpine
     restart: "no"
+    depends_on:
+      model-gateway:
+        condition: service_started
     env_file:
       - .env
     environment:
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - MODEL_GATEWAY_URL=http://model-gateway:11435
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
       - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
@@ -345,10 +349,13 @@ services:
     networks:
       - frontend
 
-  # Install MCP bridge plugin into mounted config (image entrypoint runs openclaw correctly).
+  # Install MCP bridge plugin (optional; npm package v0.1.0 has manifest bug — we use
+  # plugin-config instead). Run manually: docker compose run --rm openclaw-plugin-install
   openclaw-plugin-install:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
     restart: "no"
+    profiles:
+      - openclaw-setup
     depends_on:
       openclaw-config-sync:
         condition: service_completed_successfully
@@ -360,13 +367,13 @@ services:
     networks:
       - frontend
 
-  # Add MCP plugin config to openclaw.json after plugin-install (config-sync removes it
-  # so plugin-install can run; this step adds it back for the gateway).
+  # Ensure MCP plugin manifest exists and plugin entry in openclaw.json.
+  # Runs after config-sync; gateway depends on this (not on plugin-install).
   openclaw-plugin-config:
     image: python:3.12-alpine
     restart: "no"
     depends_on:
-      openclaw-plugin-install:
+      openclaw-config-sync:
         condition: service_completed_successfully
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
@@ -379,8 +386,6 @@ services:
     image: ${OPENCLAW_IMAGE:-ghcr.io/phioranex/openclaw-docker:latest}
     container_name: openclaw-gateway
     depends_on:
-      ollama:
-        condition: service_started
       model-gateway:
         condition: service_started
       mcp-gateway:
@@ -388,6 +393,8 @@ services:
       openclaw-workspace-sync:
         condition: service_completed_successfully
       openclaw-config-sync:
+        condition: service_completed_successfully
+      openclaw-plugin-config:
         condition: service_completed_successfully
     env_file:
       - .env
@@ -397,9 +404,6 @@ services:
       NODE_ENV: production
       OPENCLAW_SKIP_SERVICE_CHECK: "true"
       OPENCLAW_GATEWAY_BIND: "lan"
-      # Ollama: expose local models to OpenClaw (native API, no /v1)
-      OLLAMA_API_KEY: "ollama-local"
-      OLLAMA_BASE_URL: "http://ollama:11434"
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR:-${BASE_PATH:-.}/data/openclaw/workspace}:/home/node/.openclaw/workspace
