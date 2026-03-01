@@ -65,6 +65,16 @@ Templates live in `openclaw/workspace/`. On first setup, `ensure_openclaw_worksp
 - **Config:** `data/openclaw/` (openclaw.json, agents, etc.)
 - **Workspace:** `data/openclaw/workspace/` (SOUL.md, AGENTS.md, TOOLS.md, memory/)
 
+## Discord (default channel)
+
+Discord is the default client for interacting with OpenClaw. Set up via:
+
+```powershell
+docker compose run --rm openclaw-cli channels login
+```
+
+See [OpenClaw Discord docs](https://docs.openclaw.ai/channels/discord) for bot token, guild/channel restrictions, and configuration.
+
 ## CLI Commands
 
 ```powershell
@@ -76,9 +86,6 @@ docker compose run --rm openclaw-cli devices list
 
 # Approve a device
 docker compose run --rm openclaw-cli devices approve <device-id>
-
-# WhatsApp QR login
-docker compose run --rm openclaw-cli channels login
 ```
 
 ## Build from Source (Optional)
