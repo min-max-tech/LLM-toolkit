@@ -175,7 +175,7 @@ services:
       - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
       - OPENAI_API_BASE=${OPENAI_API_BASE:-http://model-gateway:11435/v1}
       # Auth: True by default. Set WEBUI_AUTH=False in .env for single-user local use.
-      - WEBUI_AUTH=${WEBUI_AUTH:-True}
+      - WEBUI_AUTH=${WEBUI_AUTH:-False}
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data
     networks:
