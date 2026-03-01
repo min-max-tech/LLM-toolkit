@@ -13,6 +13,37 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/ollama:/root/.ollama
     # GPU: add deploy via docker-compose.compute.yml (run scripts/detect_hardware.py)
 
+  model-gateway:
+    build: ./model-gateway
+    image: ai-toolkit-model-gateway:latest
+    pull_policy: build
+    restart: unless-stopped
+    depends_on:
+      - ollama
+    environment:
+      - OLLAMA_URL=http://ollama:11434
+      - DEFAULT_PROVIDER=ollama
+    ports:
+      - "${MODEL_GATEWAY_PORT:-11435}:11435"
+
+  ops-controller:
+    build: ./ops-controller
+    image: ai-toolkit-ops-controller:latest
+    pull_policy: build
+    restart: unless-stopped
+    environment:
+      - COMPOSE_PROJECT_DIR=/workspace
+      - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
+      - AUDIT_LOG_PATH=/data/audit.log
+      - BASE_PATH=${BASE_PATH:-.}
+      - DATA_PATH=${DATA_PATH:-${BASE_PATH:-.}/data}
+      - COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.yml}
+    volumes:
+      - /var/run/docker.sock:/var/run/docker.sock
+      - ${BASE_PATH:-.}:/workspace:ro
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/ops-controller:/data
+    # No host port - dashboard calls internally. Add "9000:9000" for debugging.
+
   dashboard:
     build: ./dashboard
     restart: unless-stopped
@@ -28,6 +59,8 @@ services:
       - SCRIPTS_DIR=/scripts
       - MCP_CONFIG_PATH=/mcp-config/servers.txt
       - MCP_GATEWAY_SERVERS=${MCP_GATEWAY_SERVERS:-duckduckgo}
+      - OPS_CONTROLLER_URL=http://ops-controller:9000
+      - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
@@ -38,10 +71,13 @@ services:
     restart: unless-stopped
     depends_on:
       - ollama
+      - model-gateway
     ports:
       - "3000:8080"
     environment:
-      - OLLAMA_BASE_URL=http://ollama:11434
+      # Use model gateway for OpenAI-compatible API, or Ollama directly
+      - OLLAMA_BASE_URL=${OLLAMA_BASE_URL:-http://ollama:11434}
+      - OPENAI_API_BASE=${OPENAI_API_BASE:-}
       - WEBUI_AUTH=False
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data

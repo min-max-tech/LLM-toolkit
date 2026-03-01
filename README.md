@@ -12,11 +12,13 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), 
 |---------|------|---------|
 | **dashboard** | 8080 | **Unified model manager** — [localhost:8080](http://localhost:8080) |
 | **ollama** | 11434 | Local LLM runtime (GPU) |
+| **model-gateway** | 11435 | OpenAI-compatible proxy — [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) |
 | **open-webui** | 3000 | Chat UI — [localhost:3000](http://localhost:3000) |
 | **comfyui** | 8188 | Stable Diffusion / LTX-2 — [localhost:8188](http://localhost:8188) |
 | **n8n** | 5678 | Workflow automation — [localhost:5678](http://localhost:5678) |
 | **OpenClaw** | 18789 | Personal AI assistant — [openclaw/](openclaw/) |
 | **MCP Gateway** | 8811 | Shared MCP tools — [mcp/](mcp/) |
+| **ops-controller** | — | Start/stop/restart services from dashboard (set `OPS_CONTROLLER_TOKEN`) |
 | model-puller | — | Ready to pull Ollama models on demand |
 | comfyui-model-puller | — | Ready to download LTX-2 models (~60 GB) on demand |
 
@@ -78,6 +80,7 @@ All services start by default. Open the **dashboard** at [localhost:8080](http:/
 The **dashboard** at [localhost:8080](http://localhost:8080) gives you a single web UI to:
 
 - **View all models** — Ollama (LLM) and ComfyUI (LTX-2) in one place
+- **Restart services** — when `OPS_CONTROLLER_TOKEN` is set in `.env`
 - **Pull models** — searchable dropdown with 150+ Ollama models; or type any model name
 - **Jump to services** — Open WebUI, ComfyUI, N8N, OpenClaw, MCP Gateway
 
@@ -113,7 +116,8 @@ ComfyUI starts independently. LTX-2 models (~60 GB) are downloaded on demand —
 ## Security
 
 - **Open WebUI** runs with `WEBUI_AUTH=False` by default (no login). Suitable for local/single-user use. If exposing to a network, set `WEBUI_AUTH=True` in the environment.
-- **OpenClaw** requires a gateway token — generate with `openssl rand -hex 32`.
+- **OpenClaw** requires a gateway token — generate with `openssl rand -hex 32`. For Tailscale-only access, use `docker-compose.openclaw-secure.yml` to bind to localhost. See [openclaw/OPENCLAW_SECURE.md](openclaw/OPENCLAW_SECURE.md).
+- **Ops Controller** requires `OPS_CONTROLLER_TOKEN` for dashboard start/stop/restart. Generate: `openssl rand -hex 32`.
 - Never commit `.env` or `openclaw/.env`. See [SECURITY.md](SECURITY.md) for details.
 
 ## GPU / compute

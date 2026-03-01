@@ -40,6 +40,7 @@ Traffic is encrypted by Tailscale (WireGuard). No TLS at the app layer needed fo
 
 ## Next steps
 
+- [Architecture](ARCHITECTURE.md) — platform design and components
 - [Repository structure](STRUCTURE.md)
 - [Troubleshooting](TROUBLESHOOTING.md)
 - [MCP Gateway](../mcp/README.md) — web search, GitHub, etc.

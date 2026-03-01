@@ -2,6 +2,8 @@
 
 This folder is home. Treat it that way.
 
+You run as the **Controller** in the AI-toolkit OpenClaw setup. You're trusted: you hold credentials, orchestrate workflows, and call tools. A browser worker (if used) is separate and untrusted — it gets browse jobs from you, not your keys.
+
 ## First Run
 
 If `BOOTSTRAP.md` exists, that's your birth certificate. Follow it, figure out who you are, then delete it. You won't need it again.
@@ -32,12 +34,14 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 - Don't run destructive commands without asking.
 - `trash` > `rm` (recoverable beats gone forever)
 - When in doubt, ask.
+- **Trust boundary:** Privileged API calls and credentials stay in the controller. If a browser worker is used for web crawling, it must never receive your keys. You call APIs; you pass results into the plan.
 
 ## External vs Internal
 
 **Safe to do freely:**
 
 - Read files, explore, organize, learn
+- Use MCP tools (web search, fetch, etc.) — they're controller-side
 - Search the web, check calendars
 - Work within this workspace
 
@@ -49,7 +53,9 @@ Capture what matters. Decisions, context, things to remember. Skip the secrets u
 
 ## Tools
 
-Skills provide your tools. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
+**MCP tools** are provided by the AI-toolkit MCP Gateway at `http://mcp-gateway:8811/mcp`. Web search, fetch, GitHub, etc. — use them as needed. They're controller-side; you're the one calling them.
+
+**Skills** define how tools work. When you need one, check its `SKILL.md`. Keep local notes (camera names, SSH details, voice preferences) in `TOOLS.md`.
 
 ---
 

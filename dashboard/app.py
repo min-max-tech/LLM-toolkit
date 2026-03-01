@@ -1,6 +1,7 @@
 """AI-toolkit Dashboard — unified model management and service hub."""
 from __future__ import annotations
 
+import json
 import os
 import subprocess
 import threading
@@ -196,9 +197,22 @@ async def comfyui_pull_status():
 
 # --- Services ---
 
+# Map dashboard service id -> ops-controller service id
+OPS_SERVICE_MAP = {
+    "ollama": "ollama",
+    "model-gateway": "model-gateway",
+    "webui": "open-webui",
+    "mcp": "mcp-gateway",
+    "comfyui": "comfyui",
+    "n8n": "n8n",
+    "openclaw": "openclaw-gateway",
+}
+
 SERVICES = [
     {"id": "ollama", "name": "Ollama", "port": 11434, "url": "http://localhost:11434", "check": "http://ollama:11434/api/version",
      "hint": "Run: docker compose up -d ollama"},
+    {"id": "model-gateway", "name": "Model Gateway", "port": 11435, "url": "http://localhost:11435", "check": "http://model-gateway:11435/health",
+     "hint": "OpenAI-compatible proxy. Set OPENAI_API_BASE to use."},
     {"id": "webui", "name": "Open WebUI", "port": 3000, "url": "http://localhost:3000", "check": "http://open-webui:8080",
      "hint": "Depends on Ollama. Check: docker compose logs open-webui"},
     {"id": "mcp", "name": "MCP Gateway", "port": 8811, "url": "http://localhost:8811", "check": "http://mcp-gateway:8811/mcp",
@@ -293,12 +307,32 @@ def _write_mcp_servers(servers: list[str]) -> Path:
     return path
 
 
+def _mcp_registry_path() -> Path | None:
+    """Path to MCP registry.json (optional metadata)."""
+    if not MCP_CONFIG_PATH:
+        return None
+    p = Path(MCP_CONFIG_PATH).parent / "registry.json"
+    return p if p.parent.exists() else None
+
+
+def _read_mcp_registry() -> dict:
+    """Read registry.json if present. Falls back to empty dict."""
+    path = _mcp_registry_path()
+    if path and path.exists():
+        try:
+            return json.loads(path.read_text())
+        except (json.JSONDecodeError, OSError):
+            pass
+    return {"servers": {}}
+
+
 @app.get("/api/mcp/servers")
 async def mcp_servers():
     """List enabled MCP servers and catalog for adding."""
     servers = _read_mcp_servers()
     dynamic = _mcp_config_path() is not None
-    return {"enabled": servers, "catalog": MCP_CATALOG, "dynamic": dynamic, "ok": True}
+    registry = _read_mcp_registry()
+    return {"enabled": servers, "catalog": MCP_CATALOG, "dynamic": dynamic, "registry": registry, "ok": True}
 
 
 class McpAddRequest(BaseModel):
@@ -384,6 +418,70 @@ async def services():
             "hint": svc.get("hint", ""),
         })
     return {"services": results}
+
+
+@app.get("/api/health")
+async def health():
+    """Aggregated platform health. Returns ok=true when all services are reachable."""
+    results = []
+    for svc in SERVICES:
+        ok, err = await _check_service(svc["check"]) if svc.get("check") else (None, "")
+        results.append({"id": svc["id"], "ok": ok, "error": err})
+    all_ok = all(r["ok"] for r in results if r["ok"] is not None)
+    return {"ok": all_ok, "services": results}
+
+
+# --- Ops Controller proxy ---
+
+OPS_CONTROLLER_URL = os.environ.get("OPS_CONTROLLER_URL", "http://ops-controller:9000")
+OPS_CONTROLLER_TOKEN = os.environ.get("OPS_CONTROLLER_TOKEN", "")
+
+
+async def _ops_request(method: str, path: str, **kwargs) -> tuple[int, dict]:
+    """Proxy request to ops controller. Returns (status_code, json_body)."""
+    if not OPS_CONTROLLER_TOKEN:
+        return 503, {"detail": "OPS_CONTROLLER_TOKEN not configured"}
+    url = f"{OPS_CONTROLLER_URL.rstrip('/')}{path}"
+    headers = {"Authorization": f"Bearer {OPS_CONTROLLER_TOKEN}", **kwargs.pop("headers", {})}
+    try:
+        async with AsyncClient(timeout=30.0) as client:
+            r = await client.request(method, url, headers=headers, **kwargs)
+            try:
+                data = r.json()
+            except Exception:
+                data = {"detail": r.text or "Unknown error"}
+            return r.status_code, data
+    except Exception as e:
+        return 503, {"detail": str(e)}
+
+
+@app.post("/api/ops/services/{service_id}/restart")
+async def ops_restart(service_id: str):
+    """Restart a service via ops controller."""
+    ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
+    code, data = await _ops_request("POST", f"/services/{ops_id}/restart", json={"confirm": True})
+    if code >= 400:
+        raise HTTPException(status_code=code, detail=data.get("detail", data))
+    return data
+
+
+@app.get("/api/ops/services/{service_id}/logs")
+async def ops_logs(service_id: str, tail: int = 100):
+    """Get service logs via ops controller."""
+    ops_id = OPS_SERVICE_MAP.get(service_id, service_id)
+    code, data = await _ops_request("GET", f"/services/{ops_id}/logs?tail={tail}")
+    if code >= 400:
+        raise HTTPException(status_code=code, detail=data.get("detail", data))
+    return data
+
+
+@app.get("/api/ops/available")
+async def ops_available():
+    """Check if ops controller is configured and reachable."""
+    if not OPS_CONTROLLER_TOKEN:
+        return {"available": False, "reason": "OPS_CONTROLLER_TOKEN not set"}
+    code, _ = await _ops_request("GET", "/health")
+    return {"available": code == 200}
 
 
 # --- Static ---

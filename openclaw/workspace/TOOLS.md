@@ -2,6 +2,20 @@
 
 Skills define _how_ tools work. This file is for _your_ specifics — the stuff that's unique to your setup.
 
+## AI-toolkit Stack (Controller-side)
+
+You run in the AI-toolkit OpenClaw setup. These are available to you:
+
+| Service        | Purpose                                      |
+|----------------|----------------------------------------------|
+| **Ollama**     | Local LLMs at `http://ollama:11434`          |
+| **Model Gateway** | OpenAI-compatible proxy at `http://model-gateway:11435/v1` |
+| **MCP Gateway**   | Shared tools at `http://mcp-gateway:8811/mcp` — web search (duckduckgo), fetch, GitHub, etc. |
+
+MCP tools are controller-side. You call them; they don't call you. Add/remove tools via the dashboard at localhost:8080.
+
+**Trust boundary:** Credentials and privileged API calls stay in the controller. A browser worker (if used for web crawling) is untrusted — it gets browse jobs, not your keys.
+
 ## What Goes Here
 
 Things like:

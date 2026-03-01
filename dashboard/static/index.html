@@ -149,6 +149,7 @@
     .header-actions { display: flex; gap: var(--space-2); align-items: center; flex-shrink: 0; }
     .btn-icon {
       width: 40px; height: 40px;
+      flex-shrink: 0;
       display: flex; align-items: center; justify-content: center;
       background: var(--surface); border: 1px solid var(--border);
       border-radius: var(--radius-sm); color: var(--muted);
@@ -265,10 +266,9 @@
     .mcp-empty-hint { color: var(--muted); font-size: var(--text-sm); font-style: italic; }
     .services {
       display: grid;
-      grid-template-columns: repeat(6, minmax(0, 1fr));
+      grid-template-columns: repeat(auto-fill, minmax(220px, 1fr));
       gap: var(--space-4);
     }
-    @media (max-width: 1100px) { .services { grid-template-columns: repeat(3, 1fr); } }
     @media (max-width: 768px) { .services { grid-template-columns: repeat(2, 1fr); gap: var(--space-3); } }
     @media (max-width: 600px) { .services { grid-template-columns: 1fr; } }
     .service {
@@ -323,7 +323,17 @@
     .service-card .row {
       display: flex;
       align-items: center;
-      gap: var(--space-3);
+      gap: var(--space-2);
+      min-width: 0;
+    }
+    .service-card .row .service {
+      min-width: 0;
+      overflow: hidden;
+    }
+    .service-card .row .service .label {
+      overflow: hidden;
+      text-overflow: ellipsis;
+      white-space: nowrap;
     }
     .service-card .hint {
       font-size: var(--text-sm);
@@ -928,9 +938,22 @@
       }
     }
 
+    let opsAvailable = false;
+
+    async function checkOpsAvailable() {
+      try {
+        const r = await api('/api/ops/available');
+        const d = await r.json();
+        opsAvailable = d.available === true;
+      } catch (_) {
+        opsAvailable = false;
+      }
+    }
+
     async function loadServices() {
       const el = document.getElementById('services');
       const summaryEl = document.getElementById('status-summary');
+      await checkOpsAvailable();
       try {
         const r = await api('/api/services');
         const d = await r.json();
@@ -943,17 +966,63 @@
           ? `✓ All ${total} services running`
           : `${okCount}/${total} services running — see hints on failed cards`;
         el.innerHTML = services.map(s => `
-          <div class="service-card ${s.ok ? '' : 'fail'}">
+          <div class="service-card ${s.ok ? '' : 'fail'}" data-service-id="${escapeHtml(s.id)}">
             <div class="row">
               <a href="${s.url}" target="_blank" rel="noopener" class="service" style="flex:1;text-decoration:none;color:inherit;" aria-label="Open ${s.name} (opens in new tab)">
                 <span class="status ${s.ok ? 'ok' : 'fail'}" aria-hidden="true"></span>
                 <span class="label">${s.name}</span>
                 <span class="external" aria-hidden="true">↗</span>
               </a>
+              ${opsAvailable ? `
+                <button type="button" class="btn-icon btn-ops-restart" data-service-id="${escapeHtml(s.id)}" title="Restart" aria-label="Restart ${s.name}">↻</button>
+                <button type="button" class="btn-icon btn-ops-logs" data-service-id="${escapeHtml(s.id)}" title="View logs" aria-label="View logs for ${s.name}">📋</button>
+              ` : ''}
             </div>
             ${!s.ok && s.hint ? `<div class="hint">${s.hint}</div>` : ''}
           </div>
         `).join('');
+        el.querySelectorAll('.btn-ops-restart').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = btn.dataset.serviceId;
+            btn.classList.add('loading');
+            try {
+              const r = await api('/api/ops/services/' + id + '/restart', { method: 'POST' });
+              const d = await r.json();
+              if (r.ok) {
+                toast(id + ' restarted');
+                loadServices();
+              } else {
+                toast((d.detail || 'Failed') + '', 'error');
+              }
+            } catch (err) {
+              toast('Restart failed: ' + (err.message || err), 'error');
+            } finally {
+              btn.classList.remove('loading');
+            }
+          });
+        });
+        el.querySelectorAll('.btn-ops-logs').forEach(btn => {
+          btn.addEventListener('click', async (e) => {
+            e.preventDefault();
+            e.stopPropagation();
+            const id = btn.dataset.serviceId;
+            try {
+              const r = await api('/api/ops/services/' + id + '/logs?tail=100');
+              const d = await r.json();
+              if (r.ok && d.logs) {
+                const win = window.open('', '_blank', 'width=800,height=600');
+                win.document.write('<pre style="font-family:monospace;white-space:pre-wrap;padding:1rem;font-size:12px;">' + escapeHtml(d.logs) + '</pre>');
+                win.document.close();
+              } else {
+                toast((d.detail || 'No logs') + '', 'error');
+              }
+            } catch (err) {
+              toast('Logs failed: ' + (err.message || err), 'error');
+            }
+          });
+        });
       } catch (e) {
         summaryEl.style.display = 'block';
         summaryEl.className = 'status-summary has-issues';

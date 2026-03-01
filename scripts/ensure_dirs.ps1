@@ -5,6 +5,7 @@ $data = if ($env:DATA_PATH) { $env:DATA_PATH -replace '\\', '/' } else { Join-Pa
 $dirs = @(
     (Join-Path $data "ollama"),
     (Join-Path $data "mcp"),
+    (Join-Path $data "ops-controller"),
     (Join-Path $data "open-webui"),
     (Join-Path $data "comfyui-storage"),
     (Join-Path $data "comfyui-output"),

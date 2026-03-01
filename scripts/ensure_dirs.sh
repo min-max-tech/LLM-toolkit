@@ -11,6 +11,7 @@ data="${DATA_PATH:-$base/data}"
 dirs=(
   "$data/ollama"
   "$data/mcp"
+  "$data/ops-controller"
   "$data/open-webui"
   "$data/comfyui-storage"
   "$data/comfyui-output"

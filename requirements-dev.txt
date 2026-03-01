@@ -1,0 +1,3 @@
+# Dev/test dependencies. Install: pip install -r requirements-dev.txt
+-r dashboard/requirements.txt
+pytest>=7.0.0
