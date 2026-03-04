@@ -386,8 +386,12 @@ async def completions_compat(request: Request, body: dict[str, Any]):
 
 @app.post("/v1/responses")
 async def responses_api(request: Request, body: dict[str, Any]):
-    """OpenAI Responses API — convert to chat completions and proxy."""
-    logger.info(">>> /v1/responses called; converting to chat format. model=%s stream=%s", body.get("model", ""), body.get("stream", False))
+    """OpenAI Responses API — convert to chat completions and proxy, preserving tools."""
+    raw_tools = body.get("tools") or []
+    logger.info(
+        ">>> /v1/responses called; converting to chat format. model=%s stream=%s tools=%d",
+        body.get("model", ""), body.get("stream", False), len(raw_tools),
+    )
 
     messages: list[dict] = []
     instructions = body.get("instructions", "")
@@ -408,15 +412,67 @@ async def responses_api(request: Request, body: dict[str, Any]):
             return "\n".join(parts) if parts else ""
         return str(c) if c is not None else ""
 
+    # Convert Responses API input items → chat messages.
+    # Handles plain messages, function_call (→ assistant tool_calls), and
+    # function_call_output (→ tool result message).
     inp = body.get("input", "")
     if isinstance(inp, str) and inp:
         messages.append({"role": "user", "content": inp})
     elif isinstance(inp, list):
-        for item in inp:
+        idx = 0
+        while idx < len(inp):
+            item = inp[idx]
             if isinstance(item, dict):
-                messages.append({"role": item.get("role", "user"), "content": _content_to_str(item.get("content"))})
+                item_type = item.get("type", "")
+                if item_type == "function_call":
+                    # Collect consecutive function_call items → single assistant message
+                    tool_calls: list[dict] = []
+                    while idx < len(inp) and isinstance(inp[idx], dict) and inp[idx].get("type") == "function_call":
+                        fc = inp[idx]
+                        tool_calls.append({
+                            "id": fc.get("call_id") or f"call_{uuid.uuid4().hex[:12]}",
+                            "type": "function",
+                            "function": {
+                                "name": fc.get("name", ""),
+                                "arguments": fc.get("arguments", "{}"),
+                            },
+                        })
+                        idx += 1
+                    messages.append({"role": "assistant", "content": None, "tool_calls": tool_calls})
+                    continue
+                elif item_type == "function_call_output":
+                    messages.append({
+                        "role": "tool",
+                        "tool_call_id": item.get("call_id", ""),
+                        "content": str(item.get("output", "")),
+                    })
+                else:
+                    role = item.get("role", "user")
+                    messages.append({"role": role, "content": _content_to_str(item.get("content"))})
             elif isinstance(item, str):
                 messages.append({"role": "user", "content": item})
+            idx += 1
+
+    # Convert Responses API tool defs → Chat Completions format.
+    # Responses API: {type, name, description, parameters}
+    # Chat Completions: {type, function: {name, description, parameters}}
+    def _convert_tools(resp_tools: list) -> list:
+        result = []
+        for t in resp_tools:
+            if not isinstance(t, dict):
+                continue
+            if "function" in t:
+                result.append(t)  # already in chat format
+            elif t.get("type") == "function":
+                result.append({
+                    "type": "function",
+                    "function": {
+                        "name": t.get("name", ""),
+                        "description": t.get("description", ""),
+                        "parameters": t.get("parameters", {}),
+                    },
+                })
+        return result
 
     stream = body.get("stream", False)
     chat_body: dict[str, Any] = {
@@ -424,77 +480,150 @@ async def responses_api(request: Request, body: dict[str, Any]):
         "messages": messages,
         "stream": stream,
     }
-    for k in ("max_tokens", "max_output_tokens", "temperature", "top_p", "stop"):
+    for k in ("max_tokens", "temperature", "top_p", "stop"):
         if k in body:
             chat_body[k] = body[k]
+    if body.get("max_output_tokens") and "max_tokens" not in chat_body:
+        chat_body["max_tokens"] = body["max_output_tokens"]
+    if raw_tools:
+        chat_body["tools"] = _convert_tools(raw_tools)
+    if "tool_choice" in body:
+        chat_body["tool_choice"] = body["tool_choice"]
 
     chat_response = await chat_completions(request, chat_body)
 
     if stream or isinstance(chat_response, StreamingResponse):
-        # OpenClaw with openai-responses expects Responses API streaming format,
-        # not chat completions. Transform the stream.
         async def _to_responses_stream():
             resp_id = f"resp-{uuid.uuid4().hex[:12]}"
-            item_id = f"msg-{uuid.uuid4().hex[:12]}"
+            msg_item_id = f"msg-{uuid.uuid4().hex[:12]}"
             seq = 0
             model = body.get("model", "")
-            # response.created
+
             yield _stream_chunk_openai({
                 "type": "response.created",
                 "response": {"id": resp_id, "created_at": int(time.time()), "model": model, "status": "in_progress"},
                 "sequence_number": seq,
             })
             seq += 1
-            # response.output_item.added (message with empty content)
             yield _stream_chunk_openai({
                 "type": "response.output_item.added",
-                "item": {"type": "message", "id": item_id, "role": "assistant", "content": []},
+                "item": {"type": "message", "id": msg_item_id, "role": "assistant", "content": []},
                 "output_index": 0,
                 "sequence_number": seq,
             })
             seq += 1
-            # response.content_part.added (create output_text slot for streaming)
             yield _stream_chunk_openai({
                 "type": "response.content_part.added",
                 "content_index": 0,
-                "item_id": item_id,
+                "item_id": msg_item_id,
                 "output_index": 0,
                 "part": {"type": "output_text", "text": ""},
                 "sequence_number": seq,
             })
             seq += 1
-            # Consume chat stream, emit response.output_text.delta for each content
+
             buf = ""
             full_text = ""
+            # tool_calls_acc: index → {id, name, arguments}
+            tool_calls_acc: dict[int, dict] = {}
+            tool_call_item_ids: dict[int, str] = {}
+
             async for chunk in chat_response.body_iterator:
                 buf += chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="replace")
                 while "\n\n" in buf:
                     block, buf = buf.split("\n\n", 1)
                     for line in block.strip().split("\n"):
                         line = line.strip()
-                        if line.startswith("data: ") and line != "data: [DONE]":
-                            try:
-                                data = json.loads(line[6:])
-                                delta = (data.get("choices") or [{}])[0].get("delta", {})
-                                content = delta.get("content", "")
-                                if content:
-                                    full_text += content
+                        if not line.startswith("data: ") or line == "data: [DONE]":
+                            continue
+                        try:
+                            data = json.loads(line[6:])
+                            delta = (data.get("choices") or [{}])[0].get("delta", {})
+
+                            # Text content
+                            content = delta.get("content", "")
+                            if content:
+                                full_text += content
+                                yield _stream_chunk_openai({
+                                    "type": "response.output_text.delta",
+                                    "delta": content,
+                                    "item_id": msg_item_id,
+                                    "output_index": 0,
+                                    "content_index": 0,
+                                    "sequence_number": seq,
+                                })
+                                seq += 1
+
+                            # Tool call deltas
+                            for tc in (delta.get("tool_calls") or []):
+                                tc_idx = tc.get("index", 0)
+                                if tc_idx not in tool_calls_acc:
+                                    call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+                                    func_name = (tc.get("function") or {}).get("name", "")
+                                    fc_item_id = f"fc-{uuid.uuid4().hex[:12]}"
+                                    tool_call_item_ids[tc_idx] = fc_item_id
+                                    tool_calls_acc[tc_idx] = {"id": call_id, "name": func_name, "arguments": ""}
                                     yield _stream_chunk_openai({
-                                        "type": "response.output_text.delta",
-                                        "delta": content,
-                                        "item_id": item_id,
-                                        "output_index": 0,
-                                        "content_index": 0,
+                                        "type": "response.output_item.added",
+                                        "item": {
+                                            "type": "function_call",
+                                            "id": fc_item_id,
+                                            "call_id": call_id,
+                                            "name": func_name,
+                                            "arguments": "",
+                                        },
+                                        "output_index": 1 + tc_idx,
                                         "sequence_number": seq,
                                     })
                                     seq += 1
-                            except json.JSONDecodeError:
-                                pass
-            # response.output_text.done, response.content_part.done, response.output_item.done, response.done
-            # Include full text so client doesn't overwrite with empty
+                                else:
+                                    fn = (tc.get("function") or {}).get("name")
+                                    if fn:
+                                        tool_calls_acc[tc_idx]["name"] = fn
+
+                                args_delta = (tc.get("function") or {}).get("arguments", "")
+                                if args_delta:
+                                    tool_calls_acc[tc_idx]["arguments"] += args_delta
+                                    yield _stream_chunk_openai({
+                                        "type": "response.function_call_arguments.delta",
+                                        "item_id": tool_call_item_ids[tc_idx],
+                                        "output_index": 1 + tc_idx,
+                                        "delta": args_delta,
+                                        "sequence_number": seq,
+                                    })
+                                    seq += 1
+                        except json.JSONDecodeError:
+                            pass
+
+            # Finalize tool calls
+            for tc_idx, tc in sorted(tool_calls_acc.items()):
+                fc_item_id = tool_call_item_ids[tc_idx]
+                yield _stream_chunk_openai({
+                    "type": "response.function_call_arguments.done",
+                    "item_id": fc_item_id,
+                    "output_index": 1 + tc_idx,
+                    "arguments": tc["arguments"],
+                    "sequence_number": seq,
+                })
+                seq += 1
+                yield _stream_chunk_openai({
+                    "type": "response.output_item.done",
+                    "item": {
+                        "type": "function_call",
+                        "id": fc_item_id,
+                        "call_id": tc["id"],
+                        "name": tc["name"],
+                        "arguments": tc["arguments"],
+                    },
+                    "output_index": 1 + tc_idx,
+                    "sequence_number": seq,
+                })
+                seq += 1
+
+            # Finalize text message item
             yield _stream_chunk_openai({
                 "type": "response.output_text.done",
-                "item_id": item_id,
+                "item_id": msg_item_id,
                 "output_index": 0,
                 "content_index": 0,
                 "text": full_text,
@@ -504,7 +633,7 @@ async def responses_api(request: Request, body: dict[str, Any]):
             yield _stream_chunk_openai({
                 "type": "response.content_part.done",
                 "content_index": 0,
-                "item_id": item_id,
+                "item_id": msg_item_id,
                 "output_index": 0,
                 "part": {"type": "output_text", "text": full_text},
                 "sequence_number": seq,
@@ -512,7 +641,8 @@ async def responses_api(request: Request, body: dict[str, Any]):
             seq += 1
             yield _stream_chunk_openai({
                 "type": "response.output_item.done",
-                "item": {"type": "message", "id": item_id, "role": "assistant", "content": [{"type": "output_text", "text": full_text}]},
+                "item": {"type": "message", "id": msg_item_id, "role": "assistant",
+                         "content": [{"type": "output_text", "text": full_text}]},
                 "output_index": 0,
                 "sequence_number": seq,
             })
@@ -529,23 +659,37 @@ async def responses_api(request: Request, body: dict[str, Any]):
             headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
         )
 
+    # Non-streaming response
     resp_id = f"resp-{uuid.uuid4().hex[:12]}"
     choice = chat_response.get("choices", [{}])[0] if isinstance(chat_response, dict) else {}
-    content = choice.get("message", {}).get("content", "")
+    msg = choice.get("message", {}) or {}
+    content = msg.get("content", "") or ""
     usage = chat_response.get("usage", {}) if isinstance(chat_response, dict) else {}
+
+    output_items: list[dict] = []
+    # Tool calls take priority; emit them before any text
+    for tc in (msg.get("tool_calls") or []):
+        func = tc.get("function", {})
+        output_items.append({
+            "type": "function_call",
+            "id": f"fc-{uuid.uuid4().hex[:12]}",
+            "call_id": tc.get("id", ""),
+            "name": func.get("name", ""),
+            "arguments": func.get("arguments", "{}"),
+        })
+    # Text content (may be empty when the model only calls tools)
+    output_items.append({
+        "type": "message",
+        "role": "assistant",
+        "content": [{"type": "output_text", "text": content}],
+    })
 
     return {
         "id": resp_id,
         "object": "response",
         "created_at": int(time.time()),
         "model": body.get("model", ""),
-        "output": [
-            {
-                "type": "message",
-                "role": "assistant",
-                "content": [{"type": "output_text", "text": content}],
-            }
-        ],
+        "output": output_items,
         "usage": {
             "input_tokens": usage.get("prompt_tokens", 0),
             "output_tokens": usage.get("completion_tokens", 0),
