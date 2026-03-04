@@ -929,6 +929,28 @@
       .pill { padding: var(--space-1) var(--space-3); font-size: var(--text-xs); }
     }
 
+    /* Hardware stats bar */
+    .hw-bar {
+      display: flex; align-items: center; gap: var(--space-4);
+      padding: var(--space-2) var(--space-4);
+      background: var(--bg-elevated); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); font-size: var(--text-sm);
+      color: var(--fg-muted); flex-wrap: wrap;
+    }
+    .hw-bar .hw-label { color: var(--muted); font-size: 0.75em; text-transform: uppercase; letter-spacing: 0.05em; margin-right: 2px; }
+    .hw-bar .hw-val { color: var(--fg); font-variant-numeric: tabular-nums; }
+    .hw-bar .hw-sep { color: var(--border); }
+    .hw-bar .hw-bar-fill {
+      display: inline-block; width: 48px; height: 6px;
+      background: var(--surface); border-radius: 3px; vertical-align: middle; margin-left: 4px; overflow: hidden;
+    }
+    .hw-bar .hw-bar-fill span {
+      display: block; height: 100%; border-radius: 3px;
+      background: var(--accent); transition: width 0.4s;
+    }
+    .hw-bar .hw-bar-fill.warn span { background: var(--warning); }
+    .hw-bar .hw-bar-fill.danger span { background: var(--danger); }
+
   </style>
 </head>
 <body>
@@ -949,6 +971,16 @@
         <button class="btn-icon" id="refresh-btn" title="Refresh status" aria-label="Refresh status">↻</button>
       </div>
     </header>
+
+    <div class="hw-bar" id="hw-bar" aria-label="System resources">
+      <span><span class="hw-label">CPU</span> <span class="hw-val" id="hw-cpu">—</span><span class="hw-bar-fill" id="hw-cpu-bar"><span></span></span></span>
+      <span class="hw-sep">·</span>
+      <span><span class="hw-label">RAM</span> <span class="hw-val" id="hw-ram">—</span><span class="hw-bar-fill" id="hw-ram-bar"><span></span></span></span>
+      <span class="hw-sep" id="hw-disk-sep" style="display:none">·</span>
+      <span id="hw-disk-wrap" style="display:none"><span class="hw-label">Disk</span> <span class="hw-val" id="hw-disk">—</span></span>
+      <span class="hw-sep" id="hw-gpu-sep" style="display:none">·</span>
+      <span id="hw-gpu-wrap" style="display:none"><span class="hw-label" id="hw-gpu-name">GPU</span> <span class="hw-val" id="hw-vram">—</span><span class="hw-bar-fill" id="hw-vram-bar"><span></span></span></span>
+    </div>
 
     <section id="services-section">
       <h2>Services</h2>
@@ -1102,6 +1134,16 @@
               <div class="progress-bar"><div class="fill" id="ollama-progress-bar" style="width:0%" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
               <div class="log" id="ollama-log" role="log" aria-live="polite"></div>
             </div>
+          </div>
+          <div class="pull-area" id="default-model-area" style="display:none;margin-top:var(--space-3);border-top:1px solid var(--border);padding-top:var(--space-3);">
+            <div style="font-size:var(--text-sm);color:var(--fg-muted);margin-bottom:var(--space-2);">Default model <span style="color:var(--muted);font-size:0.8em;">(Open WebUI chat default)</span></div>
+            <div class="pull-row">
+              <select id="default-model-select" style="flex:1;padding:var(--space-2) var(--space-3);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--fg);font-size:var(--text-sm);" aria-label="Select default model">
+                <option value="">— not set —</option>
+              </select>
+              <button id="default-model-btn" class="secondary" title="Write to .env and restart Open WebUI">Set Default</button>
+            </div>
+            <div id="default-model-status" style="font-size:0.8rem;color:var(--fg-muted);margin-top:var(--space-1);min-height:1.2em;"></div>
           </div>
         </div>
         <div class="model-panel">
@@ -1481,10 +1523,59 @@
           </div>
         `).join('');
         populateThroughputModelSelect();
+        populateDefaultModelSelect();
       } catch (e) {
         el.innerHTML = '<div class="empty">Failed to load models.</div>';
       }
     }
+
+    async function populateDefaultModelSelect() {
+      const area = document.getElementById('default-model-area');
+      const sel = document.getElementById('default-model-select');
+      if (!sel || !area) return;
+      if (!opsAvailable) { area.style.display = 'none'; return; }
+      area.style.display = '';
+      const llms = ollamaModels.filter(m => !isEmbeddingModel(m.name));
+      const current = sel.value;
+      sel.innerHTML = '<option value="">— not set —</option>' +
+        llms.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('');
+      // Fetch and show current default
+      try {
+        const d = await api('/api/config/default-model').then(r => r.json());
+        if (d.default_model) sel.value = d.default_model;
+        else if (current) sel.value = current;
+      } catch (e) { /* ignore */ }
+    }
+
+    document.getElementById('default-model-btn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('default-model-select');
+      const statusEl = document.getElementById('default-model-status');
+      const btn = document.getElementById('default-model-btn');
+      const model = sel?.value;
+      if (!model) { statusEl.textContent = 'Select a model first.'; return; }
+      btn.disabled = true;
+      statusEl.textContent = 'Saving and restarting Open WebUI…';
+      try {
+        const r = await api('/api/config/default-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          statusEl.textContent = `✓ Default set to ${model}. Open WebUI restarting…`;
+          toast('Default model updated: ' + model, 'success');
+        } else {
+          statusEl.textContent = 'Error: ' + (d.webui_error || 'Unknown error');
+          toast('Failed to set default model', 'error');
+        }
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + (e.message || e);
+        toast('Failed to set default model', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     function isEmbeddingModel(name) {
       const n = (name || '').toLowerCase();
@@ -2012,6 +2103,37 @@
       navigator.clipboard?.writeText(cmd).then(() => toast('Rebuild command copied to clipboard', 'success')).catch(() => toast(cmd));
     };
 
+    // --- Hardware stats bar ---
+    function setBar(barEl, pct) {
+      const fill = barEl.querySelector('span');
+      fill.style.width = Math.min(100, Math.max(0, pct)) + '%';
+      barEl.classList.toggle('warn', pct >= 75 && pct < 90);
+      barEl.classList.toggle('danger', pct >= 90);
+    }
+
+    async function refreshHardware() {
+      try {
+        const d = await fetch('/api/hardware', { cache: 'no-store' }).then(r => r.json());
+        document.getElementById('hw-cpu').textContent = d.cpu_pct.toFixed(0) + '%';
+        setBar(document.getElementById('hw-cpu-bar'), d.cpu_pct);
+        document.getElementById('hw-ram').textContent = d.ram_used_gb + ' / ' + d.ram_total_gb + ' GB';
+        setBar(document.getElementById('hw-ram-bar'), d.ram_pct);
+        if (d.disk_used_gb != null) {
+          document.getElementById('hw-disk').textContent = d.disk_used_gb + ' / ' + d.disk_total_gb + ' GB';
+          document.getElementById('hw-disk-sep').style.display = '';
+          document.getElementById('hw-disk-wrap').style.display = '';
+        }
+        if (d.gpu) {
+          const vramPct = (d.gpu.vram_used_mb / d.gpu.vram_total_mb) * 100;
+          document.getElementById('hw-gpu-name').textContent = d.gpu.name.replace(/NVIDIA /i, '');
+          document.getElementById('hw-vram').textContent = (d.gpu.vram_used_mb / 1024).toFixed(1) + ' / ' + (d.gpu.vram_total_mb / 1024).toFixed(0) + ' GB';
+          setBar(document.getElementById('hw-vram-bar'), vramPct);
+          document.getElementById('hw-gpu-sep').style.display = '';
+          document.getElementById('hw-gpu-wrap').style.display = '';
+        }
+      } catch (e) { /* silently skip if not available */ }
+    }
+
     (async function init() {
       await loadAuthConfig();
       if (authConfig.auth_required && authConfig.auth_type === 'bearer' && !sessionStorage.getItem(AUTH_STORAGE_KEY)) {
@@ -2021,6 +2143,8 @@
         loadOllamaLibrary().then(() => refresh());
       }
       setInterval(refresh, 15000);
+      refreshHardware();
+      setInterval(refreshHardware, 5000);
     })();
   </script>
 </body>

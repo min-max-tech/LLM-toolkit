@@ -10,6 +10,8 @@ import time
 import urllib.request
 from pathlib import Path
 
+import psutil
+
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -50,7 +52,7 @@ async def auth_middleware(request: Request, call_next):
     path = request.url.path
     if not path.startswith("/api/"):
         return await call_next(request)
-    if path in ("/api/health", "/api/auth/config"):
+    if path in ("/api/health", "/api/auth/config", "/api/hardware", "/api/rag/status"):
         return await call_next(request)
     if _AUTH_REQUIRED and not _verify_auth(request):
         if DASHBOARD_PASSWORD:
@@ -319,6 +321,7 @@ OPS_SERVICE_MAP = {
     "comfyui": "comfyui",
     "n8n": "n8n",
     "openclaw": "openclaw-gateway",
+    "qdrant": "qdrant",
 }
 
 SERVICES = [
@@ -337,6 +340,9 @@ SERVICES = [
     {"id": "openclaw", "name": "OpenClaw", "port": 18789, "url": "http://localhost:18789",
      "check": "http://host.docker.internal:18789/",
      "hint": "Run ensure_dirs.ps1 (Windows) or ensure_dirs.sh (Linux/Mac) to ensure .env has OPENCLAW_GATEWAY_TOKEN. Check: docker compose logs openclaw-gateway"},
+    {"id": "qdrant", "name": "Qdrant", "port": 6333, "url": "http://localhost:6333",
+     "check": "http://qdrant:6333/readyz",
+     "hint": "Vector DB for RAG. Drop files in data/rag-input/ (with --profile rag) or upload via Open WebUI Documents tab."},
 ]
 
 
@@ -900,6 +906,123 @@ async def ops_available(request: Request):
         return {"available": False, "reason": "OPS_CONTROLLER_TOKEN not set"}
     code, _ = await _ops_request("GET", "/health", request=request)
     return {"available": code == 200}
+
+
+# --- Default model ---
+
+class DefaultModelRequest(BaseModel):
+    model: str
+
+
+@app.get("/api/config/default-model")
+async def get_default_model():
+    """Return the current DEFAULT_MODEL value."""
+    return {"default_model": os.environ.get("DEFAULT_MODEL", "")}
+
+
+@app.post("/api/config/default-model")
+async def set_default_model(req: DefaultModelRequest, request: Request):
+    """Write DEFAULT_MODEL to .env and recreate open-webui so the change takes effect."""
+    if not req.model or "/" in req.model.replace(":", ""):
+        raise HTTPException(status_code=400, detail="Invalid model name")
+
+    # 1. Write to .env
+    code, data = await _ops_request(
+        "POST", "/env/set", request=request,
+        json={"key": "DEFAULT_MODEL", "value": req.model, "confirm": True},
+    )
+    if code >= 400:
+        raise HTTPException(status_code=502, detail=f"env/set failed: {data.get('detail', data)}")
+
+    # 2. Recreate open-webui so DEFAULT_MODELS env var is picked up
+    code2, data2 = await _ops_request(
+        "POST", "/services/open-webui/recreate", request=request, json={"confirm": True}
+    )
+
+    # 3. Restart openclaw-gateway (re-reads model config on startup)
+    code3, _ = await _ops_request(
+        "POST", "/services/openclaw-gateway/restart", request=request, json={"confirm": True}
+    )
+
+    return {
+        "ok": code2 in (200, 201),
+        "model": req.model,
+        "webui_recreated": code2 in (200, 201),
+        "openclaw_restarted": code3 in (200, 201),
+        "webui_error": data2.get("detail") if code2 >= 400 else None,
+    }
+
+
+# --- RAG ---
+
+QDRANT_URL = os.environ.get("QDRANT_URL", "http://qdrant:6333")
+RAG_COLLECTION = os.environ.get("RAG_COLLECTION", "documents")
+
+
+@app.get("/api/rag/status")
+async def rag_status():
+    """Qdrant health and document collection stats. No auth required."""
+    try:
+        async with AsyncClient(timeout=5.0) as client:
+            r = await client.get(f"{QDRANT_URL}/collections/{RAG_COLLECTION}")
+            if r.status_code == 200:
+                info = r.json().get("result", {})
+                return {
+                    "ok": True,
+                    "collection": RAG_COLLECTION,
+                    "points_count": info.get("points_count", 0),
+                    "status": info.get("status", "unknown"),
+                }
+            if r.status_code == 404:
+                return {"ok": True, "collection": RAG_COLLECTION, "points_count": 0, "status": "empty"}
+            return {"ok": False, "error": f"HTTP {r.status_code}"}
+    except Exception as e:
+        return {"ok": False, "error": str(e)}
+
+
+# --- Hardware ---
+
+BASE_PATH_ENV = os.environ.get("BASE_PATH", "/")
+
+
+@app.get("/api/hardware")
+async def hardware_stats():
+    """System resource stats. No auth required (read-only)."""
+    cpu_pct = psutil.cpu_percent(interval=0.1)
+    mem = psutil.virtual_memory()
+    try:
+        disk = psutil.disk_usage(BASE_PATH_ENV)
+        disk_used_gb = round(disk.used / 1e9, 1)
+        disk_total_gb = round(disk.total / 1e9, 1)
+    except Exception:
+        disk_used_gb = None
+        disk_total_gb = None
+
+    gpu = None
+    try:
+        import pynvml  # optional; only present when nvidia-ml-py is installed
+        pynvml.nvmlInit()
+        h = pynvml.nvmlDeviceGetHandleByIndex(0)
+        mi = pynvml.nvmlDeviceGetMemoryInfo(h)
+        ut = pynvml.nvmlDeviceGetUtilizationRates(h)
+        gpu = {
+            "name": pynvml.nvmlDeviceGetName(h),
+            "vram_used_mb": mi.used // 1024 // 1024,
+            "vram_total_mb": mi.total // 1024 // 1024,
+            "utilization_pct": ut.gpu,
+        }
+    except Exception:
+        pass
+
+    return {
+        "cpu_pct": cpu_pct,
+        "ram_used_gb": round(mem.used / 1e9, 1),
+        "ram_total_gb": round(mem.total / 1e9, 1),
+        "ram_pct": mem.percent,
+        "disk_used_gb": disk_used_gb,
+        "disk_total_gb": disk_total_gb,
+        "gpu": gpu,
+    }
 
 
 # --- Static ---

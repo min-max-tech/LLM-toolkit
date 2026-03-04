@@ -3,6 +3,8 @@ from __future__ import annotations
 
 import json
 import os
+import re
+import subprocess
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -21,8 +23,14 @@ AUDIT_LOG_MAX_BYTES = int(os.environ.get("AUDIT_LOG_MAX_BYTES", "10485760"))  # 
 # Services we allow operations on (allowlist)
 ALLOWED_SERVICES = {
     "ollama", "dashboard", "open-webui", "model-gateway", "mcp-gateway",
-    "comfyui", "n8n", "openclaw-gateway",
+    "comfyui", "n8n", "openclaw-gateway", "qdrant",
 }
+
+# .env keys we allow updating via the API
+ENV_ALLOWED_KEYS = {"DEFAULT_MODEL"}
+
+BASE_PATH = os.environ.get("BASE_PATH", ".")
+COMPOSE_FILE_ENV = os.environ.get("COMPOSE_FILE", "docker-compose.yml")
 
 
 def _docker_client():
@@ -307,6 +315,61 @@ async def mcp_containers(_: None = Depends(verify_token)):
         return {"containers": mcp_containers}
     except Exception as e:
         return {"containers": [], "error": str(e)}
+
+
+class EnvSetBody(BaseModel):
+    key: str
+    value: str
+    confirm: bool = False
+
+
+@app.post("/env/set")
+async def env_set(body: EnvSetBody, request: Request, _: None = Depends(verify_token)):
+    """Update a single allowed key in .env. Requires confirm: true. Audited."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+    if body.key not in ENV_ALLOWED_KEYS:
+        raise HTTPException(status_code=400, detail=f"Key not in allowlist: {body.key!r}")
+    env_path = Path("/workspace/.env")
+    if not env_path.exists():
+        raise HTTPException(status_code=404, detail=".env not found at /workspace/.env")
+    content = env_path.read_text(encoding="utf-8")
+    pattern = rf"^{re.escape(body.key)}=.*"
+    if re.search(pattern, content, re.MULTILINE):
+        content = re.sub(pattern, f"{body.key}={body.value}", content, flags=re.MULTILINE)
+    else:
+        content = content.rstrip("\n") + f"\n{body.key}={body.value}\n"
+    env_path.write_text(content, encoding="utf-8")
+    _audit("env_set", body.key, "ok", body.value[:80], correlation_id=_correlation_id(request))
+    return {"ok": True, "key": body.key}
+
+
+@app.post("/services/{service_id}/recreate")
+async def service_recreate(
+    service_id: str, body: ConfirmBody, request: Request,
+    _: None = Depends(verify_token),
+):
+    """Recreate a service container via docker compose up -d so new env vars take effect."""
+    if service_id not in ALLOWED_SERVICES:
+        raise HTTPException(status_code=400, detail=f"Service {service_id} not in allowlist")
+    if body.dry_run:
+        return {"would": "recreate", "service": service_id}
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+    compose_files = [f.strip() for f in COMPOSE_FILE_ENV.split(";") if f.strip()]
+    cmd = ["docker-compose"]
+    for cf in compose_files:
+        cmd += ["-f", f"/workspace/{cf}"]
+    cmd += ["up", "-d", "--no-deps", service_id]
+    env = {**os.environ, "BASE_PATH": BASE_PATH}
+    result = subprocess.run(cmd, capture_output=True, text=True, cwd="/workspace", env=env)
+    ok = result.returncode == 0
+    detail = (result.stderr or result.stdout)[:200] if not ok else ""
+    _audit("recreate", service_id, "ok" if ok else "error", detail,
+           correlation_id=_correlation_id(request))
+    if not ok:
+        raise HTTPException(status_code=500, detail=(result.stderr or result.stdout)[:500])
+    return {"ok": True, "service": service_id, "action": "recreated"}
 
 
 @app.get("/audit")

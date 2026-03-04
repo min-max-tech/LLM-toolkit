@@ -86,9 +86,10 @@ services:
       - BASE_PATH=${BASE_PATH:-.}
       - DATA_PATH=${DATA_PATH:-${BASE_PATH:-.}/data}
       - COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.yml}
+      - DEFAULT_MODEL=${DEFAULT_MODEL:-}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
-      - ${BASE_PATH:-.}:/workspace:ro
+      - ${BASE_PATH:-.}:/workspace
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/ops-controller:/data
     healthcheck:
       test: ["CMD", "python3", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:9000/health')"]
@@ -159,6 +160,7 @@ services:
     depends_on:
       - ollama
       - model-gateway
+      - qdrant
     ports:
       - "3000:8080"
     deploy:
@@ -177,6 +179,11 @@ services:
       - OPENAI_API_KEY=ollama-local
       # Auth: False = single-user local / Tailscale use.
       - WEBUI_AUTH=${WEBUI_AUTH:-False}
+      # Default model shown in chat UI (updated by dashboard "Set Default" control)
+      - DEFAULT_MODELS=${DEFAULT_MODEL:-}
+      # RAG: use Qdrant for vector storage
+      - VECTOR_DB=qdrant
+      - QDRANT_URL=http://qdrant:6333
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data
     networks:
@@ -458,6 +465,61 @@ services:
     entrypoint: ["node", "/app/dist/index.js"]
     networks:
       - frontend
+
+  # --- RAG ---
+
+  qdrant:
+    image: qdrant/qdrant:v1.13.4
+    restart: unless-stopped
+    ports:
+      - "${QDRANT_PORT:-6333}:6333"
+    volumes:
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/qdrant:/qdrant/storage
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:6333/readyz"]
+      interval: 30s
+      timeout: 10s
+      retries: 3
+    deploy:
+      resources:
+        limits:
+          memory: 512M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - backend
+
+  rag-ingestion:
+    profiles: [rag]
+    build: ./rag-ingestion
+    restart: unless-stopped
+    environment:
+      - MODEL_GATEWAY_URL=http://model-gateway:11435
+      - EMBED_MODEL=${EMBED_MODEL:-nomic-embed-text}
+      - QDRANT_URL=http://qdrant:6333
+      - QDRANT_COLLECTION=${RAG_COLLECTION:-documents}
+      - WATCH_DIR=/watch
+      - CHUNK_SIZE=${RAG_CHUNK_SIZE:-400}
+      - CHUNK_OVERLAP=${RAG_CHUNK_OVERLAP:-50}
+    volumes:
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/rag-input:/watch
+    depends_on:
+      - model-gateway
+      - qdrant
+    deploy:
+      resources:
+        limits:
+          memory: 256M
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - backend
 
 networks:
   frontend:
