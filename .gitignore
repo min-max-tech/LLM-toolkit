@@ -1,7 +1,7 @@
 .env
 .env.compute
 mcp/.env
-docker-compose.compute.yml
+overrides/compute.yml
 models/
 data/
 

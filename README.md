@@ -122,7 +122,7 @@ ComfyUI starts independently. LTX-2 models (~60 GB) are downloaded on demand —
 
 ## GPU / compute
 
-**Auto-detection:** The setup script (`ensure_dirs`) runs `scripts/detect_hardware.py`, which detects your GPU and generates `docker-compose.compute.yml` (auto-generated, gitignored):
+**Auto-detection:** The setup script (`ensure_dirs`) runs `scripts/detect_hardware.py`, which detects your GPU and generates `overrides/compute.yml` (auto-generated, gitignored):
 
 | Detected | Ollama | ComfyUI |
 |----------|--------|---------|

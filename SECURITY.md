@@ -59,7 +59,7 @@ All runtime data is stored under `BASE_PATH/data/` via bind mounts. Ensure appro
 | docker.sock exposure | Only ops-controller and mcp-gateway mount it; dashboard does not |
 | Controller compromise | Token in env; no default; never expose port |
 | MCP SSRF (browser worker) | Egress blocks for 100.64/10, RFC1918, 169.254.169.254 — `./scripts/ssrf-egress-block.sh --target all` (see [ARCHITECTURE_RFC.md](docs/ARCHITECTURE_RFC.md) Section 9) |
-| OpenClaw session credential theft via CLI | `openclaw-cli` receives no session keys (`CLAUDE_*`); gateway token only — enforced in `openclaw/docker-compose.yml` |
+| OpenClaw session credential theft via CLI | `openclaw-cli` receives no session keys (`CLAUDE_*`); gateway token only — enforced in `docker-compose.yml` |
 | OpenClaw config secret exfiltration | `openclaw.json` not mounted in CLI container; orchestrator-only |
 | OpenClaw prompt injection → credential access | Browser-tier holds zero credentials; two-tier model (see [ARCHITECTURE_RFC.md](docs/ARCHITECTURE_RFC.md) Section 9) |
 | Container privilege escalation (OpenClaw) | `cap_drop: [ALL]` + `no-new-privileges:true` on both openclaw containers |
