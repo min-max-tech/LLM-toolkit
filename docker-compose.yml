@@ -382,6 +382,8 @@ services:
     depends_on:
       openclaw-config-sync:
         condition: service_completed_successfully
+    environment:
+      - MCP_GATEWAY_URL=http://mcp-gateway:${MCP_GATEWAY_PORT:-8811}/mcp
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
       - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro

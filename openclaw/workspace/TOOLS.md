@@ -1,17 +1,45 @@
 # TOOLS.md
 
-Environment-specific notes. Skills define how tools work; this file is for your setup.
+Environment-specific notes for this AI-toolkit install.
 
-## AI-toolkit Stack
+## Services
 
-| Service        | Purpose                                      |
-|----------------|----------------------------------------------|
-| **Ollama**     | Local LLMs at `http://ollama:11434`          |
-| **Model Gateway** | OpenAI-compatible at `http://model-gateway:11435/v1` |
-| **MCP Gateway**   | Tools at `http://mcp-gateway:8811/mcp`       |
+| Service | URL (internal) | Purpose |
+|---------|---------------|---------|
+| **Model Gateway** | `http://model-gateway:11435/v1` | All LLM calls (OpenAI-compatible) |
+| **Ollama** | `http://ollama:11434` | Direct Ollama API (prefer gateway) |
+| **MCP Gateway** | `http://mcp-gateway:8811/mcp` | MCP tools (search, fetch, GitHub, etc.) |
+| **Dashboard** | `http://localhost:8080` | Manage models, services, MCP tools |
+| **Qdrant** | `http://qdrant:6333` | Vector DB (RAG documents) |
 
-Trust boundary: credentials stay in the controller. Browser worker (if used) is untrusted.
+## MCP tools
+
+Check what's active: `data/mcp/servers.txt` or the dashboard MCP tab.
+
+**Typical setup:**
+- `duckduckgo` — web search, no API key needed
+- `fetch` — parse any URL into readable text
+- `github-official` — needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env`
+
+To add a tool: dashboard → MCP tab → add from catalog or paste a Hub URL.
+
+## Models
+
+Primary model: **qwen3:8b** (`gateway/ollama/qwen3:8b`)
+- 128K context window, built-in reasoning/thinking mode
+- Good for: general questions, research, agentic tasks, coding
+
+Other models (switch via config.patch or model selector):
+- `gateway/ollama/deepseek-r1:7b` — explicit chain-of-thought reasoning
+- `gateway/ollama/qwen3:14b` — more capacity for large documents
+- `gateway/ollama/deepseek-coder:6.7b` — code-focused fine-tune
+
+## RAG (documents)
+
+Drop files into `data/rag-input/` to auto-embed (requires `--profile rag`).
+Or upload directly via Open WebUI → Documents tab.
+Qdrant collection: `documents` (check at `http://localhost:6333/dashboard`).
 
 ---
 
-Add your specifics: camera names, SSH hosts, TTS voices, device nicknames, etc.
+*Add your specifics below: SSH hosts, device names, camera streams, etc.*

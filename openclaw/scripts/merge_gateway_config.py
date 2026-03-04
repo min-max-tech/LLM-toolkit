@@ -16,20 +16,20 @@ GATEWAY_PROVIDER = {
     "headers": {"X-Service-Name": "openclaw"},
 }
 
-# Default models when model-gateway is unreachable. Empty models[] causes OpenClaw to skip LLM calls.
+# Default models when model-gateway is unreachable. First entry is the default.
 DEFAULT_GATEWAY_MODELS = [
-    {"id": "ollama/qwen2.5:7b", "name": "Qwen 2.5 7B", "reasoning": False, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 32768, "maxTokens": 8192},
+    {"id": "ollama/qwen3:8b", "name": "Qwen3 8B", "reasoning": True, "input": ["text"],
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
     {"id": "ollama/deepseek-r1:7b", "name": "DeepSeek R1 7B", "reasoning": True, "input": ["text"],
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 65536, "maxTokens": 8192},
+    {"id": "ollama/qwen3:14b", "name": "Qwen3 14B", "reasoning": True, "input": ["text"],
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
     {"id": "ollama/deepseek-coder:6.7b", "name": "DeepSeek Coder 6.7B", "reasoning": False, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 16384, "maxTokens": 8192},
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 32768, "maxTokens": 8192},
     {"id": "ollama/llama3.2-vision:11b", "name": "Llama 3.2 Vision 11B", "reasoning": False, "input": ["text", "image"],
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
     {"id": "ollama/nomic-embed-text:latest", "name": "Nomic Embed", "reasoning": False, "input": ["text"],
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 8192, "maxTokens": 8192},
-    {"id": "ollama/qwen3:14b", "name": "Qwen3 14B", "reasoning": False, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 32768, "maxTokens": 8192},
 ]
 
 MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435")
@@ -65,13 +65,17 @@ def _fetch_models_from_gateway() -> list[dict] | None:
         lower_id = mid.lower()
         has_vision = "vision" in lower_id or "llava" in lower_id or "puppy" in lower_id
         is_embed = "embed" in lower_id
+        is_reasoning = (
+            "r1" in lower_id or "reasoning" in lower_id
+            or "qwen3" in lower_id  # Qwen3 family has built-in thinking mode
+        )
         models.append({
             "id": mid,
             "name": name,
-            "reasoning": "r1" in lower_id or "reasoning" in lower_id,
+            "reasoning": is_reasoning,
             "input": ["text", "image"] if has_vision else ["text"],
             "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-            "contextWindow": 131072 if has_vision else 32768,
+            "contextWindow": 131072 if (has_vision or "qwen3" in lower_id) else 32768,
             "maxTokens": 8192,
         })
     return models if models else None

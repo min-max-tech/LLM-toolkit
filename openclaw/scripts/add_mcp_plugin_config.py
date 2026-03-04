@@ -7,15 +7,17 @@ openclaw.plugin.json, so we create it here to unblock OpenClaw's plugin loader.
 from __future__ import annotations
 
 import json
+import os
 import sys
 from pathlib import Path
 
 MCP_PLUGIN_ID = "openclaw-mcp-bridge"
+_mcp_url = os.environ.get("MCP_GATEWAY_URL", "http://mcp-gateway:8811/mcp")
 MCP_PLUGIN_CONFIG = {
     "enabled": True,
     "config": {
         "servers": {
-            "gateway": {"url": "http://mcp-gateway:8811/mcp"}
+            "gateway": {"url": _mcp_url}
         },
         "debug": False,
     },
