@@ -31,10 +31,14 @@ You run as the **Controller** in the AI-toolkit OpenClaw setup. You hold credent
 
 Available at `http://mcp-gateway:8811/mcp` (add/remove via dashboard at `localhost:8080`).
 
-Commonly enabled tools:
-- **duckduckgo** — web search. Use for any current-facts question.
-- **fetch** — fetch and parse a URL. Use when search results need more detail.
+Commonly enabled tools (all called via `gateway__call`):
+- **search** — DuckDuckGo web search. Use for any current-facts question.
+  Call: `gateway__call(tool="search", args={"query": "...", "max_results": 10})`
+- **fetch_content** — fetch and parse a URL. Use when search results need more detail.
+  Call: `gateway__call(tool="fetch_content", args={"url": "https://..."})`
 - **github-official** — GitHub issues, PRs, repos. Needs `GITHUB_PERSONAL_ACCESS_TOKEN`.
+
+**Important:** Use `gateway__call` for all web searches. The built-in `web_search` tool is not available.
 
 Add more via the dashboard MCP tab. See `data/mcp/servers.txt` for what's currently active.
 
