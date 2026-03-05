@@ -30,7 +30,7 @@ OpenClaw uses a **two-tier trust model** that mirrors Anthropic's agent safety g
 
 **Core invariants:**
 1. Session credentials (`CLAUDE_*`) never appear in any browser-tier container environment.
-2. `openclaw.json` (Telegram tokens, skill API keys) is never mounted in browser-tier containers.
+2. `openclaw.json` (Discord bot token, skill API keys) is never mounted in browser-tier containers.
 3. Workspace is read-only in browser-tier containers.
 4. Egress from browser-tier containers is blocked to RFC1918 and cloud metadata endpoints.
 
@@ -59,6 +59,9 @@ OPENCLAW_BRIDGE_PORT=127.0.0.1:18790
 - Keep OpenClaw **off the public internet**
 - Use **Tailscale Serve** to expose `127.0.0.1:18789` to your tailnet only
 - Avoid Funnel unless intentional public exposure
+- **Funnel is not needed for Discord.** OpenClaw's Discord integration uses a bot token + outbound
+  WebSocket gateway connection — all traffic is outbound from OpenClaw to Discord's API. There are
+  no inbound callbacks or OAuth redirects. This is unlike N8N OAuth flows that require a public URL.
 
 ### 3. Browser worker egress (web crawling / playwright)
 
@@ -95,7 +98,7 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -p tcp --dport 53   -j ACCEPT
 
 - Session credentials (`CLAUDE_AI_SESSION_KEY`, `CLAUDE_WEB_SESSION_KEY`, `CLAUDE_WEB_COOKIE`) are set only on `openclaw-gateway` via `.env`
 - `openclaw-cli` and any browser worker receive **only** `OPENCLAW_GATEWAY_TOKEN`
-- `data/openclaw/openclaw.json` (Telegram token, skill API keys) is only mounted in `openclaw-gateway`
+- `data/openclaw/openclaw.json` (Discord bot token, skill API keys) is only mounted in `openclaw-gateway`
 - **Do not** include `data/openclaw/` in unencrypted cloud backups
 
 ### 5. Container hardening
