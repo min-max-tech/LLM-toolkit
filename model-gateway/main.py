@@ -476,38 +476,10 @@ async def completions_compat(request: Request, body: dict[str, Any]):
 # --- Responses API (OpenAI Responses format) ---
 
 
-# Tools that require external API keys not configured in this stack.
-# Removing them forces the model to use gateway__call (DuckDuckGo MCP) instead.
-_SUPPRESSED_TOOLS = frozenset({"web_search", "web_fetch"})
-# Appended to gateway__call description so the model knows what MCP tools are available.
-_GATEWAY_CALL_HINT = (
-    " Available tools on this MCP server: search (DuckDuckGo web search,"
-    " args: query[str], max_results[int]=10),"
-    " fetch_content (fetch and parse a URL, args: url[str])."
-    " For web searches use tool='search' with args={'query': '...'}."
-)
-
-
-def _filter_tools(tools: list) -> list:
-    """Drop suppressed built-ins; enhance gateway__call with available-tool hints."""
-    result = []
-    for t in tools:
-        if not isinstance(t, dict):
-            result.append(t)
-            continue
-        name = t.get("name") or (t.get("function") or {}).get("name", "")
-        if name in _SUPPRESSED_TOOLS:
-            continue
-        if name == "gateway__call" and _GATEWAY_CALL_HINT not in (t.get("description") or ""):
-            t = {**t, "description": (t.get("description") or "") + _GATEWAY_CALL_HINT}
-        result.append(t)
-    return result
-
-
 @app.post("/v1/responses")
 async def responses_api(request: Request, body: dict[str, Any]):
     """OpenAI Responses API — convert to chat completions and proxy, preserving tools."""
-    raw_tools = _filter_tools(body.get("tools") or [])
+    raw_tools = body.get("tools") or []
 
     messages: list[dict] = []
     instructions = body.get("instructions", "")
