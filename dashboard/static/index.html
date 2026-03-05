@@ -1192,7 +1192,7 @@
 
     <section id="models-section">
       <h2>Model Library</h2>
-      <p class="section-desc">Pull Ollama LLMs and ComfyUI LTX-2 models. Use the dashboard or run model-puller on demand.</p>
+      <p class="section-desc">Pull Ollama LLMs and ComfyUI LTX-2 models. Sync to OpenClaw when you add or remove models.</p>
       <div class="models-grid">
         <div class="model-panel">
           <h3>Ollama — LLM & embeddings</h3>
@@ -1253,6 +1253,20 @@
             <div id="comfyui-progress" class="progress-area" style="display:none;" role="region" aria-label="ComfyUI pull progress">
               <div class="log" id="comfyui-log" role="log" aria-live="polite"></div>
             </div>
+          </div>
+        </div>
+        <div class="model-panel">
+          <h3>OpenClaw — active models</h3>
+          <p class="section-desc" style="margin:0 0 var(--space-3);">Models available in OpenClaw's agent UI. Sync whenever you pull or delete Ollama models.</p>
+          <div class="model-list" id="openclaw-models">
+            <div class="skeleton skeleton-line"></div>
+            <div class="skeleton skeleton-line short"></div>
+          </div>
+          <div class="pull-area" style="margin-top:var(--space-3);">
+            <div class="pull-row">
+              <button id="openclaw-sync-btn">Sync to OpenClaw</button>
+            </div>
+            <div id="openclaw-sync-status" style="font-size:0.8rem;color:var(--fg-muted);margin-top:var(--space-2);min-height:1.2em;" aria-live="polite"></div>
           </div>
         </div>
       </div>
@@ -2070,11 +2084,59 @@
       }
     };
 
+    // --- OpenClaw model management ---
+    async function loadOpenclawModels() {
+      const el = document.getElementById('openclaw-models');
+      if (!el) return;
+      try {
+        const d = await api('/api/openclaw/models').then(r => r.json());
+        if (!d.config_found) {
+          el.innerHTML = '<span style="color:var(--muted);font-size:var(--text-sm)">openclaw.json not found — OpenClaw not configured.</span>';
+          return;
+        }
+        if (!d.models || !d.models.length) {
+          el.innerHTML = '<span style="color:var(--muted);font-size:var(--text-sm)">No models configured. Click Sync to populate from Ollama.</span>';
+          return;
+        }
+        el.innerHTML = d.models.map(m => `
+          <div class="model-item">
+            <span class="model-name">${m.name || m.id}</span>
+            <span class="model-meta">${m.id}${m.reasoning ? ' · reasoning' : ''}${(m.input||[]).includes('image') ? ' · vision' : ''}</span>
+          </div>`).join('');
+      } catch (e) {
+        el.innerHTML = '<span style="color:var(--danger);font-size:var(--text-sm)">Failed to load</span>';
+      }
+    }
+
+    document.getElementById('openclaw-sync-btn')?.addEventListener('click', async () => {
+      const btn = document.getElementById('openclaw-sync-btn');
+      const status = document.getElementById('openclaw-sync-status');
+      btn.disabled = true;
+      status.textContent = 'Syncing…';
+      try {
+        const r = await api('/api/openclaw/sync', { method: 'POST' });
+        const d = await r.json();
+        if (!r.ok) {
+          status.textContent = '✗ ' + (d.detail || 'Sync failed');
+          toast(d.detail || 'OpenClaw sync failed', 'error');
+        } else {
+          status.textContent = `✓ Synced ${d.synced_count} model${d.synced_count !== 1 ? 's' : ''}${d.openclaw_restarted ? ' — OpenClaw restarting' : ''}.`;
+          toast(`OpenClaw synced: ${d.synced_count} models`, 'success');
+          loadOpenclawModels();
+        }
+      } catch (e) {
+        status.textContent = '✗ Error: ' + e.message;
+        toast('OpenClaw sync error', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
+
     async function refresh() {
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
       if (!ollamaLibrary.length) await loadOllamaLibrary();
-      await Promise.all([loadServices(), loadOllamaModels(), loadComfyuiModels(), loadMcpServers()]);
+      await Promise.all([loadServices(), loadOllamaModels(), loadComfyuiModels(), loadMcpServers(), loadOpenclawModels()]);
       loadThroughputStats();
       loadThroughputServiceUsage();
       btn.classList.remove('loading');

@@ -65,6 +65,8 @@ async def auth_middleware(request: Request, call_next):
     return await call_next(request)
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
+MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435").rstrip("/")
+OPENCLAW_CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/openclaw-config/openclaw.json"))
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 SCRIPTS_DIR = Path(os.environ.get("SCRIPTS_DIR", "/scripts"))
 
@@ -950,6 +952,114 @@ async def set_default_model(req: DefaultModelRequest, request: Request):
         "webui_recreated": code2 in (200, 201),
         "openclaw_restarted": code3 in (200, 201),
         "webui_error": data2.get("detail") if code2 >= 400 else None,
+    }
+
+
+# --- OpenClaw model management ---
+
+# Gateway provider base written into openclaw.json (must match merge_gateway_config.py)
+_OPENCLAW_GATEWAY_BASE = {
+    "baseUrl": "http://model-gateway:11435/v1",
+    "apiKey": "ollama-local",
+    "api": "openai-responses",
+    "headers": {"X-Service-Name": "openclaw"},
+}
+
+
+def _make_openclaw_model(item: dict) -> dict:
+    """Transform a /v1/models entry into an OpenClaw model definition."""
+    mid = item.get("id", "")
+    name = mid.split("/")[-1] if "/" in mid else mid
+    name = name.replace(":", " ").replace("-", " ").replace(".", " ")
+    name = " ".join(w.capitalize() for w in name.split())
+    lower = mid.lower()
+    has_vision = "vision" in lower or "llava" in lower or "puppy" in lower
+    is_reasoning = "r1" in lower or "reasoning" in lower or "qwen3" in lower or "qwen-3" in lower
+    return {
+        "id": mid,
+        "name": name,
+        "reasoning": is_reasoning,
+        "input": ["text", "image"] if has_vision else ["text"],
+        "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+        "contextWindow": 131072 if (has_vision or "qwen3" in lower) else 32768,
+        "maxTokens": 8192,
+    }
+
+
+@app.get("/api/openclaw/models")
+async def get_openclaw_models():
+    """Return OpenClaw's current model list from openclaw.json."""
+    if not OPENCLAW_CONFIG_PATH.exists():
+        return {"models": [], "count": 0, "config_found": False}
+    try:
+        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+        gw = cfg.get("models", {}).get("providers", {}).get("gateway", {})
+        models = gw.get("models", [])
+        return {"models": models, "count": len(models), "config_found": True}
+    except Exception as e:
+        return {"models": [], "count": 0, "config_found": True, "error": str(e)}
+
+
+@app.post("/api/openclaw/sync")
+async def sync_openclaw_models(request: Request):
+    """Fetch current models from model-gateway, update openclaw.json, restart openclaw-gateway."""
+    if not OPENCLAW_CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail="openclaw.json not found — is OpenClaw set up?")
+
+    # Fetch live model list from model-gateway
+    try:
+        async with AsyncClient(timeout=15.0) as client:
+            r = await client.get(f"{MODEL_GATEWAY_URL}/v1/models")
+            r.raise_for_status()
+            raw = r.json()
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Cannot reach model-gateway: {e}")
+
+    items = raw.get("data", []) if isinstance(raw, dict) else []
+    new_models = [_make_openclaw_model(m) for m in items if m.get("id")]
+
+    # Read + patch openclaw.json
+    try:
+        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot read openclaw.json: {e}")
+
+    providers = cfg.setdefault("models", {}).setdefault("providers", {})
+
+    # Strip any per-model baseUrl/apiKey (OpenClaw 2026.2.x rejects them)
+    for pv in providers.values():
+        if isinstance(pv, dict):
+            for m in (pv.get("models") or []):
+                if isinstance(m, dict):
+                    m.pop("baseUrl", None)
+                    m.pop("apiKey", None)
+
+    # Upsert gateway provider
+    if "gateway" not in providers:
+        providers["gateway"] = {**_OPENCLAW_GATEWAY_BASE, "models": new_models}
+    else:
+        gw = providers["gateway"]
+        if isinstance(gw, dict):
+            for k, v in _OPENCLAW_GATEWAY_BASE.items():
+                if k != "models":
+                    gw[k] = v
+            gw["models"] = new_models
+
+    try:
+        OPENCLAW_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot write openclaw.json: {e}")
+
+    # Restart openclaw-gateway to pick up the updated model list
+    code, _ = await _ops_request(
+        "POST", "/services/openclaw-gateway/restart", request=request, json={"confirm": True}
+    )
+
+    return {
+        "ok": True,
+        "synced_count": len(new_models),
+        "models": [m["id"] for m in new_models],
+        "openclaw_restarted": code in (200, 201),
     }
 
 

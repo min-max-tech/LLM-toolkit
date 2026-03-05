@@ -151,10 +151,14 @@ services:
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
       - DASHBOARD_AUTH_TOKEN=${DASHBOARD_AUTH_TOKEN:-}
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
+      # OpenClaw model management: dashboard reads/writes openclaw.json to sync models
+      - MODEL_GATEWAY_URL=http://model-gateway:11435
+      - OPENCLAW_CONFIG_PATH=/openclaw-config/openclaw.json
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
+      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/openclaw-config
     networks:
       - frontend
       - backend
