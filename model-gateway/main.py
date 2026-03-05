@@ -33,6 +33,10 @@ VLLM_URL = os.environ.get("VLLM_URL", "").rstrip("/")  # e.g. http://vllm:8000
 DEFAULT_PROVIDER = os.environ.get("DEFAULT_PROVIDER", "ollama")
 DASHBOARD_URL = os.environ.get("DASHBOARD_URL", "").rstrip("/")
 MODEL_CACHE_TTL = float(os.environ.get("MODEL_CACHE_TTL_SEC", "60"))
+# Context window cap. Ollama defaults to a model's max (often 128K+) which pre-allocates
+# a huge KV cache even for short prompts — severely hurting CPU throughput.
+# Set to 0 to leave Ollama's default unchanged.
+OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
 
 # TTL model list cache: avoids hitting Ollama on every /v1/models call.
 _model_cache: list = []
@@ -271,6 +275,22 @@ async def chat_completions(request: Request, body: dict[str, Any]):
     if "tool_choice" in body:
         ollama_body["tool_choice"] = body["tool_choice"]
 
+    # Ollama performance options.
+    # num_ctx: cap the KV cache to avoid Ollama pre-allocating the full model max
+    # (often 128K+) even for short prompts — dramatically improves CPU throughput.
+    # think=False for Qwen3+tools: suppresses the extended reasoning phase that
+    # causes a long silent pause before any output appears, making the request
+    # look hung. Tool calls rarely benefit from the extra thinking overhead.
+    _opts: dict[str, Any] = {}
+    if OLLAMA_NUM_CTX > 0:
+        _opts["num_ctx"] = OLLAMA_NUM_CTX
+    _lm = ollama_model.lower()
+    if ollama_body.get("tools") and ("qwen3" in _lm or "qwen-3" in _lm):
+        _opts["think"] = False
+    if _opts:
+        # Per-request options (if any passed in body) override our defaults.
+        ollama_body["options"] = {**_opts, **(ollama_body.get("options") or {})}
+
     def _ollama_tc_to_openai(tc: dict) -> dict:
         """Convert Ollama tool_call to OpenAI format.
         Ollama arguments are a dict; OpenAI expects a JSON string."""
@@ -299,44 +319,64 @@ async def chat_completions(request: Request, body: dict[str, Any]):
                 ) as resp:
                     if resp.status_code >= 400:
                         err_body = await resp.aread()
-                        logger.error("Ollama chat error status=%d body=%s", resp.status_code, err_body[:500])
+                        err_text = err_body.decode("utf-8", errors="replace")[:300]
+                        logger.error("Ollama chat error status=%d body=%s", resp.status_code, err_text)
+                        yield _stream_chunk_openai({
+                            "id": chunk_id, "object": "chat.completion.chunk",
+                            "created": int(time.time()), "model": model,
+                            "choices": [{"index": 0, "delta": {"role": "assistant",
+                                "content": f"[Model error {resp.status_code}: {err_text}]"},
+                                "finish_reason": "stop"}],
+                        })
+                        yield "data: [DONE]\n\n"
                         return
-                    async for line in resp.aiter_lines():
-                        if not line or line == "data: [DONE]":
-                            continue
-                        try:
-                            data = json.loads(line)
-                            if data.get("done"):
-                                last_eval_count = data.get("eval_count", 0)
-                                last_eval_duration = data.get("eval_duration", 0)
-                                continue  # done chunk carries no new content
-                            msg = data.get("message", {})
-                            # Ollama delivers tool_calls in a non-done chunk (not the done chunk)
-                            tcs = msg.get("tool_calls")
-                            if tcs:
-                                pending_tool_calls = tcs
-                            content = msg.get("content", "")
-                            if isinstance(content, list):
-                                content = "".join(
-                                    p.get("text", "") if isinstance(p, dict) else str(p)
-                                    for p in content
-                                )
-                            else:
-                                content = str(content)
-                            if content:
-                                delta: dict[str, Any] = {"content": content}
-                                if not first_sent:
-                                    delta["role"] = "assistant"
-                                    first_sent = True
-                                yield _stream_chunk_openai({
-                                    "id": chunk_id,
-                                    "object": "chat.completion.chunk",
-                                    "created": int(time.time()),
-                                    "model": model,
-                                    "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
-                                })
-                        except json.JSONDecodeError:
-                            continue
+                    try:
+                        async for line in resp.aiter_lines():
+                            if not line or line == "data: [DONE]":
+                                continue
+                            try:
+                                data = json.loads(line)
+                                if data.get("done"):
+                                    last_eval_count = data.get("eval_count", 0)
+                                    last_eval_duration = data.get("eval_duration", 0)
+                                    continue  # done chunk carries no new content
+                                msg = data.get("message", {})
+                                # Ollama delivers tool_calls in a non-done chunk (not the done chunk)
+                                tcs = msg.get("tool_calls")
+                                if tcs:
+                                    pending_tool_calls = tcs
+                                content = msg.get("content", "")
+                                if isinstance(content, list):
+                                    content = "".join(
+                                        p.get("text", "") if isinstance(p, dict) else str(p)
+                                        for p in content
+                                    )
+                                else:
+                                    content = str(content)
+                                if content:
+                                    delta: dict[str, Any] = {"content": content}
+                                    if not first_sent:
+                                        delta["role"] = "assistant"
+                                        first_sent = True
+                                    yield _stream_chunk_openai({
+                                        "id": chunk_id,
+                                        "object": "chat.completion.chunk",
+                                        "created": int(time.time()),
+                                        "model": model,
+                                        "choices": [{"index": 0, "delta": delta, "finish_reason": None}],
+                                    })
+                            except json.JSONDecodeError:
+                                continue
+                    except Exception as stream_exc:
+                        logger.error("Ollama stream read error: %s", stream_exc)
+                        if not first_sent:
+                            yield _stream_chunk_openai({
+                                "id": chunk_id, "object": "chat.completion.chunk",
+                                "created": int(time.time()), "model": model,
+                                "choices": [{"index": 0, "delta": {"role": "assistant",
+                                    "content": f"[Stream error: {stream_exc}]"},
+                                    "finish_reason": "stop"}],
+                            })
 
             if last_eval_count and last_eval_duration:
                 _record_throughput(model_id, last_eval_count, last_eval_duration, service)
@@ -616,72 +656,75 @@ async def responses_api(request: Request, body: dict[str, Any]):
             tool_calls_acc: dict[int, dict] = {}
             tool_call_item_ids: dict[int, str] = {}
 
-            async for chunk in chat_response.body_iterator:
-                buf += chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="replace")
-                while "\n\n" in buf:
-                    block, buf = buf.split("\n\n", 1)
-                    for line in block.strip().split("\n"):
-                        line = line.strip()
-                        if not line.startswith("data: ") or line == "data: [DONE]":
-                            continue
-                        try:
-                            data = json.loads(line[6:])
-                            delta = (data.get("choices") or [{}])[0].get("delta", {})
+            try:
+                async for chunk in chat_response.body_iterator:
+                    buf += chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="replace")
+                    while "\n\n" in buf:
+                        block, buf = buf.split("\n\n", 1)
+                        for line in block.strip().split("\n"):
+                            line = line.strip()
+                            if not line.startswith("data: ") or line == "data: [DONE]":
+                                continue
+                            try:
+                                data = json.loads(line[6:])
+                                delta = (data.get("choices") or [{}])[0].get("delta", {})
 
-                            # Text content
-                            content = delta.get("content", "")
-                            if content:
-                                full_text += content
-                                yield _stream_chunk_openai({
-                                    "type": "response.output_text.delta",
-                                    "delta": content,
-                                    "item_id": msg_item_id,
-                                    "output_index": 0,
-                                    "content_index": 0,
-                                    "sequence_number": seq,
-                                })
-                                seq += 1
-
-                            # Tool call deltas
-                            for tc in (delta.get("tool_calls") or []):
-                                tc_idx = tc.get("index", 0)
-                                if tc_idx not in tool_calls_acc:
-                                    call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
-                                    func_name = (tc.get("function") or {}).get("name", "")
-                                    fc_item_id = f"fc-{uuid.uuid4().hex[:12]}"
-                                    tool_call_item_ids[tc_idx] = fc_item_id
-                                    tool_calls_acc[tc_idx] = {"id": call_id, "name": func_name, "arguments": ""}
+                                # Text content
+                                content = delta.get("content", "")
+                                if content:
+                                    full_text += content
                                     yield _stream_chunk_openai({
-                                        "type": "response.output_item.added",
-                                        "item": {
-                                            "type": "function_call",
-                                            "id": fc_item_id,
-                                            "call_id": call_id,
-                                            "name": func_name,
-                                            "arguments": "",
-                                        },
-                                        "output_index": 1 + tc_idx,
+                                        "type": "response.output_text.delta",
+                                        "delta": content,
+                                        "item_id": msg_item_id,
+                                        "output_index": 0,
+                                        "content_index": 0,
                                         "sequence_number": seq,
                                     })
                                     seq += 1
-                                else:
-                                    fn = (tc.get("function") or {}).get("name")
-                                    if fn:
-                                        tool_calls_acc[tc_idx]["name"] = fn
 
-                                args_delta = (tc.get("function") or {}).get("arguments", "")
-                                if args_delta:
-                                    tool_calls_acc[tc_idx]["arguments"] += args_delta
-                                    yield _stream_chunk_openai({
-                                        "type": "response.function_call_arguments.delta",
-                                        "item_id": tool_call_item_ids[tc_idx],
-                                        "output_index": 1 + tc_idx,
-                                        "delta": args_delta,
-                                        "sequence_number": seq,
-                                    })
-                                    seq += 1
-                        except json.JSONDecodeError:
-                            pass
+                                # Tool call deltas
+                                for tc in (delta.get("tool_calls") or []):
+                                    tc_idx = tc.get("index", 0)
+                                    if tc_idx not in tool_calls_acc:
+                                        call_id = tc.get("id") or f"call_{uuid.uuid4().hex[:12]}"
+                                        func_name = (tc.get("function") or {}).get("name", "")
+                                        fc_item_id = f"fc-{uuid.uuid4().hex[:12]}"
+                                        tool_call_item_ids[tc_idx] = fc_item_id
+                                        tool_calls_acc[tc_idx] = {"id": call_id, "name": func_name, "arguments": ""}
+                                        yield _stream_chunk_openai({
+                                            "type": "response.output_item.added",
+                                            "item": {
+                                                "type": "function_call",
+                                                "id": fc_item_id,
+                                                "call_id": call_id,
+                                                "name": func_name,
+                                                "arguments": "",
+                                            },
+                                            "output_index": 1 + tc_idx,
+                                            "sequence_number": seq,
+                                        })
+                                        seq += 1
+                                    else:
+                                        fn = (tc.get("function") or {}).get("name")
+                                        if fn:
+                                            tool_calls_acc[tc_idx]["name"] = fn
+
+                                    args_delta = (tc.get("function") or {}).get("arguments", "")
+                                    if args_delta:
+                                        tool_calls_acc[tc_idx]["arguments"] += args_delta
+                                        yield _stream_chunk_openai({
+                                            "type": "response.function_call_arguments.delta",
+                                            "item_id": tool_call_item_ids[tc_idx],
+                                            "output_index": 1 + tc_idx,
+                                            "delta": args_delta,
+                                            "sequence_number": seq,
+                                        })
+                                        seq += 1
+                            except json.JSONDecodeError:
+                                pass
+            except Exception as exc:
+                logger.error("Response stream error: %s", exc)
 
             # Finalize tool calls
             for tc_idx, tc in sorted(tool_calls_acc.items()):
@@ -765,12 +808,14 @@ async def responses_api(request: Request, body: dict[str, Any]):
             "name": func.get("name", ""),
             "arguments": func.get("arguments", "{}"),
         })
-    # Text content (may be empty when the model only calls tools)
-    output_items.append({
-        "type": "message",
-        "role": "assistant",
-        "content": [{"type": "output_text", "text": content}],
-    })
+    # Text content — only include the message item if there's content, or if no
+    # tool calls were produced (ensures at least one output item).
+    if content or not output_items:
+        output_items.append({
+            "type": "message",
+            "role": "assistant",
+            "content": [{"type": "output_text", "text": content}],
+        })
 
     return {
         "id": resp_id,
