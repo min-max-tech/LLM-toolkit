@@ -298,6 +298,15 @@ services:
     environment:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
+      # OAuth callbacks + inbound webhooks require a public URL.
+      # Recommended: tailscale funnel --set-path /rest/oauth2-credential/callback 5678
+      #              tailscale funnel --set-path /webhook 5678
+      # Then set N8N_WEBHOOK_URL=https://your-machine.your-tailnet.ts.net in .env
+      - WEBHOOK_URL=${N8N_WEBHOOK_URL:-}
+      - N8N_EDITOR_BASE_URL=${N8N_WEBHOOK_URL:-}
+      # Only the callback and webhook paths need to be reachable without a session cookie
+      - N8N_AUTH_EXCLUDE_ENDPOINTS=rest/oauth2-credential/callback,webhook
+      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
