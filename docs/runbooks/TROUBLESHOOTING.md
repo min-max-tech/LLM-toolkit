@@ -70,6 +70,12 @@ curl -s http://localhost:8811/mcp
 - **Check**: `docker stats`
 - **Fix**: Increase `deploy.resources.limits.memory` in docker-compose.yml or add swap
 
+### ComfyUI killed (signal 9) when loading LTX / LTXAV
+
+- **Symptoms**: Logs show `Requested to load LTXAV` (or LTX) then `Killed`; container restarts.
+- **Cause**: LTX models use weight offloading to RAM with `--lowvram`. The OOM killer terminates when the container limit is too low.
+- **Fix**: Run `./scripts/detect_hardware.py` — it detects host RAM and sets ComfyUI memory limit (GPU modes: 60% of RAM, 12–24G; CPU: 4–16G). To override: set `COMFYUI_MEMORY_LIMIT=24G` in `.env` before re-running detect. Restart: `docker compose up -d comfyui`.
+
 ### vLLM not appearing in model list
 
 - **Check**: `VLLM_URL` set in model-gateway env; vLLM service running and healthy

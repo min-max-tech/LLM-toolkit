@@ -325,17 +325,24 @@ class EmbeddingRequest(BaseModel):
     input: Any = ""
 
 
+# Ensure models are fully built when module is loaded dynamically (e.g. in tests)
+ChatCompletionRequest.model_rebuild()
+
+
 def _stream_chunk_openai(obj: dict) -> str:
     """Format OpenAI SSE chunk."""
     return f"data: {json.dumps(obj)}\n\n"
 
 
 @app.post("/v1/chat/completions")
-async def chat_completions(request: Request, body: ChatCompletionRequest | dict[str, Any]):
+async def chat_completions(request: Request):
     """Chat completion. Proxies to Ollama or vLLM based on model prefix."""
-    # Accept both Pydantic model (from HTTP) and dict (from internal calls)
-    if not isinstance(body, dict):
-        body = body.model_dump(exclude_none=True)
+    body = ChatCompletionRequest.model_validate(await request.json()).model_dump(exclude_none=True)
+    return await _chat_completions_impl(request, body)
+
+
+async def _chat_completions_impl(request: Request, body: dict[str, Any]):
+    """Internal implementation: body is already a validated dict."""
     model = body.get("model", "")
     provider, model_id = _model_provider_and_id(model)
     service = _service_from_headers(
@@ -364,12 +371,11 @@ async def chat_completions(request: Request, body: ChatCompletionRequest | dict[
                         r.raise_for_status()
                         async for chunk in r.aiter_bytes():
                             yield chunk
-        return StreamingResponse(
-            vllm_stream(),
-            media_type="text/event-stream",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Request-ID": req_id},
-        )
-    else:
+            return StreamingResponse(
+                vllm_stream(),
+                media_type="text/event-stream",
+                headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no", "X-Request-ID": req_id},
+            )
         # vLLM non-streaming
         async with AsyncClient(timeout=600.0) as client:
             r = await client.post(
@@ -587,7 +593,7 @@ async def completions_compat(request: Request, body: CompletionRequest):
         v = getattr(body, k, None)
         if v is not None:
             chat_body[k] = v
-    return await chat_completions(request, chat_body)
+    return await _chat_completions_impl(request, chat_body)
 
 
 # --- Responses API (OpenAI Responses format) ---
@@ -708,7 +714,7 @@ async def responses_api(request: Request, body: ResponsesRequest):
     if body.tool_choice is not None:
         chat_body["tool_choice"] = body.tool_choice
 
-    chat_response = await chat_completions(request, chat_body)
+    chat_response = await _chat_completions_impl(request, chat_body)
 
     if stream or isinstance(chat_response, StreamingResponse):
         async def _to_responses_stream():

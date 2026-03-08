@@ -255,7 +255,8 @@ services:
     deploy:
       resources:
         limits:
-          memory: 4G
+          # LTX models with --lowvram offload to RAM; 4G causes OOM. Use 16G+ for LTX.
+          memory: ${COMFYUI_MEMORY_LIMIT:-16G}
     # ComfyUI: run scripts/detect_hardware.py to auto-configure GPU (NVIDIA/AMD/Intel) or CPU
     # Bound to localhost only (no auth). Use SSH tunnel for remote access.
     ports:
