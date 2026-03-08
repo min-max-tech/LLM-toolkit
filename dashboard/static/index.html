@@ -1291,6 +1291,16 @@
             </div>
             <div id="openclaw-sync-status" style="font-size:0.8rem;color:var(--fg-muted);margin-top:var(--space-2);min-height:1.2em;" aria-live="polite"></div>
           </div>
+          <div class="pull-area" id="openclaw-default-area" style="margin-top:var(--space-3);border-top:1px solid var(--border);padding-top:var(--space-3);">
+            <div style="font-size:var(--text-sm);color:var(--fg-muted);margin-bottom:var(--space-2);">Default model <span style="color:var(--muted);font-size:0.8em;">(agent primary)</span></div>
+            <div class="pull-row">
+              <select id="openclaw-default-select" style="flex:1;padding:var(--space-2) var(--space-3);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--fg);font-size:var(--text-sm);" aria-label="Select OpenClaw default model">
+                <option value="">— not set —</option>
+              </select>
+              <button id="openclaw-default-btn" class="secondary" title="Set as OpenClaw agent default">Set Default</button>
+            </div>
+            <div id="openclaw-default-status" style="font-size:0.8rem;color:var(--fg-muted);margin-top:var(--space-1);min-height:1.2em;"></div>
+          </div>
         </div>
       </div>
     </section>
@@ -2251,10 +2261,12 @@
         const d = await api('/api/openclaw/models').then(r => r.json());
         if (!d.config_found) {
           el.innerHTML = '<span style="color:var(--muted);font-size:var(--text-sm)">openclaw.json not found — OpenClaw not configured.</span>';
+          populateOpenclawDefaultSelect([]);
           return;
         }
         if (!d.models || !d.models.length) {
           el.innerHTML = '<span style="color:var(--muted);font-size:var(--text-sm)">No models configured. Click Sync to populate from Ollama.</span>';
+          populateOpenclawDefaultSelect([]);
           return;
         }
         el.innerHTML = d.models.map(m => `
@@ -2262,10 +2274,65 @@
             <span class="model-name">${m.name || m.id}</span>
             <span class="model-meta">${m.id}${m.reasoning ? ' · reasoning' : ''}${(m.input||[]).includes('image') ? ' · vision' : ''}</span>
           </div>`).join('');
+        populateOpenclawDefaultSelect(d.models);
       } catch (e) {
         el.innerHTML = '<span style="color:var(--danger);font-size:var(--text-sm)">Failed to load</span>';
+        populateOpenclawDefaultSelect([]);
       }
     }
+
+    async function populateOpenclawDefaultSelect(models) {
+      const area = document.getElementById('openclaw-default-area');
+      const sel = document.getElementById('openclaw-default-select');
+      if (!sel || !area) return;
+      const llms = (models || []).filter(m => m.id && !/embed|bge|mxbai|arctic-embed|nomic-embed/.test((m.id || '').toLowerCase()));
+      if (!llms.length) {
+        area.style.display = 'none';
+        return;
+      }
+      area.style.display = '';
+      const current = sel.value;
+      sel.innerHTML = '<option value="">— not set —</option>' +
+        llms.map(m => {
+          const gatewayId = 'gateway/' + m.id;
+          return `<option value="${escapeHtml(gatewayId)}">${escapeHtml(m.name || m.id)}</option>`;
+        }).join('');
+      try {
+        const d = await api('/api/openclaw/default-model').then(r => r.json());
+        if (d.default_model) sel.value = d.default_model;
+        else if (current) sel.value = current;
+      } catch (e) { /* ignore */ }
+    }
+
+    document.getElementById('openclaw-default-btn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('openclaw-default-select');
+      const statusEl = document.getElementById('openclaw-default-status');
+      const btn = document.getElementById('openclaw-default-btn');
+      const model = sel?.value;
+      if (!model) { statusEl.textContent = 'Select a model first.'; return; }
+      btn.disabled = true;
+      statusEl.textContent = 'Saving and restarting OpenClaw…';
+      try {
+        const r = await api('/api/openclaw/default-model', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ model }),
+        });
+        const d = await r.json();
+        if (d.ok) {
+          statusEl.textContent = `✓ Default set. OpenClaw restarting…`;
+          toast('OpenClaw default model updated', 'success');
+        } else {
+          statusEl.textContent = 'Error: ' + (d.detail || 'Unknown error');
+          toast('Failed to set OpenClaw default', 'error');
+        }
+      } catch (e) {
+        statusEl.textContent = 'Error: ' + (e.message || e);
+        toast('Failed to set OpenClaw default', 'error');
+      } finally {
+        btn.disabled = false;
+      }
+    });
 
     document.getElementById('openclaw-sync-btn')?.addEventListener('click', async () => {
       const btn = document.getElementById('openclaw-sync-btn');

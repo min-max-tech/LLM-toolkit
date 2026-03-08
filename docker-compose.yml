@@ -54,6 +54,8 @@ services:
       # conversations; OpenClaw compaction flushes at ~15K tokens anyway.
       # Set to 0 to use Ollama's default (max context, slow on CPU).
       - OLLAMA_NUM_CTX=${OLLAMA_NUM_CTX:-16384}
+      # Local model used when Claude Code sends a "claude-*" model name
+      - CLAUDE_CODE_LOCAL_MODEL=${CLAUDE_CODE_LOCAL_MODEL:-}
     ports:
       - "${MODEL_GATEWAY_PORT:-11435}:11435"
     healthcheck:
@@ -571,3 +573,4 @@ networks:
     # internal: false required for Ollama to pull models from registry.ollama.ai.
     # Set internal: true for air-gapped security (model pulls will fail).
     internal: false
+

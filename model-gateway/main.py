@@ -39,6 +39,8 @@ MODEL_CACHE_TTL = float(os.environ.get("MODEL_CACHE_TTL_SEC", "60"))
 # a huge KV cache even for short prompts — severely hurting CPU throughput.
 # Set to 0 to leave Ollama's default unchanged.
 OLLAMA_NUM_CTX = int(os.environ.get("OLLAMA_NUM_CTX", "16384"))
+# When Claude Code sends a "claude-*" model name, remap it to this local model.
+CLAUDE_CODE_LOCAL_MODEL = os.environ.get("CLAUDE_CODE_LOCAL_MODEL", "")
 
 # TTL model list cache: avoids hitting Ollama on every /v1/models call.
 _model_cache: list = []
@@ -59,6 +61,19 @@ def _ollama_model_id(name: str) -> str:
     """Strip provider prefix if present (ollama/deepseek-r1:7b -> deepseek-r1:7b)."""
     _, model_id = _model_provider_and_id(name)
     return model_id
+
+
+def _ollama_model_id_with_hf_fallback(name: str) -> str:
+    """Resolve Ollama model ID. If model looks like org/model (missing hf.co) and
+    HuggingFace models require it, return hf.co/org/model. Used when upstream
+    (e.g. OpenClaw) sends shortened IDs like unsloth/Qwen3.5-9B-GGUF:latest."""
+    model = _ollama_model_id(name)
+    model_lower = model.lower()
+    if "/" in model and not (
+        model_lower.startswith("hf.co/") or model_lower.startswith("huggingface.co/")
+    ) and not model_lower.startswith("library/"):
+        return f"hf.co/{model}"
+    return model
 
 
 def _service_from_headers(origin: str | None, x_service: str | None) -> str:
@@ -138,10 +153,20 @@ async def list_models():
             for m in data.get("models", []):
                 name = m.get("name", "")
                 if name:
+                    ts = m.get("modified_at", 0) or 0
+                    # Expose bare name (e.g. deepseek-r1:7b) so Claude Code and other
+                    # clients that validate model names against this list can find them.
+                    objects.append({
+                        "id": name,
+                        "object": "model",
+                        "created": ts,
+                        "owned_by": "ollama",
+                    })
+                    # Also expose prefixed form (ollama/name) for provider-aware clients.
                     objects.append({
                         "id": f"ollama/{name}",
                         "object": "model",
-                        "created": m.get("modified_at", 0) or 0,
+                        "created": ts,
                         "owned_by": "ollama",
                     })
         except Exception:
@@ -389,7 +414,7 @@ async def _chat_completions_impl(request: Request, body: dict[str, Any]):
             return resp
 
     # Ollama: strip provider prefix (ollama/qwen2.5:7b -> qwen2.5:7b)
-    ollama_model = _ollama_model_id(model_id)
+    ollama_model = _ollama_model_id_with_hf_fallback(model_id)
     ollama_body: dict[str, Any] = {"model": ollama_model, "messages": messages, "stream": stream}
     # Forward tools — Ollama's /api/chat accepts the same OpenAI tools format
     if body.get("tools"):
@@ -928,6 +953,207 @@ async def responses_api(request: Request, body: ResponsesRequest):
     }
 
 
+# --- Anthropic Messages API (Claude Code local model support) ---
+
+
+def _resolve_claude_model(model: str) -> str:
+    """Remap claude-* model names to the configured local model.
+    Any other name (e.g. devstral-small-2, qwen2.5-coder:7b) passes through as-is to Ollama."""
+    if model.startswith("claude-") and CLAUDE_CODE_LOCAL_MODEL:
+        return CLAUDE_CODE_LOCAL_MODEL
+    return model
+
+
+def _anthropic_content_to_str(content: Any) -> str:
+    """Flatten Anthropic content (str or list of blocks) to a plain string."""
+    if isinstance(content, str):
+        return content
+    if isinstance(content, list):
+        return "".join(
+            b.get("text", "") for b in content
+            if isinstance(b, dict) and b.get("type") == "text"
+        )
+    return str(content) if content else ""
+
+
+def _anthropic_messages_to_openai(system: Any, messages: list[dict]) -> list[dict]:
+    """Convert Anthropic messages array (with content blocks) to OpenAI format."""
+    result: list[dict] = []
+    if system:
+        result.append({"role": "system", "content": _anthropic_content_to_str(system)})
+    for msg in messages:
+        role = msg.get("role", "user")
+        content = msg.get("content", "")
+        if isinstance(content, str):
+            result.append({"role": role, "content": content})
+        elif isinstance(content, list):
+            tool_results = [b for b in content if isinstance(b, dict) and b.get("type") == "tool_result"]
+            tool_uses = [b for b in content if isinstance(b, dict) and b.get("type") == "tool_use"]
+            text_blocks = [b for b in content if isinstance(b, dict) and b.get("type") == "text"]
+            if tool_results:
+                for tr in tool_results:
+                    tc = tr.get("content", "")
+                    if isinstance(tc, list):
+                        tc = " ".join(b.get("text", "") for b in tc if isinstance(b, dict))
+                    result.append({"role": "tool", "tool_call_id": tr.get("tool_use_id", ""), "content": str(tc)})
+            elif tool_uses:
+                tool_calls = [
+                    {
+                        "id": tu.get("id", f"call_{uuid.uuid4().hex[:12]}"),
+                        "type": "function",
+                        "function": {"name": tu.get("name", ""), "arguments": json.dumps(tu.get("input", {}))},
+                    }
+                    for tu in tool_uses
+                ]
+                text = " ".join(b.get("text", "") for b in text_blocks)
+                result.append({"role": "assistant", "content": text or None, "tool_calls": tool_calls})
+            else:
+                result.append({"role": role, "content": " ".join(b.get("text", "") for b in text_blocks)})
+        else:
+            result.append({"role": role, "content": str(content) if content else ""})
+    return result
+
+
+def _anthropic_tools_to_openai(tools: list[dict]) -> list[dict]:
+    return [
+        {"type": "function", "function": {"name": t.get("name", ""), "description": t.get("description", ""), "parameters": t.get("input_schema", {})}}
+        for t in tools
+    ]
+
+
+def _openai_finish_to_anthropic(finish_reason: str) -> str:
+    return {"stop": "end_turn", "tool_calls": "tool_use", "length": "max_tokens"}.get(finish_reason, "end_turn")
+
+
+def _openai_message_to_anthropic_content(message: dict) -> list[dict]:
+    blocks: list[dict] = []
+    text = message.get("content") or ""
+    if text:
+        blocks.append({"type": "text", "text": text})
+    for tc in (message.get("tool_calls") or []):
+        func = tc.get("function", {})
+        args_raw = func.get("arguments", "{}")
+        try:
+            args = json.loads(args_raw) if isinstance(args_raw, str) else args_raw
+        except (json.JSONDecodeError, ValueError):
+            args = {}
+        blocks.append({"type": "tool_use", "id": tc.get("id", f"toolu_{uuid.uuid4().hex[:12]}"), "name": func.get("name", ""), "input": args})
+    return blocks or [{"type": "text", "text": ""}]
+
+
+@app.post("/v1/messages")
+async def anthropic_messages(request: Request):
+    """Anthropic Messages API — translates to OpenAI/Ollama format and back.
+    Allows Claude Code and other Anthropic-SDK clients to use local models via this gateway.
+    Set ANTHROPIC_BASE_URL=http://model-gateway:11435 and ANTHROPIC_API_KEY=local.
+    """
+    raw = await request.json()
+    model = _resolve_claude_model(raw.get("model", ""))
+    stream = raw.get("stream", False)
+    msg_id = f"msg_{uuid.uuid4().hex[:24]}"
+
+    ollama_messages = _anthropic_messages_to_openai(raw.get("system"), raw.get("messages", []))
+    openai_tools = _anthropic_tools_to_openai(raw["tools"]) if raw.get("tools") else None
+
+    chat_body: dict[str, Any] = {"model": model, "messages": ollama_messages, "stream": stream}
+    if raw.get("max_tokens"):
+        chat_body["max_tokens"] = raw["max_tokens"]
+    if raw.get("temperature") is not None:
+        chat_body["temperature"] = raw["temperature"]
+    if raw.get("top_p") is not None:
+        chat_body["top_p"] = raw["top_p"]
+    if raw.get("stop_sequences"):
+        chat_body["stop"] = raw["stop_sequences"]
+    if openai_tools:
+        chat_body["tools"] = openai_tools
+    if raw.get("tool_choice") is not None:
+        tc = raw["tool_choice"]
+        if isinstance(tc, dict):
+            t = tc.get("type", "auto")
+            chat_body["tool_choice"] = {"type": "function", "function": {"name": tc["name"]}} if t == "tool" else ("required" if t == "any" else t)
+        else:
+            chat_body["tool_choice"] = tc
+
+    if stream:
+        async def anthropic_stream():
+            openai_resp = await _chat_completions_impl(request, chat_body)
+            if not isinstance(openai_resp, StreamingResponse):
+                return
+
+            def _sse(event: str, data: dict) -> str:
+                return f"event: {event}\ndata: {json.dumps(data)}\n\n"
+
+            yield _sse("message_start", {"type": "message_start", "message": {"id": msg_id, "type": "message", "role": "assistant", "content": [], "model": model, "stop_reason": None, "stop_sequence": None, "usage": {"input_tokens": 0, "output_tokens": 0}}})
+            yield _sse("content_block_start", {"type": "content_block_start", "index": 0, "content_block": {"type": "text", "text": ""}})
+            yield _sse("ping", {"type": "ping"})
+
+            buf = ""
+            stop_reason = "end_turn"
+            tool_calls_acc: dict[int, dict] = {}
+            tool_block_idx: dict[int, int] = {}
+            next_block = 1
+
+            try:
+                async for chunk in openai_resp.body_iterator:
+                    buf += chunk if isinstance(chunk, str) else chunk.decode("utf-8", errors="replace")
+                    while "\n\n" in buf:
+                        block, buf = buf.split("\n\n", 1)
+                        for line in block.strip().split("\n"):
+                            line = line.strip()
+                            if not line.startswith("data: ") or line == "data: [DONE]":
+                                continue
+                            try:
+                                data = json.loads(line[6:])
+                                choice = (data.get("choices") or [{}])[0]
+                                delta = choice.get("delta", {})
+                                if choice.get("finish_reason"):
+                                    stop_reason = _openai_finish_to_anthropic(choice["finish_reason"])
+                                text = delta.get("content", "")
+                                if text:
+                                    yield _sse("content_block_delta", {"type": "content_block_delta", "index": 0, "delta": {"type": "text_delta", "text": text}})
+                                for tc in (delta.get("tool_calls") or []):
+                                    tc_idx = tc.get("index", 0)
+                                    if tc_idx not in tool_calls_acc:
+                                        call_id = tc.get("id") or f"toolu_{uuid.uuid4().hex[:12]}"
+                                        name = (tc.get("function") or {}).get("name", "")
+                                        bi = next_block; next_block += 1
+                                        tool_block_idx[tc_idx] = bi
+                                        tool_calls_acc[tc_idx] = {"id": call_id, "name": name, "arguments": ""}
+                                        yield _sse("content_block_start", {"type": "content_block_start", "index": bi, "content_block": {"type": "tool_use", "id": call_id, "name": name, "input": {}}})
+                                    args_delta = (tc.get("function") or {}).get("arguments", "")
+                                    if args_delta:
+                                        tool_calls_acc[tc_idx]["arguments"] += args_delta
+                                        yield _sse("content_block_delta", {"type": "content_block_delta", "index": tool_block_idx[tc_idx], "delta": {"type": "input_json_delta", "partial_json": args_delta}})
+                            except json.JSONDecodeError:
+                                pass
+            except Exception as exc:
+                logger.error("Anthropic stream translation error: %s", exc)
+
+            yield _sse("content_block_stop", {"type": "content_block_stop", "index": 0})
+            for tc_idx in sorted(tool_calls_acc):
+                yield _sse("content_block_stop", {"type": "content_block_stop", "index": tool_block_idx[tc_idx]})
+            yield _sse("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": {"output_tokens": 0}})
+            yield _sse("message_stop", {"type": "message_stop"})
+
+        return StreamingResponse(anthropic_stream(), media_type="text/event-stream", headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
+
+    # Non-streaming
+    openai_resp = await _chat_completions_impl(request, chat_body)
+    choice = (openai_resp.get("choices") or [{}])[0] if isinstance(openai_resp, dict) else {}
+    message = choice.get("message", {})
+    usage = openai_resp.get("usage", {}) if isinstance(openai_resp, dict) else {}
+    return {
+        "id": msg_id,
+        "type": "message",
+        "role": "assistant",
+        "content": _openai_message_to_anthropic_content(message),
+        "model": model,
+        "stop_reason": _openai_finish_to_anthropic(choice.get("finish_reason", "stop")),
+        "stop_sequence": None,
+        "usage": {"input_tokens": usage.get("prompt_tokens", 0), "output_tokens": usage.get("completion_tokens", 0)},
+    }
+
+
 # --- Embeddings ---
 
 
@@ -955,7 +1181,7 @@ async def embeddings(body: EmbeddingRequest):
             return r.json()
 
     # Ollama: strip provider prefix (ollama/qwen2.5:7b -> qwen2.5:7b)
-    ollama_model = _ollama_model_id(model_id)
+    ollama_model = _ollama_model_id_with_hf_fallback(model_id)
     ollama_body = {"model": ollama_model, "input": inp}
     async with AsyncClient(timeout=120.0) as client:
         r = await client.post(f"{OLLAMA_URL}/api/embed", json=ollama_body)

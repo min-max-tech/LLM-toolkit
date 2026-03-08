@@ -198,9 +198,9 @@ async def ollama_models():
 
 @app.post("/api/ollama/delete")
 async def ollama_delete(req: PullRequest):
-    """Delete an Ollama model. model can include tag (e.g. llama3.2 or deepseek-r1:7b)."""
+    """Delete an Ollama model. model can include tag (e.g. llama3.2 or hf.co/unsloth/Qwen3.5-9B-GGUF:latest)."""
     name = (req.model or "").strip()
-    if not name or "/" in name or ".." in name:
+    if not name or ".." in name:
         raise HTTPException(status_code=400, detail="Invalid model name")
     async with AsyncClient(timeout=60.0) as client:
         try:
@@ -1156,6 +1156,65 @@ async def get_openclaw_models():
         return {"models": models, "count": len(models), "config_found": True}
     except Exception as e:
         return {"models": [], "count": 0, "config_found": True, "error": str(e)}
+
+
+@app.get("/api/openclaw/default-model")
+async def get_openclaw_default_model():
+    """Return the current OpenClaw agent default model (agents.defaults.model.primary)."""
+    if not OPENCLAW_CONFIG_PATH.exists():
+        return {"default_model": "", "config_found": False}
+    try:
+        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+        primary = (
+            cfg.get("agents", {})
+            .get("defaults", {})
+            .get("model", {})
+            .get("primary", "")
+        )
+        return {"default_model": primary or "", "config_found": True}
+    except Exception as e:
+        return {"default_model": "", "config_found": True, "error": str(e)}
+
+
+class OpenClawDefaultModelRequest(BaseModel):
+    model: str
+
+
+@app.post("/api/openclaw/default-model")
+async def set_openclaw_default_model(req: OpenClawDefaultModelRequest, request: Request):
+    """Write agents.defaults.model.primary to openclaw.json and restart openclaw-gateway."""
+    if not OPENCLAW_CONFIG_PATH.exists():
+        raise HTTPException(status_code=404, detail="openclaw.json not found — is OpenClaw set up?")
+    model = (req.model or "").strip()
+    if not model:
+        raise HTTPException(status_code=400, detail="Model cannot be empty")
+
+    try:
+        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot read openclaw.json: {e}")
+
+    agents = cfg.setdefault("agents", {})
+    defaults = agents.setdefault("defaults", {})
+    model_cfg = defaults.setdefault("model", {})
+    model_cfg["primary"] = model
+    if "fallbacks" not in model_cfg:
+        model_cfg["fallbacks"] = []
+
+    try:
+        OPENCLAW_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=f"Cannot write openclaw.json: {e}")
+
+    code, _ = await _ops_request(
+        "POST", "/services/openclaw-gateway/restart", request=request, json={"confirm": True}
+    )
+
+    return {
+        "ok": True,
+        "model": model,
+        "openclaw_restarted": code in (200, 201),
+    }
 
 
 @app.post("/api/openclaw/sync")
