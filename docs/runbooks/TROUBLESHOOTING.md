@@ -207,5 +207,5 @@ curl -s http://localhost:8811/mcp
 ## Escalation
 
 - **Security**: See [SECURITY.md](../../SECURITY.md) (pre-deploy checklist, break-glass)
-- **Architecture**: See [docs/ARCHITECTURE_RFC.md](../ARCHITECTURE_RFC.md)
+- **Architecture**: See [Product Requirements Document](../Product%20Requirements%20Document.md)
 - **OpenClaw**: See [openclaw/README.md](../../openclaw/README.md)

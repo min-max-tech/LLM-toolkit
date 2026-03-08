@@ -1,7 +1,7 @@
 # Audit Event Schema
 
 **Status:** Draft (First PR)  
-**See:** [ARCHITECTURE_RFC.md](../ARCHITECTURE_RFC.md) WS4
+**See:** [Product Requirements Document](../Product%20Requirements%20Document.md)
 
 ## Overview
 

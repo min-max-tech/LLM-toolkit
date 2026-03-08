@@ -686,7 +686,7 @@ LLM-toolkit/
 ├── scripts/             ✓ (detect_hardware.py, ssrf-egress-block.sh/.ps1, mcp_add/remove.sh/.ps1, smoke_test.sh/.ps1, comfyui/)
 ├── tests/               ✓ (test_compose_smoke.py, test_dashboard_health.py, test_mcp_policy.py, test_model_gateway_cache.py, test_model_gateway_contract.py, test_ops_controller_audit.py)
 ├── docs/
-│   ├── ARCHITECTURE_RFC.md    ✓ this file
+│   ├── Product Requirements Document.md  ✓ this file (architecture & decisions)
 │   ├── GETTING_STARTED.md     ✓
 │   ├── audit/SCHEMA.md        ✓
 │   └── runbooks/

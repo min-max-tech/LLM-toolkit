@@ -4,7 +4,7 @@ Hey, I am Cam, I made this repo to simplify my local-LLM setup. I wanted a bunch
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), auto-detects hardware for best performance.
 
-→ [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture RFC](docs/ARCHITECTURE_RFC.md)
+→ [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture](docs/Product%20Requirements%20Document.md)
 
 ## Services
 
@@ -145,7 +145,7 @@ User → Dashboard / Open WebUI / N8N / OpenClaw
          └── Ops Controller (:9000) → Docker Compose lifecycle
 ```
 
-Local-first, single model endpoint (OpenAI-compatible), dashboard never mounts docker.sock. Full design: [docs/ARCHITECTURE_RFC.md](docs/ARCHITECTURE_RFC.md).
+Local-first, single model endpoint (OpenAI-compatible), dashboard never mounts docker.sock. Full design: [Product Requirements Document](docs/Product%20Requirements%20Document.md).
 
 ## Data
 

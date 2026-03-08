@@ -2,7 +2,7 @@
 
 OpenAI-compatible proxy for unified model access. Routes chat and embedding requests to Ollama (and future providers like vLLM).
 
-**Status:** See [docs/ARCHITECTURE_RFC.md](../docs/ARCHITECTURE_RFC.md) for design and implementation plan.
+**Status:** See [Product Requirements Document](../docs/Product%20Requirements%20Document.md) for design and decisions.
 
 ## Endpoints
 

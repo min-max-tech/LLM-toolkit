@@ -1,6 +1,6 @@
 # OpenClaw Security & Trust Boundary
 
-See [docs/ARCHITECTURE_RFC.md](../docs/ARCHITECTURE_RFC.md) Section 9 for the full orchestrator/browser
+See [Product Requirements Document](../docs/Product%20Requirements%20Document.md) for the full orchestrator/browser
 trust model. This document is the operational quick-reference.
 
 ---
@@ -156,6 +156,6 @@ egress-blocked network before any real browsing is enabled.
 
 ## See Also
 
-- [docs/ARCHITECTURE_RFC.md](../docs/ARCHITECTURE_RFC.md) — Section 9 (full trust model) · WS4 (threat model)
+- [Product Requirements Document](../docs/Product%20Requirements%20Document.md) — two-tier trust model · threat model
 - [docs/runbooks/SECURITY_HARDENING.md](../docs/runbooks/SECURITY_HARDENING.md) — §1 SSRF blocks · §5 token rotation · §11 openclaw secrets
 - [SECURITY.md](../SECURITY.md) — pre-deployment checklist · break-glass

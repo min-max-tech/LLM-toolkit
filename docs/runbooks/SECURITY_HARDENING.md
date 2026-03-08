@@ -2,7 +2,7 @@
 
 Operational guidance for hardening the AI-toolkit stack beyond the defaults.
 
-**See also:** [SECURITY.md](../../SECURITY.md) · [ARCHITECTURE_RFC.md](../ARCHITECTURE_RFC.md) WS4
+**See also:** [SECURITY.md](../../SECURITY.md) · [Product Requirements Document](../Product%20Requirements%20Document.md)
 
 ---
 

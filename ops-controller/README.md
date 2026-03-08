@@ -2,7 +2,7 @@
 
 Secure Docker Compose control plane. Exposes an authenticated API for start/stop/restart, logs, and image pulls. Dashboard calls this service; it never mounts docker.sock.
 
-**Status:** See [docs/ARCHITECTURE_RFC.md](../docs/ARCHITECTURE_RFC.md) for design and implementation plan.
+**Status:** See [Product Requirements Document](../docs/Product%20Requirements%20Document.md) for design and decisions.
 
 ## Endpoints
 
