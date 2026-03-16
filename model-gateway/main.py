@@ -285,6 +285,35 @@ async def ollama_generate(request: Request):
         return r.json()
 
 
+@app.get("/")
+async def root():
+    """Ollama-compatible root endpoint."""
+    return "Ollama is running"
+
+
+@app.get("/api/version")
+async def api_version():
+    """Proxy Ollama version (Claude Code checks this for compatibility)."""
+    try:
+        async with AsyncClient(timeout=3.0) as client:
+            r = await client.get(f"{OLLAMA_URL}/api/version")
+            return r.json()
+    except Exception:
+        return {"version": "0.18.0"}
+
+
+@app.post("/api/show")
+async def api_show(request: Request):
+    """Proxy Ollama model info."""
+    try:
+        raw = await request.json()
+        async with AsyncClient(timeout=10.0) as client:
+            r = await client.post(f"{OLLAMA_URL}/api/show", json=raw)
+            return r.json()
+    except Exception:
+        return {"error": "model not found"}
+
+
 @app.get("/health")
 async def health():
     """Gateway health check. OK if at least one provider is reachable."""
