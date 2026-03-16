@@ -3,7 +3,7 @@ $ErrorActionPreference = "Stop"
 $base = if ($env:BASE_PATH) { $env:BASE_PATH -replace '\\', '/' } else { (Get-Location).Path }
 $data = if ($env:DATA_PATH) { $env:DATA_PATH -replace '\\', '/' } else { Join-Path $base "data" }
 $dirs = @(
-    (Join-Path $data "ollama"),
+    (Join-Path $base "models\ollama"),
     (Join-Path $data "mcp"),
     (Join-Path $data "ops-controller"),
     (Join-Path $data "open-webui"),
@@ -11,6 +11,7 @@ $dirs = @(
     (Join-Path $data "comfyui-output"),
     (Join-Path $data "n8n-data"),
     (Join-Path $data "n8n-files"),
+    (Join-Path $data "dashboard"),
     (Join-Path $data "openclaw"),
     (Join-Path $data "openclaw\workspace"),
     (Join-Path $base "models\comfyui\checkpoints"),
@@ -21,6 +22,20 @@ $dirs = @(
 foreach ($d in $dirs) {
     New-Item -ItemType Directory -Force -Path $d | Out-Null
     Write-Host "OK $d"
+}
+
+# Bootstrap MCP servers.txt with default tools (gateway hot-reloads)
+$mcpServers = Join-Path $data "mcp\servers.txt"
+$mcpRegistry = Join-Path $data "mcp\registry-custom.yaml"
+if (-not (Test-Path $mcpServers)) {
+    Set-Content -Path $mcpServers -Value "n8n,playwright,comfyui" -NoNewline
+    Write-Host "OK $mcpServers (n8n,playwright,comfyui)"
+}
+# Bootstrap custom registry for ComfyUI (gateway uses --additional-registry)
+$registryTemplate = Join-Path $base "mcp\registry-custom.yaml"
+if (-not (Test-Path $mcpRegistry) -and (Test-Path $registryTemplate)) {
+    Copy-Item $registryTemplate $mcpRegistry -Force
+    Write-Host "OK $mcpRegistry"
 }
 
 # Bootstrap openclaw.json with Ollama provider if config doesn't exist

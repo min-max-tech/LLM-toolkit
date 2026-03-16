@@ -38,12 +38,12 @@ curl -s http://localhost:8811/mcp
 
 - **Check**: `data/mcp/servers.txt` exists and has entries; `docker compose logs mcp-gateway`
 - **Causes**: Empty servers.txt, registry.json parse error, Docker socket permission
-- **Fix**: Add servers via dashboard or `echo "duckduckgo" >> data/mcp/servers.txt`; ensure `registry.json` is valid JSON if present
+- **Fix**: Add servers via dashboard or `echo "n8n,playwright,comfyui" > data/mcp/servers.txt`; ensure `registry.json` is valid JSON if present
 
 ### MCP filesystem: "ENOENT no such file or directory, stat ''"
 
 - **Cause:** The `filesystem` MCP server expects a root directory to be configured. When the gateway starts it without a path (default), it tries to stat an empty path and fails.
-- **Fix:** Either remove `filesystem` from `data/mcp/servers.txt` if you don't need file access (e.g. use `duckduckgo,hugging-face` only), or configure the filesystem server with a root directory via the Docker MCP Gateway / registry if your gateway version supports per-server env or volume mounts. Other tools (duckduckgo, hugging-face) will still work.
+- **Fix:** Either remove `filesystem` from `data/mcp/servers.txt` if you don't need file access (e.g. use `n8n,playwright,comfyui` only), or configure the filesystem server with a root directory via the Docker MCP Gateway / registry if your gateway version supports per-server env or volume mounts. Other tools (playwright, n8n) will still work.
 
 ### Open WebUI can't reach models
 
@@ -182,7 +182,7 @@ curl -s http://localhost:8811/mcp
 
 **Cause:** The agent acknowledged the request but did not actually invoke the MCP tool (e.g. DuckDuckGo). Common with smaller models or when the prompt doesn't force a tool call.
 
-**Fix:** (1) In `openclaw/workspace/AGENTS.md` we instruct the agent to call the search tool immediately and return results, not only say it will. Sync the workspace (`docker compose up openclaw-workspace-sync`) and start a new session. (2) Phrase the request so a tool is required: e.g. "Search DuckDuckGo for 'AI news March 1 2026' and list the top 5 headlines with links." (3) Check gateway logs: `docker compose logs openclaw-gateway` for MCP or tool errors. (4) Confirm the MCP gateway is reachable from the OpenClaw container and that `duckduckgo` is in `data/mcp/servers.txt`. (5) **Model matters:** If the agent outputs text like "Calling MCP tool: DuckDuckGo search..." but never actually invokes the tool (no real tool_call), the model is simulating instead of calling. Switch to a model with better tool-use: `qwen3:14b-q4_K_M`, `deepseek-r1:7b`, or `qwen3-coder:30b` (if you have VRAM). Smaller models often announce tool calls in text without emitting them.
+**Fix:** (1) In `openclaw/workspace/AGENTS.md` we instruct the agent to use Playwright or fetch_content for web content. Sync the workspace (`docker compose up openclaw-workspace-sync`) and start a new session. (2) Phrase the request so a tool is required: e.g. "Use Playwright to navigate to example.com and take a snapshot." (3) Check gateway logs: `docker compose logs openclaw-gateway` for MCP or tool errors. (4) Confirm the MCP gateway is reachable from the OpenClaw container and that `playwright` is in `data/mcp/servers.txt`. (5) **Model matters:** If the agent outputs text like "Calling MCP tool..." but never actually invokes the tool (no real tool_call), the model is simulating instead of calling. Switch to a model with better tool-use: `qwen3:14b-q4_K_M`, `deepseek-r1:7b`, or `qwen3-coder:30b` (if you have VRAM). Smaller models often announce tool calls in text without emitting them.
 
 ## Log Locations
 

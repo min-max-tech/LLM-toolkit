@@ -16,9 +16,11 @@ Environment-specific notes for this AI-toolkit install.
 
 Check what's active: `data/mcp/servers.txt` or the dashboard MCP tab.
 
-**Typical setup:**
-- `duckduckgo` — web search, no API key needed
-- `fetch` — parse any URL into readable text
+**Typical setup (all via MCP gateway):**
+- `n8n` — workflow automation. Set `N8N_API_KEY` in `.env` for full access.
+- `playwright` — preferred browser tool (navigate, screenshot, click, fill forms).
+- `comfyui` — image/audio/video generation via ComfyUI.
+- `fetch` — parse any URL into readable text.
 - `github-official` — needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env`
 
 To add a tool: dashboard → MCP tab → add from catalog or paste a Hub URL.

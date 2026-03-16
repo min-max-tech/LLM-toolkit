@@ -241,6 +241,7 @@ services:
     image: ${COMFYUI_IMAGE:-yanwk/comfyui-boot:cpu}
     container_name: comfyui
     restart: unless-stopped
+    # Backend network so MCP gateway-spawned comfyui container can reach it
     # ComfyUI: run scripts/detect_hardware.py to auto-configure GPU (NVIDIA/AMD/Intel) or CPU
     ports:
       - "8188:8188"
@@ -264,6 +265,15 @@ services:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/root/ComfyUI/output
     networks:
       - frontend
+      - backend
+
+  # Build ComfyUI MCP image for gateway-spawned containers (exits immediately after build)
+  comfyui-mcp-image:
+    build: ./comfyui-mcp
+    image: ai-toolkit-comfyui-mcp:latest
+    pull_policy: build
+    restart: "no"
+    command: ["true"]
 
   n8n:
     image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n:2.10.2}
@@ -316,12 +326,20 @@ services:
     pull_policy: build
     container_name: mcp-gateway
     restart: unless-stopped
+    depends_on:
+      comfyui-mcp-image:
+        condition: service_completed_successfully
     environment:
       - MCP_CONFIG_FILE=/mcp-config/servers.txt
       - MCP_GATEWAY_PORT=8811
       # MCP server API keys — set these in the root .env file
       - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN:-}
       - BRAVE_API_KEY=${BRAVE_API_KEY:-}
+      # n8n MCP server (mcp/n8n) — for workflow tools when n8n API key is set
+      - N8N_API_URL=${N8N_API_URL:-http://n8n:5678}
+      - N8N_API_KEY=${N8N_API_KEY:-}
+      # ComfyUI MCP (custom registry) — passed to spawned comfyui container
+      - COMFYUI_URL=http://comfyui:8188
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config

@@ -1,0 +1,189 @@
+#!/usr/bin/env bash
+# ai-toolkit — project management CLI
+# Usage: ./ai-toolkit <command>
+#
+# Commands:
+#   initialize   Bootstrap directories, generate tokens, detect hardware, start services
+#   help         Show this help
+
+set -euo pipefail
+
+BOLD='\033[1m'; GREEN='\033[0;32m'; YELLOW='\033[1;33m'
+BLUE='\033[0;34m'; RED='\033[0;31m'; DIM='\033[2m'; NC='\033[0m'
+
+base="${BASE_PATH:-$(pwd)}"; base="${base//\\/\/}"
+data="${DATA_PATH:-$base/data}"
+
+ok()      { printf "  ${GREEN}✓${NC}  %s\n" "$*"; }
+info()    { printf "  ${BLUE}·${NC}  %s\n" "$*"; }
+warn()    { printf "  ${YELLOW}!${NC}  %s\n" "$*"; }
+err()     { printf "  ${RED}✗${NC}  %s\n" "$*" >&2; }
+section() { printf "\n${BOLD}── %s ${DIM}%s${NC}\n" "$1" "$2"; }
+
+# ── initialize ─────────────────────────────────────────────────────────────────
+
+cmd_initialize() {
+  printf "\n${YELLOW}"
+  printf "   ___    ___   _____           _ _    _ _   \n"
+  printf "  / _ \  |_ _| |_   _|__   ___ | | | _(_) |_ \n"
+  printf " / /_\ \  | |    | |/ _ \ / _ \| | |/ / | __|\n"
+  printf "/  _  /  | |    | | (_) | (_) | |   <| | |_ \n"
+  printf "\_| |_/ |___|   |_|\___/ \___/|_|_|\_\_|\__|\n"
+  printf "${NC}"
+  printf "${DIM}  base=$base  data=$data${NC}\n"
+
+  # 1. Directories
+  section "1/4" "Creating directories"
+  local dirs=(
+    "$base/models/ollama"
+    "$data/mcp"
+    "$data/ops-controller"
+    "$data/open-webui"
+    "$data/comfyui-storage"
+    "$data/comfyui-output"
+    "$data/n8n-data"
+    "$data/n8n-files"
+    "$data/dashboard"
+    "$data/qdrant"
+    "$data/openclaw"
+    "$data/openclaw/workspace"
+    "$base/models/comfyui/checkpoints"
+    "$base/models/comfyui/loras"
+    "$base/models/comfyui/latent_upscale_models"
+    "$base/models/comfyui/text_encoders"
+    "$base/models/comfyui/unet"
+    "$base/models/comfyui/vae"
+  )
+  for d in "${dirs[@]}"; do
+    mkdir -p "$d"
+    ok "${d#"$base/"}"
+  done
+
+  # 2. Config files
+  section "2/4" "Bootstrapping config"
+
+  local mcp_servers="$data/mcp/servers.txt"
+  local mcp_registry="$data/mcp/registry-custom.yaml"
+
+  if [[ ! -f "$mcp_servers" ]]; then
+    echo "n8n,playwright,comfyui" > "$mcp_servers"
+    ok "data/mcp/servers.txt  →  n8n, playwright, comfyui"
+  else
+    info "data/mcp/servers.txt  (exists: $(cat "$mcp_servers"))"
+  fi
+
+  if [[ ! -f "$mcp_registry" ]] && [[ -f "$base/mcp/registry-custom.yaml" ]]; then
+    cp "$base/mcp/registry-custom.yaml" "$mcp_registry"
+    ok "data/mcp/registry-custom.yaml  (copied)"
+  elif [[ -f "$mcp_registry" ]]; then
+    info "data/mcp/registry-custom.yaml  (exists)"
+  fi
+
+  local openclaw_config="$data/openclaw/openclaw.json"
+  if [[ ! -f "$openclaw_config" ]] && [[ -f "$base/openclaw/openclaw.json.example" ]]; then
+    cp "$base/openclaw/openclaw.json.example" "$openclaw_config"
+    ok "data/openclaw/openclaw.json  (initialized from example)"
+  elif [[ -f "$openclaw_config" ]]; then
+    info "data/openclaw/openclaw.json  (exists)"
+  fi
+
+  # Auth token
+  local root_env="$base/.env"
+  local needs_create=false needs_token=false
+  if [[ ! -f "$root_env" ]]; then
+    needs_create=true
+  elif grep -qE 'OPENCLAW_GATEWAY_TOKEN=change-me|^OPENCLAW_GATEWAY_TOKEN=[[:space:]]*$' "$root_env" 2>/dev/null; then
+    needs_token=true
+  elif ! grep -qE '^OPENCLAW_GATEWAY_TOKEN=[a-zA-Z0-9]' "$root_env" 2>/dev/null; then
+    needs_token=true
+  fi
+
+  if [[ "$needs_create" == "true" || "$needs_token" == "true" ]]; then
+    local token
+    token=$(openssl rand -hex 32 2>/dev/null || head -c 32 /dev/urandom | xxd -p -c 32)
+    if [[ "$needs_create" == "true" && -f "$base/.env.example" ]]; then
+      cp "$base/.env.example" "$root_env"
+    fi
+    if [[ -f "$root_env" ]]; then
+      if grep -q 'OPENCLAW_GATEWAY_TOKEN=' "$root_env" 2>/dev/null; then
+        sed -i.bak "s/^OPENCLAW_GATEWAY_TOKEN=.*/OPENCLAW_GATEWAY_TOKEN=$token/" "$root_env" && rm -f "$root_env.bak"
+      else
+        printf '\n# OpenClaw gateway auth\nOPENCLAW_GATEWAY_TOKEN=%s\n' "$token" >> "$root_env"
+      fi
+    else
+      printf 'BASE_PATH=%s\nOPENCLAW_GATEWAY_TOKEN=%s\n' "$base" "$token" > "$root_env"
+    fi
+    ok ".env  →  OPENCLAW_GATEWAY_TOKEN=${token:0:8}..."
+  else
+    local token; token=$(grep '^OPENCLAW_GATEWAY_TOKEN=' "$root_env" | cut -d= -f2-)
+    info ".env  (exists, token=${token:0:8}...)"
+  fi
+
+  # Fix ownership for non-root dashboard (uid 1000)
+  if command -v chown >/dev/null 2>&1; then
+    chown -R 1000:1000 "$base/models/comfyui" "$data" 2>/dev/null \
+      && ok "Ownership  →  uid:1000 (dashboard non-root)" || true
+  fi
+
+  # 3. Hardware detection
+  section "3/4" "Detecting hardware"
+  local detect_script="$base/scripts/detect_hardware.py"
+  if [[ -f "$detect_script" ]]; then
+    export BASE_PATH="$base"
+    if python3 "$detect_script" 2>/dev/null; then
+      local mode; mode=$(grep -oP 'COMPUTE_MODE=\K\S+' "$base/overrides/compute.yml" 2>/dev/null || echo "cpu")
+      ok "compute.yml  →  $mode"
+    else
+      warn "Hardware detection failed — defaulting to CPU"
+    fi
+  else
+    warn "detect_hardware.py not found — skipping"
+  fi
+
+  # Claude Code
+  if command -v claude >/dev/null 2>&1; then
+    local port="${MODEL_GATEWAY_PORT:-11435}"
+    local configured=false
+    for rc_file in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      if [[ -f "$rc_file" ]] && ! grep -q 'ANTHROPIC_BASE_URL' "$rc_file"; then
+        printf '\n# Claude Code — local model-gateway\nexport ANTHROPIC_API_KEY=local\nexport ANTHROPIC_BASE_URL=http://localhost:%s\n' "$port" >> "$rc_file"
+        configured=true
+      fi
+    done
+    if [[ "$configured" == "true" ]]; then
+      ok "Claude Code  →  http://localhost:$port  (run: source ~/.bashrc)"
+    else
+      info "Claude Code  (already configured)"
+    fi
+  fi
+
+  # 4. Start services
+  section "4/4" "Starting services"
+  export BASE_PATH="$base"
+  docker compose up -d
+
+  # Summary
+  printf "\n${BOLD}${GREEN}✓  Ready${NC}\n\n"
+  printf "  ${BOLD}%-22s${NC} %s\n" "Dashboard"      "http://localhost:8080"
+  printf "  ${BOLD}%-22s${NC} %s\n" "Open WebUI"     "http://localhost:3000"
+  printf "  ${BOLD}%-22s${NC} %s\n" "ComfyUI"        "http://localhost:8188"
+  printf "  ${BOLD}%-22s${NC} %s\n" "N8N"            "http://localhost:5678"
+  printf "  ${BOLD}%-22s${NC} %s\n" "OpenClaw"       "http://localhost:6682"
+  printf "  ${BOLD}%-22s${NC} %s\n" "Model Gateway"  "http://localhost:11435"
+  printf "\n${DIM}Pull Ollama models:   docker compose run --rm model-puller${NC}\n"
+  printf "${DIM}Pull ComfyUI models:  docker compose --profile comfyui-models run --rm comfyui-model-puller${NC}\n\n"
+}
+
+# ── dispatch ───────────────────────────────────────────────────────────────────
+cmd="${1:-help}"
+case "$cmd" in
+  initialize|init) cmd_initialize ;;
+  help|--help|-h)
+    sed -n 's/^# \{0,1\}//p' "$0" | sed -n '2,/^$/p'
+    ;;
+  *)
+    err "Unknown command: $cmd"
+    printf "Run ${BOLD}./ai-toolkit help${NC} for usage.\n"
+    exit 1
+    ;;
+esac

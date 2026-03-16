@@ -40,19 +40,24 @@ The dashboard at [localhost:8080](http://localhost:8080) manages MCP tools. Add 
 
 The scripts update the config file and the gateway reloads automatically.
 
-### Popular servers from the [Docker MCP Catalog](https://hub.docker.com/mcp)
+### Default servers (all orchestrated via gateway)
 
 | Server | Purpose |
 |--------|---------|
-| `duckduckgo` | Web search |
+| `n8n` | Workflow automation. Set `N8N_API_KEY` in `.env` for full access. |
+| `playwright` | **Preferred browser tool** — navigate, screenshot, click, fill forms. |
+| `comfyui` | Image/audio/video generation via ComfyUI (custom registry). |
+
+### Other catalog servers
+
+| Server | Purpose |
+|--------|---------|
 | `fetch` | Fetch and parse web pages |
 | `dockerhub` | Docker Hub / Docker Docs |
 | `github-official` | GitHub (issues, PRs, repos) — needs `GITHUB_PERSONAL_ACCESS_TOKEN` |
-| `brave` | Brave Search API — needs `BRAVE_API_KEY` |
-| `playwright` | Browser automation |
 | `mongodb` | MongoDB — needs connection string |
 | `postgres` | PostgreSQL — needs `DATABASE_URL` |
-| `filesystem` | File access — **requires a root directory to be configured**; otherwise you'll see `ENOENT stat ''`. Remove from servers.txt if not needed, or configure per Docker MCP docs. |
+| `filesystem` | File access — **requires a root directory**; remove if not needed. |
 
 Servers that need API keys require extra setup (see [Secrets](#secrets)).
 

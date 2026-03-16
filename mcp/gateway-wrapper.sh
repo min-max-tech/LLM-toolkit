@@ -11,7 +11,7 @@ GATEWAY_BIN="/docker-mcp"
 # Ensure config exists with default
 mkdir -p "$(dirname "$CONFIG_FILE")"
 if [ ! -f "$CONFIG_FILE" ]; then
-  echo "duckduckgo" > "$CONFIG_FILE"
+  echo "n8n,playwright,comfyui" > "$CONFIG_FILE"
 fi
 
 read_servers() {
@@ -19,14 +19,16 @@ read_servers() {
   if [ -z "$content" ] && [ -f "$REGISTRY_FILE" ] && command -v jq >/dev/null 2>&1; then
     content=$(jq -r '.servers | keys | join(",")' "$REGISTRY_FILE" 2>/dev/null)
   fi
-  printf '%s' "${content:-duckduckgo}"
+  printf '%s' "${content:-n8n,playwright,comfyui}"
 }
 
 start_gateway() {
   servers=$(read_servers)
-  servers=${servers:-duckduckgo}
+  servers=${servers:-n8n,playwright,comfyui}
   echo "[$(date '+%Y-%m-%dT%H:%M:%S')] Starting gateway with servers: $servers"
-  "$GATEWAY_BIN" gateway run --transport=streaming --port="$PORT" --servers="$servers" &
+  extra=""
+  [ -f "$(dirname "$CONFIG_FILE")/registry-custom.yaml" ] && extra="--additional-registry $(dirname "$CONFIG_FILE")/registry-custom.yaml"
+  "$GATEWAY_BIN" gateway run --transport=streaming --port="$PORT" --servers="$servers" $extra &
   echo $!
 }
 
@@ -35,8 +37,8 @@ last_content=$(read_servers)
 
 while true; do
   sleep 10
-  content=$(read_servers 2>/dev/null || echo "duckduckgo")
-  [ -z "$content" ] && content="duckduckgo"
+  content=$(read_servers 2>/dev/null || echo "n8n,playwright,comfyui")
+  [ -z "$content" ] && content="n8n,playwright,comfyui"
   if [ "$content" != "$last_content" ]; then
     echo "[$(date '+%Y-%m-%dT%H:%M:%S')] Config changed. Reloading gateway..."
     kill "$pid" 2>/dev/null || true

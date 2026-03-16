@@ -64,7 +64,8 @@ async def security_headers_middleware(request: Request, call_next):
         "default-src 'self'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src https://fonts.gstatic.com; "
-        "script-src 'self' 'unsafe-inline'"
+        "script-src 'self' 'unsafe-inline'; "
+        "img-src 'self' data:"
     )
     return response
 
@@ -695,11 +696,11 @@ async def _check_service(url: str) -> tuple[bool, str]:
         return (False, str(e))
 
 
-MCP_GATEWAY_SERVERS = os.environ.get("MCP_GATEWAY_SERVERS", "duckduckgo")
+MCP_GATEWAY_SERVERS = os.environ.get("MCP_GATEWAY_SERVERS", "n8n,playwright,comfyui")
 MCP_CONFIG_PATH = os.environ.get("MCP_CONFIG_PATH")
 # Suggested servers (dropdown). Users can also add any valid server name via custom input.
 MCP_CATALOG = [
-    "duckduckgo", "fetch", "dockerhub", "github-official", "brave", "playwright",
+    "n8n", "playwright", "comfyui", "fetch", "dockerhub", "github-official",
     "mongodb", "postgres", "stripe", "notion", "grafana", "elasticsearch",
     "documentation", "perplexity", "excalidraw", "miro", "neo4j",
     "time", "slack", "filesystem", "puppeteer", "context7", "memory",
@@ -742,7 +743,7 @@ def _read_mcp_servers() -> list[str]:
             return normalized
         # Migrate: init file from .env on first run
         path.parent.mkdir(parents=True, exist_ok=True)
-        initial = ",".join(s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()) or "duckduckgo"
+        initial = ",".join(s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()) or "n8n,playwright,comfyui"
         path.write_text(initial)
         return [s.strip() for s in initial.split(",") if s.strip()]
     return [s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()]

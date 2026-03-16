@@ -9,7 +9,7 @@ base="${base//\\/\/}"
 data="${DATA_PATH:-$base/data}"
 
 dirs=(
-  "$data/ollama"
+  "$base/models/ollama"
   "$data/mcp"
   "$data/ops-controller"
   "$data/open-webui"
@@ -30,6 +30,19 @@ for d in "${dirs[@]}"; do
   mkdir -p "$d"
   echo "OK $d"
 done
+
+# Bootstrap MCP servers.txt with default tools (gateway hot-reloads)
+mcp_servers="$data/mcp/servers.txt"
+mcp_registry="$data/mcp/registry-custom.yaml"
+if [[ ! -f "$mcp_servers" ]]; then
+  echo "n8n,playwright,comfyui" > "$mcp_servers"
+  echo "OK $mcp_servers (n8n,playwright,comfyui)"
+fi
+# Bootstrap custom registry for ComfyUI (gateway uses --additional-registry)
+if [[ ! -f "$mcp_registry" ]] && [[ -f "$base/mcp/registry-custom.yaml" ]]; then
+  cp "$base/mcp/registry-custom.yaml" "$mcp_registry"
+  echo "OK $mcp_registry"
+fi
 
 # Fix ownership for non-root dashboard (PRD §5): models and data must be writable by uid 1000
 if command -v chown >/dev/null 2>&1; then

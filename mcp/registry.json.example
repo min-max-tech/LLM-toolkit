@@ -1,12 +1,26 @@
 {
   "servers": {
-    "duckduckgo": {
-      "image": "mcp/duckduckgo",
-      "scopes": ["search"],
+    "n8n": {
+      "image": "mcp/n8n",
+      "scopes": ["workflow"],
       "allow_clients": ["*"],
-      "rate_limit_rpm": 60,
-      "timeout_sec": 30,
-      "env_schema": {}
+      "description": "n8n workflow automation — list, create, execute workflows",
+      "env_schema": {
+        "N8N_API_URL": "optional",
+        "N8N_API_KEY": "optional"
+      }
+    },
+    "playwright": {
+      "image": "mcp/playwright",
+      "scopes": ["browser"],
+      "allow_clients": ["*"],
+      "description": "Preferred browser tool — navigate, screenshot, click, fill forms"
+    },
+    "comfyui": {
+      "image": "ai-toolkit-comfyui-mcp:latest",
+      "scopes": ["image"],
+      "allow_clients": ["*"],
+      "description": "Image/audio/video generation via ComfyUI"
     },
     "github-official": {
       "image": "mcp/github-official",

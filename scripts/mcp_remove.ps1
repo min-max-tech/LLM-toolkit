@@ -17,7 +17,7 @@ $current = Get-Content $configFile -Raw -ErrorAction SilentlyContinue
 $servers = $current -split '[,\r\n]' | ForEach-Object { $_.Trim() } | Where-Object { $_ -and $_ -ne $Server } | Select-Object -Unique
 
 $newValue = ($servers -join ',').Trim()
-if (-not $newValue) { $newValue = "duckduckgo" }
+if (-not $newValue) { $newValue = "n8n" }
 
 Set-Content -Path $configFile -Value $newValue -NoNewline
 

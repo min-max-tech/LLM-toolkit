@@ -25,7 +25,7 @@ for p in "${parts[@]}"; do
 done
 
 new_value=$(IFS=','; echo "${servers[*]}")
-[[ -z "$new_value" ]] && new_value="duckduckgo"
+[[ -z "$new_value" ]] && new_value="n8n"
 
 echo "$new_value" > "$config_file"
 
