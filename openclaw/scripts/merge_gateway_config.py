@@ -167,9 +167,10 @@ def main() -> int:
         if not control_ui.get("dangerouslyDisableDeviceAuth"):
             control_ui["dangerouslyDisableDeviceAuth"] = True
             modified = True
-        # Remove stale allowedOrigins (OpenClaw regenerates them with wrong ports on restart)
-        if "allowedOrigins" in control_ui:
-            del control_ui["allowedOrigins"]
+        # Ensure dangerouslyAllowHostHeaderOriginFallback is set so any
+        # LAN/Tailscale IP works without enumerating every address.
+        if not control_ui.get("dangerouslyAllowHostHeaderOriginFallback"):
+            control_ui["dangerouslyAllowHostHeaderOriginFallback"] = True
             modified = True
 
     if not modified:

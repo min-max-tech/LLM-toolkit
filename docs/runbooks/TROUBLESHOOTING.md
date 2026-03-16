@@ -204,6 +204,21 @@ curl -s http://localhost:8811/mcp
 - **Cause:** The `openclaw-mcp-bridge` npm package (v0.1.0) omits `openclaw.plugin.json` from its published files, so OpenClaw 2026.2.x fails validation. The gateway **still starts** (it no longer blocks on plugin-install).
 - **Fix:** The stack runs without MCP tools in OpenClaw. To enable MCP, install from source or wait for an npm update. See [mcp/README.md](../../mcp/README.md#openclaw). Then add the plugin config and `docker compose restart openclaw-gateway`.
 
+### OpenClaw Discord: bot not receiving or sending messages
+
+- **Cause:** With `groupPolicy: "allowlist"`, no guilds are allowed until explicitly configured. The guild allowlist was empty.
+- **Fix:** Add your Discord server (guild) and user to the allowlist in `data/openclaw/openclaw.json`:
+  1. Enable Developer Mode in Discord (Settings → Advanced → Developer Mode).
+  2. Right-click your server icon → Copy Server ID (guild ID).
+  3. Right-click your avatar → Copy User ID.
+  4. Edit `data/openclaw/openclaw.json` → `channels.discord.guilds` → add your guild ID as key, with `requireMention: false` and `users: ["YOUR_USER_ID"]`.
+  5. Restart: `docker compose restart openclaw-gateway`.
+
+### OpenClaw context truncation / repetitive output (27b model)
+
+- **Cause:** Model gateway caps Ollama KV cache at 16K tokens (`OLLAMA_NUM_CTX=16384`). The qwen3.5-uncensored:27b model has a 200K context window; 16K truncation causes context loss and confused/repetitive output.
+- **Fix:** Set `OLLAMA_NUM_CTX=0` in `.env` to use the model's default (full context). Restart: `docker compose up -d model-gateway`. Trade-off: larger KV cache uses more VRAM and can slow CPU inference.
+
 ## Escalation
 
 - **Security**: See [SECURITY.md](../../SECURITY.md) (pre-deploy checklist, break-glass)

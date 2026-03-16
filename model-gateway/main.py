@@ -285,6 +285,37 @@ async def ollama_generate(request: Request):
         return r.json()
 
 
+@app.post("/api/chat")
+async def ollama_chat(request: Request):
+    """Proxy Ollama /api/chat (n8n Ollama nodes, etc.)."""
+    body = await request.json()
+    if body.get("stream"):
+        async def stream():
+            async with AsyncClient(timeout=300.0) as client:
+                async with client.stream("POST", f"{OLLAMA_URL}/api/chat", json=body) as resp:
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+        return StreamingResponse(
+            stream(),
+            media_type="application/x-ndjson",
+            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
+        )
+    async with AsyncClient(timeout=300.0) as client:
+        r = await client.post(f"{OLLAMA_URL}/api/chat", json=body)
+        r.raise_for_status()
+        return r.json()
+
+
+@app.post("/api/embed")
+async def ollama_embed(request: Request):
+    """Proxy Ollama /api/embed (n8n Embeddings Ollama, etc.)."""
+    body = await request.json()
+    async with AsyncClient(timeout=60.0) as client:
+        r = await client.post(f"{OLLAMA_URL}/api/embed", json=body)
+        r.raise_for_status()
+        return r.json()
+
+
 @app.get("/")
 async def root():
     """Ollama-compatible root endpoint."""

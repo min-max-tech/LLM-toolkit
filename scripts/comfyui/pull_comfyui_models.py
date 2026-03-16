@@ -1,36 +1,48 @@
 #!/usr/bin/env python3
-"""Config-driven ComfyUI model downloader.
+"""Config-driven ComfyUI model downloader — direct streaming to destination, no cache.
 
-Reads model packs from models.json (next to this script) and downloads them
-from HuggingFace Hub, using symlinks to the HF cache to avoid duplication.
+Downloads HuggingFace models directly to the ComfyUI model directories.
+Uses stdlib urllib only; no external dependencies, no intermediate cache.
+Resumes interrupted downloads via HTTP Range requests.
 
 Environment variables:
   MODELS_DIR        Target ComfyUI models root (default: /models)
   COMFYUI_PACKS     Comma-separated pack names to download (default: from models.json defaults)
   COMFYUI_QUANT     GGUF quantization level for {quant} templates (default: Q4_K_M)
   COMFYUI_CONFIG    Path to models.json override (default: <script_dir>/models.json)
+  HF_TOKEN          HuggingFace token for gated/private repos (optional)
 """
+from __future__ import annotations
+
 import json
 import os
 import sys
+import urllib.error
+import urllib.request
 from pathlib import Path
 
 SCRIPT_DIR = Path(__file__).resolve().parent
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 QUANT = os.environ.get("COMFYUI_QUANT", "Q4_K_M")
 CONFIG_PATH = Path(os.environ.get("COMFYUI_CONFIG", SCRIPT_DIR / "models.json"))
+HF_TOKEN = os.environ.get("HF_TOKEN") or os.environ.get("HUGGING_FACE_HUB_TOKEN") or ""
 
 ALL_SUBDIRS = ("unet", "checkpoints", "text_encoders", "loras", "latent_upscale_models", "vae")
+CHUNK = 16 * 1024 * 1024  # 16 MB read chunks
 
 
-def ensure_huggingface_hub():
-    try:
-        from huggingface_hub import hf_hub_download  # noqa: F401
-    except ImportError:
-        print("Installing huggingface_hub...", flush=True)
-        import subprocess
-        subprocess.check_call([sys.executable, "-m", "pip", "install", "-q", "huggingface_hub"])
-        print("huggingface_hub installed.", flush=True)
+class _DropAuthOnRedirect(urllib.request.HTTPRedirectHandler):
+    """Drop Authorization header when redirected off huggingface.co (CDN uses pre-signed URLs)."""
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        new_req = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if new_req and "huggingface.co" not in newurl:
+            for key in list(new_req.headers):
+                if key.lower() == "authorization":
+                    del new_req.headers[key]
+        return new_req
+
+
+_opener = urllib.request.build_opener(_DropAuthOnRedirect)
 
 
 def load_config():
@@ -42,7 +54,6 @@ def load_config():
 
 
 def resolve_packs(config):
-    """Determine which packs to download."""
     packs_env = os.environ.get("COMFYUI_PACKS", "").strip()
     if packs_env:
         requested = [p.strip() for p in packs_env.split(",") if p.strip()]
@@ -58,59 +69,87 @@ def resolve_packs(config):
     return config.get("defaults", {}).get("packs", list(config["packs"].keys()))
 
 
-def download_model(repo_id, filename, subdir, dest_name=None):
-    from huggingface_hub import hf_hub_download
-
+def download_model(repo_id: str, filename: str, subdir: str, dest_name: str | None = None) -> bool:
     filename = filename.format(quant=QUANT)
-    dest_name = dest_name or os.path.basename(filename)
+    dest_name = dest_name or Path(filename).name
     dest_dir = MODELS_DIR / subdir
     dest_dir.mkdir(parents=True, exist_ok=True)
     dest_path = dest_dir / dest_name
 
-    if dest_path.exists():
-        print(f"  OK (exists): {subdir}/{dest_name}", flush=True)
+    if dest_path.exists() and dest_path.stat().st_size > 0:
+        size_mb = dest_path.stat().st_size // (1024 * 1024)
+        print(f"  OK (exists): {subdir}/{dest_name} ({size_mb} MB)", flush=True)
         return True
 
+    url = f"https://huggingface.co/{repo_id}/resolve/main/{filename}"
+    part_path = dest_dir / (dest_name + ".part")
+    resume_from = part_path.stat().st_size if part_path.exists() else 0
+
     print(f"  Downloading: {dest_name} (from {repo_id})", flush=True)
+    if resume_from:
+        print(f"  Resuming from {resume_from // (1024 * 1024)} MB", flush=True)
+
     try:
-        cached = hf_hub_download(repo_id=repo_id, filename=filename)
-        try:
-            os.symlink(cached, dest_path)
-            print(f"  Linked: {subdir}/{dest_name}", flush=True)
-        except OSError:
-            import shutil
-            shutil.copy2(cached, dest_path)
-            print(f"  Copied: {subdir}/{dest_name}", flush=True)
+        headers: dict[str, str] = {"User-Agent": "comfyui-model-puller/2.0"}
+        if HF_TOKEN:
+            headers["Authorization"] = f"Bearer {HF_TOKEN}"
+        if resume_from:
+            headers["Range"] = f"bytes={resume_from}-"
+
+        req = urllib.request.Request(url, headers=headers)
+        with _opener.open(req) as resp:
+            status = resp.status
+            content_length = int(resp.headers.get("Content-Length") or 0)
+            # Total = content remaining + already downloaded (if server honored Range)
+            total = content_length + (resume_from if status == 206 else 0)
+            downloaded = resume_from if status == 206 else 0
+
+            mode = "ab" if (status == 206 and resume_from) else "wb"
+            with open(part_path, mode) as f:
+                while True:
+                    chunk = resp.read(CHUNK)
+                    if not chunk:
+                        break
+                    f.write(chunk)
+                    downloaded += len(chunk)
+                    if total:
+                        pct = downloaded * 100 // total
+                        mb = downloaded // (1024 * 1024)
+                        total_mb = total // (1024 * 1024)
+                        print(f"\r  {pct}% — {mb}/{total_mb} MB", end="", flush=True)
+
+        print(flush=True)
+        part_path.rename(dest_path)
+        size_mb = dest_path.stat().st_size // (1024 * 1024)
+        print(f"  Done: {subdir}/{dest_name} ({size_mb} MB)", flush=True)
         return True
+
+    except urllib.error.HTTPError as e:
+        print(f"\n  ERROR {e.code} {e.reason}: {dest_name}", flush=True)
+        return False
     except Exception as e:
-        print(f"  ERROR: {dest_name}: {e}", flush=True)
+        print(f"\n  ERROR: {dest_name}: {e}", flush=True)
         return False
 
 
-def main():
+def main() -> int:
     config = load_config()
-    quant = os.environ.get("COMFYUI_QUANT") or config.get("defaults", {}).get("quant", "Q4_K_M")
     global QUANT
-    QUANT = quant
+    QUANT = os.environ.get("COMFYUI_QUANT") or config.get("defaults", {}).get("quant", "Q4_K_M")
 
     pack_names = resolve_packs(config)
     packs = config["packs"]
 
-    # Collect all models to download
     models = []
     for pack_name in pack_names:
-        pack = packs[pack_name]
-        for m in pack["models"]:
+        for m in packs[pack_name]["models"]:
             models.append((pack_name, m))
 
     print(f"Packs: {', '.join(pack_names)} ({len(models)} models, quant={QUANT})", flush=True)
     print(f"Target: {MODELS_DIR}", flush=True)
 
-    # Ensure subdirectories
     for sub in ALL_SUBDIRS:
         (MODELS_DIR / sub).mkdir(parents=True, exist_ok=True)
-
-    ensure_huggingface_hub()
 
     ok = True
     for i, (pack_name, m) in enumerate(models, 1):

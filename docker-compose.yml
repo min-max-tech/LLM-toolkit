@@ -9,7 +9,7 @@ services:
       - OLLAMA_HOST=0.0.0.0:11434
     # Host port not exposed by default (backend-only). To expose for Cursor/direct use: -f overrides/ollama-expose.yml
     volumes:
-      - ${DATA_PATH:-${BASE_PATH:-.}/data}/ollama:/root/.ollama
+      - ${BASE_PATH:-.}/models/ollama:/root/.ollama
     healthcheck:
       # Image has no curl/wget; use ollama CLI to probe the server
       test: ["CMD", "ollama", "list"]
@@ -141,10 +141,12 @@ services:
       - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
       - THROUGHPUT_RECORD_TOKEN=${THROUGHPUT_RECORD_TOKEN:-}
       - HF_TOKEN=${HF_TOKEN:-}
+      - COMFYUI_URL=http://comfyui:8188
       # OpenClaw model management: dashboard reads/writes openclaw.json to sync models
       - MODEL_GATEWAY_URL=http://model-gateway:11435
       - OPENCLAW_CONFIG_PATH=/openclaw-config/openclaw.json
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
+      - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT:-6680}
       - OPENCLAW_UI_PORT=${OPENCLAW_UI_PORT:-6682}
       - DASHBOARD_DATA_PATH=/data/dashboard
     volumes:
@@ -223,12 +225,15 @@ services:
     profiles: [comfyui-models]
     image: python:3.12.8-slim
     restart: "no"
+    user: "0:0"
     environment:
       - MODELS_DIR=/models
+      - HF_TOKEN=${HF_TOKEN:-}
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/scripts:/scripts:ro
-    command: ["python3", "/scripts/comfyui/pull_comfyui_models.py"]
+    # chmod first — ensures write access on Docker Desktop/Windows bind mounts
+    command: ["sh", "-c", "chmod -R a+w /models && python3 /scripts/comfyui/pull_comfyui_models.py"]
     networks:
       - frontend
 
@@ -266,7 +271,10 @@ services:
     # Run as non-root (n8n image uses node user; 1000:1000 matches typical node uid)
     user: "1000:1000"
     depends_on:
-      - mcp-gateway
+      model-gateway:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_started
     ports:
       - "5678:5678"
     healthcheck:
@@ -282,6 +290,10 @@ services:
     environment:
       - N8N_HOST=0.0.0.0
       - N8N_PORT=5678
+      # Route all model traffic through Model Gateway (dashboard tracking, unified provider)
+      - OLLAMA_HOST=http://model-gateway:11435
+      - OPENAI_API_BASE_URL=${OPENAI_API_BASE:-http://model-gateway:11435/v1}
+      - OPENAI_API_KEY=ollama-local
       # OAuth callbacks + inbound webhooks require a public URL.
       # Recommended: tailscale funnel --set-path /rest/oauth2-credential/callback 5678
       #              tailscale funnel --set-path /webhook 5678
@@ -290,7 +302,7 @@ services:
       - N8N_EDITOR_BASE_URL=${N8N_WEBHOOK_URL:-}
       # Only the callback and webhook paths need to be reachable without a session cookie
       - N8N_AUTH_EXCLUDE_ENDPOINTS=rest/oauth2-credential/callback,webhook
-      - N8N_SECURE_COOKIE=${N8N_SECURE_COOKIE:-true}
+      - N8N_SECURE_COOKIE=false
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
@@ -373,10 +385,10 @@ services:
     networks:
       - frontend
 
-  # Ensure MCP plugin manifest exists and plugin entry in openclaw.json.
-  # Runs after config-sync; gateway depends on this (not on plugin-install).
+  # Ensure MCP plugin is installed (npm package + manifest) and config entry exists.
+  # Uses named volume for proper Linux permissions (Windows bind mounts force 0777).
   openclaw-plugin-config:
-    image: python:3.12-alpine
+    image: node:22-alpine
     restart: "no"
     depends_on:
       openclaw-config-sync:
@@ -387,8 +399,82 @@ services:
       - MCP_GATEWAY_URL=http://mcp-gateway:${MCP_GATEWAY_PORT:-8811}/mcp
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
+      - openclaw-extensions:/extensions
       - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
-    entrypoint: ["python3", "/scripts/add_mcp_plugin_config.py"]
+    entrypoint: ["sh", "-c"]
+    command:
+      - |
+        set -e
+        PLUGIN_DIR=/extensions/openclaw-mcp-bridge
+        MANIFEST="$$PLUGIN_DIR/openclaw.plugin.json"
+        MCP_URL="$${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}"
+
+        # Install npm package if dist/ is missing
+        if [ ! -f "$$PLUGIN_DIR/dist/index.js" ]; then
+          echo "Installing openclaw-mcp-bridge npm package..."
+          apk add --no-cache git >/dev/null 2>&1 || true
+          cd /tmp
+          npm pack openclaw-mcp-bridge 2>/dev/null
+          tar xzf openclaw-mcp-bridge-*.tgz
+          rm -rf "$$PLUGIN_DIR"
+          mkdir -p "$$PLUGIN_DIR"
+          cp -r package/* "$$PLUGIN_DIR/"
+          cd "$$PLUGIN_DIR"
+          npm install --omit=dev --ignore-scripts 2>&1
+          echo "Plugin package installed."
+        fi
+
+        # Create/update manifest (npm package v0.1.0 omits it)
+        cat > "$$MANIFEST" <<'MEOF'
+        {
+          "id": "openclaw-mcp-bridge",
+          "name": "MCP Client",
+          "description": "Bridges MCP servers as native OpenClaw tools via streamable-http.",
+          "extensions": ["./dist/index.js"],
+          "slots": ["tool"],
+          "skills": ["./skills"],
+          "configSchema": {
+            "type": "object",
+            "additionalProperties": false,
+            "properties": {
+              "servers": {
+                "type": "object",
+                "additionalProperties": {
+                  "type": "object",
+                  "properties": {
+                    "url": { "type": "string" },
+                    "enabled": { "type": "boolean" },
+                    "apiKey": { "type": "string" },
+                    "toolPrefix": { "type": "string" }
+                  },
+                  "required": ["url"]
+                }
+              },
+              "debug": { "type": "boolean" }
+            }
+          }
+        }
+        MEOF
+        chmod 644 "$$MANIFEST"
+        echo "Plugin manifest ready."
+
+        # Add plugin entry to openclaw.json if missing
+        CONFIG=/config/openclaw.json
+        if [ -f "$$CONFIG" ]; then
+          if ! node -e "
+            const fs = require('fs');
+            const d = JSON.parse(fs.readFileSync('$$CONFIG','utf-8'));
+            const p = d.plugins = d.plugins || {};
+            const e = p.entries = p.entries || {};
+            if (e['openclaw-mcp-bridge']) { process.exit(0); }
+            e['openclaw-mcp-bridge'] = {enabled:true,config:{servers:{gateway:{url:'$$MCP_URL'}},debug:false}};
+            p.enabled = true;
+            fs.writeFileSync('$$CONFIG', JSON.stringify(d,null,2));
+            console.log('add_mcp_plugin_config: added openclaw-mcp-bridge to plugins.entries');
+          "; then
+            echo "Warning: could not update openclaw.json plugin entry"
+          fi
+        fi
     networks:
       - frontend
       - backend
@@ -420,6 +506,9 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/home/node/.openclaw
       - ${OPENCLAW_WORKSPACE_DIR:-${BASE_PATH:-.}/data/openclaw/workspace}:/home/node/.openclaw/workspace
+      # Named volume for extensions — Windows bind mounts force 0777 which
+      # OpenClaw's safe-open rejects. A named volume has proper Linux perms.
+      - openclaw-extensions:/home/node/.openclaw/extensions
     ports:
       - "${OPENCLAW_GATEWAY_PORT:-6680}:6680"
       - "${OPENCLAW_BRIDGE_PORT:-6681}:6681"
@@ -540,6 +629,9 @@ services:
         max-file: "3"
     networks:
       - backend
+
+volumes:
+  openclaw-extensions:
 
 networks:
   frontend:

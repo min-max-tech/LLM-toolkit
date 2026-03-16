@@ -95,6 +95,7 @@ async def auth_middleware(request: Request, call_next):
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435").rstrip("/")
+COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
 OPENCLAW_CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/openclaw-config/openclaw.json"))
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 SCRIPTS_DIR = Path(os.environ.get("SCRIPTS_DIR", "/scripts"))
@@ -312,11 +313,8 @@ def _scan_comfyui_models() -> list[dict]:
     return sorted(models, key=lambda m: (m["category"], m["name"]))
 
 
-def _run_comfyui_pull(packs: str | None = None):
-    """Run ComfyUI model pull script in background."""
-    global _comfyui_status
-    with _state_lock:
-        _comfyui_status = {"running": True, "output": "", "done": False, "success": None}
+def _run_comfyui_pull_subprocess(packs: str | None = None):
+    """Fallback: run ComfyUI model pull script as subprocess (used when ComfyUI is not running)."""
     script = SCRIPTS_DIR / "comfyui" / "pull_comfyui_models.py"
     env = os.environ.copy()
     env["MODELS_DIR"] = str(MODELS_DIR)
@@ -341,7 +339,152 @@ def _run_comfyui_pull(packs: str | None = None):
         with _state_lock:
             _comfyui_status["success"] = proc.returncode == 0
     except Exception as e:
-        logger.error("ComfyUI pull failed: %s", e)
+        logger.error("ComfyUI pull (subprocess) failed: %s", e)
+        with _state_lock:
+            _comfyui_status["output"] += f"\nError: {e}"
+            _comfyui_status["success"] = False
+    finally:
+        with _state_lock:
+            _comfyui_status["running"] = False
+            _comfyui_status["done"] = True
+
+
+def _run_comfyui_pull(packs: str | None = None):
+    """Pull ComfyUI models via Manager API; falls back to subprocess if ComfyUI is unreachable."""
+    import uuid
+    import json as _json
+
+    global _comfyui_status
+    with _state_lock:
+        _comfyui_status = {"running": True, "output": "", "done": False, "success": None}
+
+    # Check if ComfyUI Manager is reachable
+    use_manager = False
+    try:
+        urllib.request.urlopen(f"{COMFYUI_URL}/", timeout=5)
+        use_manager = True
+    except Exception:
+        pass
+
+    if not use_manager:
+        with _state_lock:
+            _comfyui_status["output"] = "ComfyUI not reachable — falling back to subprocess downloader.\n"
+        _run_comfyui_pull_subprocess(packs)
+        return
+
+    # Load models config
+    config_path = SCRIPTS_DIR / "comfyui" / "models.json"
+    try:
+        with open(config_path) as f:
+            config = _json.load(f)
+    except Exception as e:
+        with _state_lock:
+            _comfyui_status["output"] = f"Failed to read models.json: {e}"
+            _comfyui_status["success"] = False
+            _comfyui_status["running"] = False
+            _comfyui_status["done"] = True
+        return
+
+    default_packs = config.get("defaults", {}).get("packs", [])
+    default_quant = config.get("defaults", {}).get("quant", "Q4_K_M")
+    selected_packs = [p.strip() for p in packs.split(",")] if packs else default_packs
+    all_packs = config.get("packs", {})
+
+    # Build list of Manager API requests
+    models_to_pull = []
+    for pack_name in selected_packs:
+        pack = all_packs.get(pack_name)
+        if not pack:
+            continue
+        for model in pack.get("models", []):
+            url = model.get("url", "")
+            if not url:
+                continue
+            url = url.replace("{quant}", default_quant)
+            raw_file = model["file"].replace("{quant}", default_quant)
+            filename = Path(raw_file).name
+            models_to_pull.append({
+                "ui_id": str(uuid.uuid4()),
+                "name": filename,
+                "type": model.get("type", model.get("dest", "checkpoints")),
+                "base": "other",
+                "save_path": model.get("dest", "checkpoints"),
+                "description": "",
+                "filename": filename,
+                "url": url,
+                "reference": f"https://huggingface.co/{model['repo']}",
+            })
+
+    output_lines: list[str] = []
+    _progress_idx: int = -1  # index of replaceable progress block (-1 = none)
+
+    def _append(msg: str, replaceable: bool = False) -> None:
+        nonlocal _progress_idx
+        if replaceable and _progress_idx >= 0:
+            output_lines[_progress_idx] = msg
+        else:
+            if replaceable:
+                _progress_idx = len(output_lines)
+            output_lines.append(msg)
+        with _state_lock:
+            _comfyui_status["output"] = "\n".join(output_lines)
+
+    if not models_to_pull:
+        _append("No models with URL found for selected packs.")
+        with _state_lock:
+            _comfyui_status["success"] = True
+            _comfyui_status["running"] = False
+            _comfyui_status["done"] = True
+        return
+
+    _append(f"Queuing {len(models_to_pull)} model(s) via ComfyUI Manager...")
+
+    try:
+        import httpx as _httpx
+        with _httpx.Client(timeout=30.0) as client:
+            for m in models_to_pull:
+                _append(f"  → {m['filename']} ({m['save_path']})")
+                r = client.post(f"{COMFYUI_URL}/manager/queue/install_model", json=m)
+                if r.status_code not in (200, 201):
+                    _append(f"    WARNING: Manager returned {r.status_code}: {r.text[:200]}")
+
+            _append("All models queued. Waiting for downloads to complete...")
+
+            while True:
+                time.sleep(2)
+                try:
+                    r = client.get(f"{COMFYUI_URL}/manager/queue/status")
+                    data = r.json()
+                except Exception:
+                    continue
+
+                items = data if isinstance(data, list) else data.get("queue", [])
+                if not items:
+                    _append("Download queue empty — done.")
+                    break
+
+                done_count = sum(1 for i in items if i.get("status") == "done")
+                total = len(items)
+                pending = [i for i in items if i.get("status") not in ("done", "error", "failed")]
+                progress_parts = [f"Progress: {done_count}/{total} done"]
+                for item in pending[:3]:
+                    name = item.get("filename") or item.get("name", "?")
+                    pct = item.get("progress", 0)
+                    progress_parts.append(f"  {name}: {pct}%")
+                _append("\n".join(progress_parts), replaceable=True)
+
+                if all(i.get("status") in ("done", "error", "failed") for i in items):
+                    errors = [i for i in items if i.get("status") in ("error", "failed")]
+                    if errors:
+                        _append(f"Completed with {len(errors)} error(s).")
+                    else:
+                        _append("All downloads complete!")
+                    break
+
+        with _state_lock:
+            _comfyui_status["success"] = True
+    except Exception as e:
+        logger.error("ComfyUI Manager pull failed: %s", e)
         with _state_lock:
             _comfyui_status["output"] += f"\nError: {e}"
             _comfyui_status["success"] = False
@@ -526,8 +669,8 @@ SERVICES = [
     {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
      "hint": "Check: docker compose logs n8n"},
     {"id": "openclaw", "name": "OpenClaw", "port": int(os.environ.get("OPENCLAW_GATEWAY_PORT", 6666)),
-     "url": f"http://localhost:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6666)}/?token={os.environ.get('OPENCLAW_GATEWAY_TOKEN', '')}" if os.environ.get("OPENCLAW_GATEWAY_TOKEN") else f"http://localhost:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6666)}",
-     "check": f"http://openclaw-gateway:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6666)}/",
+     "url": f"http://localhost:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6680)}/?token={os.environ.get('OPENCLAW_GATEWAY_TOKEN', '')}" if os.environ.get("OPENCLAW_GATEWAY_TOKEN") else f"http://localhost:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6680)}",
+     "check": f"http://openclaw-gateway:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6680)}/",
      "hint": "Control UI served on gateway port. Check: docker compose logs openclaw-gateway"},
     {"id": "qdrant", "name": "Qdrant", "port": 6333, "url": "http://localhost:6333",
      "check": "http://qdrant:6333/readyz",
