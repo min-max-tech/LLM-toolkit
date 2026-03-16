@@ -19,7 +19,7 @@ Check what's active: `data/mcp/servers.txt` or the dashboard MCP tab.
 **Typical setup (all via MCP gateway):**
 - `n8n` — workflow automation. Set `N8N_API_KEY` in `.env` for full access.
 - `playwright` — preferred browser tool (navigate, screenshot, click, fill forms).
-- `comfyui` — image/audio/video generation via ComfyUI.
+- `comfyui` — image/audio/video generation via ComfyUI. For advanced management (queue, workflows, outputs), call the ComfyUI HTTP API directly at `http://comfyui:8188` using fetch.
 - `fetch` — parse any URL into readable text.
 - `github-official` — needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env`
 

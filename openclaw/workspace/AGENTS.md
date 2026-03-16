@@ -35,6 +35,17 @@ Commonly enabled tools (called directly by their namespaced name):
 - **gateway__playwright_*** — Preferred browser tool. Navigate, screenshot, click, fill forms, snapshot.
 - **gateway__n8n_*** — n8n workflow tools (list, create, execute workflows). Needs `N8N_API_KEY` for full access.
 - **gateway__comfyui_*** — Image/audio/video generation. `generate_image`, `list_models`, `list_assets`.
+  For full ComfyUI management beyond these tools, call the HTTP API directly at `http://comfyui:8188`:
+  - `GET  /queue` — view pending/running jobs
+  - `POST /queue` — cancel jobs (`{"delete": [prompt_id]}` or `{"clear": true}`)
+  - `GET  /history` — completed job history (append `/{prompt_id}` for one job)
+  - `GET  /system_stats` — GPU/CPU/RAM usage
+  - `GET  /object_info` — all available nodes and their inputs
+  - `POST /prompt` — queue a raw workflow JSON (`{"prompt": {...}}`)
+  - `GET  /models/{type}` — list models by type (checkpoints, loras, vae, etc.)
+  - `GET  /view?filename=…&type=output` — retrieve an output image
+  - `POST /upload/image` — upload a reference image
+  Use `gateway__fetch_content` with `method` and `body` args for POST requests.
 - **gateway__fetch_content** — Fetch and parse a URL. Args: `url` (string, required)
 - **gateway__github_*** — GitHub issues, PRs, repos. Needs `GITHUB_PERSONAL_ACCESS_TOKEN`.
 
