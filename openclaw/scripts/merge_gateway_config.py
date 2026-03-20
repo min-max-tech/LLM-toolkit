@@ -20,20 +20,25 @@ GATEWAY_PROVIDER = {
 # Use bare IDs (no ollama/ prefix) — the gateway resolves provider from the ID.
 DEFAULT_GATEWAY_MODELS = [
     {"id": "qwen3:8b", "name": "Qwen3 8B", "reasoning": True, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 16384, "maxTokens": 8192},
     {"id": "deepseek-r1:7b", "name": "DeepSeek R1 7B", "reasoning": True, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 65536, "maxTokens": 8192},
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 16384, "maxTokens": 8192},
     {"id": "qwen3:14b", "name": "Qwen3 14B", "reasoning": True, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 16384, "maxTokens": 8192},
     {"id": "deepseek-coder:6.7b", "name": "DeepSeek Coder 6.7B", "reasoning": False, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 32768, "maxTokens": 8192},
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 16384, "maxTokens": 8192},
     {"id": "llama3.2-vision:11b", "name": "Llama 3.2 Vision 11B", "reasoning": False, "input": ["text", "image"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 131072, "maxTokens": 8192},
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 16384, "maxTokens": 8192},
     {"id": "nomic-embed-text:latest", "name": "Nomic Embed", "reasoning": False, "input": ["text"],
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": 8192, "maxTokens": 8192},
 ]
 
 MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435")
+# Use the actual Ollama context cap — not the model's theoretical maximum.
+# OpenClaw uses contextWindow to decide when to compact; if it's set too high,
+# compaction never fires but Ollama silently truncates at OLLAMA_NUM_CTX.
+_ctx_raw = os.environ.get("OLLAMA_NUM_CTX", "16384").strip()
+OLLAMA_NUM_CTX = int(_ctx_raw) if _ctx_raw.isdigit() and int(_ctx_raw) > 0 else 16384
 
 
 def _fetch_models_from_gateway() -> list[dict] | None:
@@ -79,7 +84,7 @@ def _fetch_models_from_gateway() -> list[dict] | None:
             "reasoning": is_reasoning,
             "input": ["text", "image"] if has_vision else ["text"],
             "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-            "contextWindow": 131072 if (has_vision or "qwen3" in lower_id) else 32768,
+            "contextWindow": OLLAMA_NUM_CTX,
             "maxTokens": 8192,
         })
     return models if models else None
@@ -161,6 +166,15 @@ def main() -> int:
         gateway["bind"] = "lan"
         modified = True
 
+    # Use "default" compaction mode — "disabled" is not accepted by OpenClaw.
+    # "default" compacts only when needed; "safeguard" compacts proactively.
+    # Keeping "default" avoids the persistent-summary issue while staying valid.
+    agents_defaults = data.setdefault("agents", {}).setdefault("defaults", {})
+    compaction = agents_defaults.setdefault("compaction", {})
+    if compaction.get("mode") != "default":
+        compaction["mode"] = "default"
+        modified = True
+
     # Disable device pairing (not needed in Docker — token auth is sufficient)
     control_ui = gateway.setdefault("controlUi", {})
     if isinstance(control_ui, dict):
@@ -171,6 +185,17 @@ def main() -> int:
         # LAN/Tailscale IP works without enumerating every address.
         if not control_ui.get("dangerouslyAllowHostHeaderOriginFallback"):
             control_ui["dangerouslyAllowHostHeaderOriginFallback"] = True
+            modified = True
+        # Ensure both gateway port (6680) and UI port (6682) are in allowedOrigins
+        # so the browser UI can make requests to the gateway without CORS errors.
+        lan_ip = os.environ.get("LAN_IP", "192.0.2.1")
+        required_origins = {
+            "http://localhost:6680", "http://127.0.0.1:6680", f"http://{lan_ip}:6680",
+            "http://localhost:6682", "http://127.0.0.1:6682", f"http://{lan_ip}:6682",
+        }
+        existing = set(control_ui.get("allowedOrigins") or [])
+        if not required_origins.issubset(existing):
+            control_ui["allowedOrigins"] = sorted(required_origins | existing)
             modified = True
 
     if not modified:

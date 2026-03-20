@@ -110,6 +110,9 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435").rstrip("/")
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
 OPENCLAW_CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/openclaw-config/openclaw.json"))
+OPENCLAW_GATEWAY_PORT = os.environ.get("OPENCLAW_GATEWAY_PORT", "6680")
+OPENCLAW_UI_PORT = os.environ.get("OPENCLAW_UI_PORT", "6682")
+OPENCLAW_GATEWAY_TOKEN = os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 SCRIPTS_DIR = Path(os.environ.get("SCRIPTS_DIR", "/scripts"))
 
@@ -718,10 +721,10 @@ SERVICES = [
      "hint": "ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU). Run ./compose up -d. Pull LTX-2 via dashboard."},
     {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
      "hint": "Check: docker compose logs n8n"},
-    {"id": "openclaw", "name": "OpenClaw", "port": int(os.environ.get("OPENCLAW_GATEWAY_PORT", 6666)),
-     "url": f"http://localhost:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6680)}/?token={os.environ.get('OPENCLAW_GATEWAY_TOKEN', '')}" if os.environ.get("OPENCLAW_GATEWAY_TOKEN") else f"http://localhost:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6680)}",
-     "check": f"http://openclaw-gateway:{os.environ.get('OPENCLAW_GATEWAY_PORT', 6680)}/",
-     "hint": "Control UI served on gateway port. Check: docker compose logs openclaw-gateway"},
+    {"id": "openclaw", "name": "OpenClaw", "port": int(OPENCLAW_UI_PORT),
+     "url": f"http://localhost:{OPENCLAW_UI_PORT}/?token={OPENCLAW_GATEWAY_TOKEN}" if OPENCLAW_GATEWAY_TOKEN else f"http://localhost:{OPENCLAW_UI_PORT}",
+     "check": f"http://openclaw-gateway:{OPENCLAW_GATEWAY_PORT}/",
+     "hint": f"Open Control UI on port {OPENCLAW_UI_PORT}. Token: {OPENCLAW_GATEWAY_TOKEN or '(not set)'}. Check: docker compose logs openclaw-gateway"},
     {"id": "qdrant", "name": "Qdrant", "port": 6333, "url": "http://localhost:6333",
      "check": "http://qdrant:6333/readyz",
      "hint": "Vector DB for RAG. Drop files in data/rag-input/ (with --profile rag) or upload via Open WebUI Documents tab."},
@@ -1422,7 +1425,7 @@ def _make_openclaw_model(item: dict) -> dict:
         "reasoning": is_reasoning,
         "input": ["text", "image"] if has_vision else ["text"],
         "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
-        "contextWindow": 131072 if (has_vision or "qwen3" in lower) else 32768,
+        "contextWindow": int(os.environ.get("OLLAMA_NUM_CTX", "16384")),
         "maxTokens": 8192,
     }
 
