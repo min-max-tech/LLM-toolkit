@@ -62,7 +62,7 @@ All tools via gateway at `http://mcp-gateway:8811/mcp`. Add/remove via dashboard
 **Proxy tools (gateway__call, comfyui__call):** The bridge exposes proxy tools, not individual tools. Call them with `{tool: "<name>", args: {...}}`. Use the **exact** tool name the MCP server exposes — with double underscore between server and tool for gateway tools.
 
 - **gateway__call** — For MCP gateway tools. Pass `tool` with double underscore: `playwright__browser_navigate`, `playwright__browser_snapshot`, `duckduckgo__search`, `comfyui__list_models`, `comfyui__generate_image`, `n8n__workflow_list`, etc. Do NOT use single underscores (e.g. `playwright_navigate` will fail).
-- **comfyui__call** — For ComfyUI standalone. Pass `tool` without prefix: `list_models`, `generate_image`, `view_image`, `get_job`, `list_assets`.
+- **comfyui__call** — For ComfyUI standalone. Pass `tool` without prefix: `list_models`, `set_defaults`, `generate_image`, `view_image`, `get_job`, `list_assets`, `list_workflows`, `run_workflow`.
 
 Commonly enabled tools (via gateway__call with correct tool names):
 - **gateway__playwright_*** — Preferred browser. Use `gateway__call` with `tool: "playwright__browser_navigate"`, `tool: "playwright__browser_snapshot"`, etc.
@@ -83,15 +83,13 @@ Commonly enabled tools (via gateway__call with correct tool names):
     2. **Check available models:** `comfyui__call` with `tool: "list_models"`. If the checkpoint is listed but fails → it is corrupted.
     3. **Re-pull via dashboard API (flux-schnell preferred — not gated):**
        `wget -q -O - --post-data='{"url":"https://huggingface.co/Comfy-Org/flux1-schnell/resolve/main/flux1-schnell-fp8.safetensors","category":"checkpoints","filename":"flux1-schnell-fp8.safetensors"}' --header='Content-Type: application/json' --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" $DASHBOARD_URL/api/models/download`
-    4. **Poll until complete:** `wget -q -O - --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" $DASHBOARD_URL/api/models/download/status` every 30 seconds until `completed`. A 17 GB file takes 10–30 minutes.
+    4. **Poll until complete:** `wget -q -O - --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" $DASHBOARD_URL/api/models/download/status` every 30 seconds until `completed`. A 17 GB file takes 10–30 minutes. **Max 20 polls (10 minutes) then stop and report to user** — do not loop indefinitely or you will hit the agent timeout.
     5. **Set checkpoint and retry:** `comfyui__call` with `tool: "set_defaults"`, `args: {"checkpoint": "flux1-schnell-fp8.safetensors"}`, then `generate_image`.
     - If flux-schnell re-pull fails (401 on flux1-dev = needs HF_TOKEN/license), fall back to `sd3.5_medium_incl_clips_t5xxlfp8scaled.safetensors`.
     - **NEVER** wire nodes manually or POST raw workflow JSON — always use `generate_image`.
-  To generate video with LTX-2.3: read `ltx_t2v.json` from the workspace, substitute `PARAM_*` values
-  (PARAM_PROMPT, PARAM_NEGATIVE_PROMPT, PARAM_INT_SEED, PARAM_INT_FRAMES, PARAM_INT_WIDTH, PARAM_INT_HEIGHT),
-  then POST `{"prompt": <workflow_json>}` to `http://comfyui:8188/prompt`. Poll `GET /history/{prompt_id}`
-  until the entry appears, then retrieve output with `GET /view?filename=…&type=output`.
+  **Video generation — LTX-2.3:** Use `comfyui__call` with `tool: "run_workflow"`, `args: {"workflow_id": "LTX-2.3_T2V_I2V_Single_Stage_Distilled_Full", "overrides": {"prompt": "..."}}`. This workflow uses `SaveVideo` and outputs MP4 directly to `/root/ComfyUI/output/video/`. **NEVER** use `KSampler → SaveImage` for video — that only outputs PNG frames, not video. **NEVER** claim a video is complete until you have verified the MP4 file exists via `comfyui__call` with `tool: "get_job"` or by checking the output directory. Workflows you save to `/workflows/` appear in the ComfyUI dashboard at `http://comfyui:8188` for auditing — if the user can't see your workflow there, it was not saved.
   For full ComfyUI management call the HTTP API directly at `http://comfyui:8188`:
+  - **IMPORTANT:** `web_fetch` (fetch_content) to `http://comfyui:8188` is **blocked** by OpenClaw's security policy (private IP restriction). Use `exec` + `wget` or `curl` for all ComfyUI HTTP API calls instead. Example: `wget -q -O - http://comfyui:8188/system_stats`
   - `GET  /queue` — view pending/running jobs
   - `POST /queue` — cancel jobs (`{"delete": [prompt_id]}` or `{"clear": true}`)
   - `GET  /history` — completed job history (append `/{prompt_id}` for one job)
@@ -101,11 +99,18 @@ Commonly enabled tools (via gateway__call with correct tool names):
   - `GET  /models/{type}` — list models by type (checkpoints, loras, vae, etc.)
   - `GET  /view?filename=…&type=output` — retrieve an output image
   - `POST /upload/image` — upload a reference image
-  Use `gateway__fetch_content` with `method` and `body` args for POST requests.
-  **Blog post with images (full workflow):** (1) Create HTML from `blog/ai-toolkit/blog-post-template.html` and `blog-requirements.md`. (2) If using FLUX: call `set_defaults` with `checkpoint: "flux1-schnell-fp8.safetensors"` first (not flux1-dev — it is corrupted). (3) For each image: call `generate_image` with `{ prompt, width: 1200, height: 675 }` — do NOT build raw workflow JSON. (4) Save outputs to `blog/ai-toolkit/images/` with wget. (5) Update HTML `<img src="./images/filename.png">`. Read `blog/ai-toolkit/blog-post-generator-agent-comfyui.md` for prompt templates.
+  Use `exec` with `wget` or `curl` for all direct ComfyUI HTTP API calls — do NOT use `gateway__fetch_content` for comfyui:8188 (it will be blocked).
+  **Workflow management:** Saved workflows live in `/workflows/` (host: `data/comfyui-workflows/`). Primus can create new JSON workflow files there — they persist across rebuilds. **IMPORTANT:** This directory must only contain ComfyUI API-format JSON (top-level keys are numeric node IDs like `"1"`, `"2"`, etc.). Never put ComfyUI visual-format JSON here (those have top-level keys `id`, `nodes`, `links` — they will crash comfyui-mcp on startup).
+  - `list_workflows` — list all saved workflows with their IDs, inputs, and metadata
+  - `run_workflow(workflow_id, overrides)` — run a saved workflow; pass `overrides` dict to change prompt, seed, steps, etc. without editing the file. Example: `run_workflow("blog_flux_dev", {"prompt": "a neural network diagram", "seed": -1})`
+  - To create a new workflow: write valid ComfyUI API JSON to `/workflows/<name>.json` via exec (`cat > /workflows/blog_flux.json << 'EOF'...`). Use `list_workflows` to confirm it registered.
+  - **Directory restriction:** You CANNOT create directories under `/home/node/.openclaw/workspace/data/` — you will get EACCES. Use `/workflows/` for workflow files, and `workspace/blog/` paths for blog content.
+  - **Do NOT invent workflow results.** If `run_workflow` fails, report the exact error. Never claim a file was saved without verifying it exists.
+  **Blog post with images (full workflow):** (1) Create HTML from `blog/ai-toolkit/blog-post-template.html` and `blog-requirements.md`. (2) If using FLUX: call `set_defaults` with `checkpoint: "flux1-dev-fp8.safetensors"` first (flux1-dev download completed — use `list_models` to confirm it's present). Fallback: `flux1-schnell-fp8.safetensors`. (3) For each image: use `run_workflow` with `workflow_id: "blog_flux_dev"` and `overrides: {"prompt": "..."}` for optimal Flux settings (20 steps, cfg 1.0), OR call `generate_image` with `{ prompt, width: 1200, height: 675 }` — do NOT build raw workflow JSON inline. (4) Save outputs to `blog/ai-toolkit/images/` with `exec wget -O blog/ai-toolkit/images/NAME.png "http://comfyui:8188/view?filename=FILENAME&type=output"`. (5) Update HTML `<img src="./images/filename.png">`. Read `blog/ai-toolkit/blog-post-generator-agent-comfyui.md` for prompt templates.
 - **gateway__fetch_content** — Fetch and parse a URL. Use `gateway__call` with `tool: "fetch__fetch_content"` or the actual fetch tool name from the gateway.
 - **gateway__github_*** — GitHub issues, PRs, repos. Use `gateway__call` with `tool: "github__..."` (check gateway tools). Needs `GITHUB_PERSONAL_ACCESS_TOKEN`.
-- **Web search** — Use `gateway__call` with `tool: "duckduckgo__search"` (MCP). No API key needed if DuckDuckGo is in servers.txt.
+- **Web search** — Use `gateway__call` with `tool: "duckduckgo__search"` (MCP). No API key needed. Returns text results/snippets — use this for factual lookups, finding URLs, research. Does NOT render pages or take screenshots.
+  - For screenshots or reading a live page: use Playwright via `gateway__call` (see Browser tool section below).
 
 Add more via the dashboard MCP tab. See `data/mcp/servers.txt` for what's currently active.
 
@@ -122,10 +127,13 @@ Add more via the dashboard MCP tab. See `data/mcp/servers.txt` for what's curren
 
 ## Browser tool (screenshots)
 
-- **You CAN take screenshots.** Use `gateway__call` with `tool: "playwright__browser_navigate"` then `tool: "playwright__browser_snapshot"`. Playwright runs in the MCP gateway container and can reach internal services. Do NOT use the native browser tool — it fails in Docker (no Chrome). Use Docker service names for URLs (e.g. `http://dashboard:8080`), not localhost.
-- **Internal URLs:** Use Docker service names, not localhost. To screenshot the dashboard: navigate to `http://dashboard:8080` (not localhost:8080 — from inside the container, localhost is the container itself).
-- Always pass `targetUrl` with the full URL — the runtime requires it even if the schema shows it as optional
-- Omitting `targetUrl` causes a "targetUrl required" error and a retry loop
+- **You CAN take screenshots** — but ONLY via `gateway__call`, NOT via a direct tool name.
+  - ✅ CORRECT: `gateway__call` with `{tool: "playwright__browser_navigate", args: {url: "http://...", targetUrl: "http://..."}}`
+  - ❌ WRONG: calling `gateway__playwright__browser_navigate` directly — this tool does not exist and will return "Tool not found"
+  - ❌ WRONG: using the native OpenClaw browser tool — the openclaw container has no Chrome/Brave/Edge/Chromium installed; it will always fail with "No supported browser found"
+- **Playwright runs inside mcp-gateway container** and can reach all internal Docker services by hostname. Do NOT use localhost for internal services.
+- **Workflow:** `gateway__call` with `tool: "playwright__browser_navigate"`, then `gateway__call` with `tool: "playwright__browser_snapshot"`
+- Always pass `targetUrl` with the full URL — the runtime requires it even if the schema shows it as optional. Omitting `targetUrl` causes a "targetUrl required" error.
 
 ## Model selection
 
