@@ -25,6 +25,8 @@ from fastapi.staticfiles import StaticFiles
 from httpx import AsyncClient
 from pydantic import BaseModel
 
+from dashboard.services_catalog import OPS_SERVICE_MAP, SERVICES, _check_service
+
 # Dashboard auth (optional bearer token only)
 DASHBOARD_AUTH_TOKEN = os.environ.get("DASHBOARD_AUTH_TOKEN", "").strip()
 _AUTH_REQUIRED = bool(DASHBOARD_AUTH_TOKEN)
@@ -93,11 +95,6 @@ OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
 MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11435").rstrip("/")
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
 OPENCLAW_CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/openclaw-config/openclaw.json"))
-OPENCLAW_GATEWAY_PORT = os.environ.get("OPENCLAW_GATEWAY_PORT", "6680")
-# Host port (OPENCLAW_GATEWAY_PORT) maps to a fixed container port in docker-compose (6680 by default).
-# Dashboard probes openclaw-gateway by Docker DNS — must use the container listen port, not the host port.
-OPENCLAW_GATEWAY_INTERNAL_PORT = os.environ.get("OPENCLAW_GATEWAY_INTERNAL_PORT", "6680")
-OPENCLAW_UI_PORT = os.environ.get("OPENCLAW_UI_PORT", "6682")
 OPENCLAW_GATEWAY_TOKEN = os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
 SCRIPTS_DIR = Path(os.environ.get("SCRIPTS_DIR", "/scripts"))
@@ -678,64 +675,6 @@ async def models_pull_status(request: Request):
     if code >= 400:
         raise HTTPException(status_code=code, detail=data.get("detail", data))
     return data
-
-
-# --- Services ---
-
-# Map dashboard service id -> ops-controller service id
-OPS_SERVICE_MAP = {
-    "ollama": "ollama",
-    "model-gateway": "model-gateway",
-    "webui": "open-webui",
-    "mcp": "mcp-gateway",
-    "comfyui": "comfyui",
-    "n8n": "n8n",
-    "openclaw": "openclaw-gateway",
-    "qdrant": "qdrant",
-}
-
-SERVICES = [
-    {"id": "ollama", "name": "Ollama", "port": 11434, "url": "http://localhost:11434", "check": "http://ollama:11434/api/version",
-     "hint": "Run: docker compose up -d ollama"},
-    {"id": "model-gateway", "name": "Model Gateway", "port": 11435, "url": "http://localhost:11435", "check": "http://model-gateway:11435/health",
-     "hint": "OpenAI-compatible proxy. Set OPENAI_API_BASE to use."},
-    {"id": "webui", "name": "Open WebUI", "port": 3000, "url": "http://localhost:3000", "check": "http://open-webui:8080",
-     "hint": "Depends on Ollama. Check: docker compose logs open-webui"},
-    {"id": "mcp", "name": "MCP Gateway", "port": 8811, "url": "http://localhost:8811", "check": "http://mcp-gateway:8811/mcp",
-     "hint": "Add/remove tools from the dashboard. Connect at http://localhost:8811/mcp — see mcp/README.md"},
-    {"id": "comfyui", "name": "ComfyUI", "port": 8188, "url": "http://localhost:8188", "check": "http://comfyui:8188",
-     "hint": "ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU). Run ./compose up -d. Pull LTX-2 via dashboard."},
-    {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
-     "hint": "Check: docker compose logs n8n"},
-    # Control UI HTML is served on the gateway port (6680), not the browser-bridge port (6682 host → CDP helper).
-    {"id": "openclaw", "name": "OpenClaw", "port": int(OPENCLAW_GATEWAY_PORT),
-     "url": f"http://localhost:{OPENCLAW_GATEWAY_PORT}/?token={OPENCLAW_GATEWAY_TOKEN}" if OPENCLAW_GATEWAY_TOKEN else f"http://localhost:{OPENCLAW_GATEWAY_PORT}",
-     "check": f"http://openclaw-gateway:{OPENCLAW_GATEWAY_INTERNAL_PORT}/",
-     "hint": (
-         f"Control UI: port {OPENCLAW_GATEWAY_PORT} with ?token=. "
-         f"Not :{OPENCLAW_UI_PORT} (browser/CDP bridge). Logs: docker compose logs openclaw-gateway"
-     )},
-    {"id": "qdrant", "name": "Qdrant", "port": 6333, "url": "http://localhost:6333",
-     "check": "http://qdrant:6333/readyz",
-     "hint": "Vector DB for RAG. Drop files in data/rag-input/ (with --profile rag) or upload via Open WebUI Documents tab."},
-]
-
-
-async def _check_service(url: str) -> tuple[bool, str]:
-    """Check if a service is reachable. Returns (ok, error_message)."""
-    try:
-        async with AsyncClient(timeout=3.0) as client:
-            r = await client.get(url)
-            return (r.status_code < 500, "")
-    except Exception as e:
-        err = str(e).lower()
-        # Connection refused = service down
-        if "connection refused" in err or "connection reset" in err:
-            return (False, str(e))
-        # RemoteProtocolError, connection closed/disconnected = we reached the server (e.g. WebSocket gateway)
-        if "remoteprotocolerror" in err or "protocol" in err or "closed" in err or "disconnected" in err:
-            return (True, "")
-        return (False, str(e))
 
 
 MCP_GATEWAY_SERVERS = os.environ.get("MCP_GATEWAY_SERVERS", "n8n,playwright,comfyui")
