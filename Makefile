@@ -1,5 +1,5 @@
 # AI-toolkit Makefile
-.PHONY: test test-audit test-dashboard test-gateway smoke-test help
+.PHONY: test test-audit test-dashboard test-gateway smoke-test lint help
 
 help:
 	@echo "Targets:"
@@ -8,9 +8,13 @@ help:
 	@echo "  test-dashboard - Run dashboard health tests"
 	@echo "  test-gateway  - Run model gateway contract tests"
 	@echo "  smoke-test    - Run docker compose up -d and verify service health"
+	@echo "  lint          - Ruff check (dashboard, tests, Python services)"
 
 test:
 	python -m pytest tests/ -v
+
+lint:
+	python -m ruff check dashboard tests model-gateway ops-controller rag-ingestion scripts
 
 test-audit:
 	python -m pytest tests/test_ops_controller_audit.py -v

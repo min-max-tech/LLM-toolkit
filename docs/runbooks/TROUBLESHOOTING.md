@@ -34,4 +34,4 @@ docker compose logs <service-name>
 
 - **Security**: See [SECURITY.md](../../SECURITY.md)
 - **Architecture**: See [Product Requirements Document](../Product%20Requirements%20Document.md)
-- **OpenClaw**: See [openclaw/README.md](../../openclaw/README.md)
+- **OpenClaw**: Web Control UI defaults to gateway port **6680** (`http://localhost:6680/?token=...`). **6682** is the browser/CDP bridge only. See [openclaw/README.md](../../openclaw/README.md).

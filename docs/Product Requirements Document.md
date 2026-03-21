@@ -32,7 +32,7 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 | MCP health endpoint + UI badges | ✅ Live | `dashboard/app.py` |
 | Ops Controller (start/stop/restart/logs/pull) | ✅ Live | `ops-controller/main.py` |
 | Append-only JSONL audit log | ✅ Live | `ops-controller/main.py` |
-| Dashboard auth (Bearer + Basic) | ✅ Live | `dashboard/app.py` |
+| Dashboard auth (Bearer) | ✅ Live | `dashboard/app.py` |
 | Dashboard throughput stats + benchmark | ✅ Live | `dashboard/app.py` |
 | Dashboard hardware stats | ✅ Live | `dashboard/app.py` |
 | Dashboard default-model management | ✅ Live | `dashboard/app.py` |
@@ -70,7 +70,7 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 │  Host  (network: ai-toolkit-frontend = host-accessible)                        │
 │                                                                                │
 │  ┌─────────────┐  ┌──────────┐  ┌──────────────────────────────────────────┐  │
-│  │ Open WebUI  │  │   N8N    │  │  OpenClaw Gateway  :18789/:18790          │  │
+│  │ Open WebUI  │  │   N8N    │  │  OpenClaw Gateway  :6680/:6681 (def.; secure: 18789/18790) │  │
 │  │ :3000       │  │ :5678    │  │  model provider → gateway                 │  │
 │  │ → gateway   │  │ → gw     │  │  MCP tools via bridge plugin              │  │
 │  └──────┬──────┘  └────┬─────┘  └────────────────┬─────────────────────────┘  │
@@ -98,7 +98,7 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 │  │  ┌─────────────────┐  ┌─────────────────┐  ┌──────────────┐             │  │
 │  │  │ MCP Gateway     │  │ Dashboard :8080  │  │ RAG Ingest   │             │  │
 │  │  │ :8811           │  │ no docker.sock   │  │ --profile rag│             │  │
-│  │  │ docker.sock     │  │ bearer/basic auth│  │ watches      │             │  │
+│  │  │ docker.sock     │  │ bearer auth (opt)│  │ watches      │             │  │
 │  │  │ servers.txt     │  │ → ops ctrl API   │  │ data/rag-    │             │  │
 │  │  │ registry.json   │  │ registry.json    │  │ input/       │             │  │
 │  │  └─────────────────┘  └─────────────────┘  └──────────────┘             │  │
@@ -118,7 +118,7 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 | **G1: Any service → any model** | ✅ Done | Gateway `:11435`; Ollama + vLLM adapters; streaming, embeddings, tool-calling, Responses API. Open WebUI uses `OPENAI_API_BASE_URL` → gateway. OpenClaw routes via gateway provider. |
 | **G2: Shared tools with health** | ✅ Done | MCP Gateway + `registry.json` metadata; `GET /api/mcp/health` per-server; dashboard health badges. |
 | **G3: Dashboard as control center** | ✅ Done | Ops Controller: start/stop/restart/logs/pull; no host port; bearer auth. Hardware stats, throughput benchmark, default-model management, RAG status. |
-| **G4: Security + auditing** | ✅ Done | Audit JSONL (`ts/action/resource/actor/result/detail/correlation_id`). Bearer + Basic auth. `SECURITY.md` + threat table. SSRF scripts. |
+| **G4: Security + auditing** | ✅ Done | Audit JSONL (`ts/action/resource/actor/result/detail/correlation_id`). Optional Bearer auth for dashboard API. `SECURITY.md` + threat table. SSRF scripts. |
 | **G5: Docker best practices** | ✅ Done | `cap_drop: [ALL]`, `security_opt`, `read_only`, `tmpfs`, log rotation, resource limits, healthchecks, explicit named networks on all custom services. |
 | **G6: RAG pipeline** | ✅ Done | Qdrant vector DB (backend-only). `rag-ingestion` service (drop files in `data/rag-input/`). Open WebUI connected to Qdrant. `GET /api/rag/status` in dashboard. |
 
@@ -169,11 +169,11 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 - **Model Gateway** `:11435` — OpenAI-compatible proxy; Ollama + vLLM adapters; streaming, Responses API, completions compat, embeddings; TTL model cache; cache-bust endpoint; `X-Request-ID` propagation; throughput recording.
 - **MCP Gateway** `:8811` — Docker MCP Gateway with 10s hot-reload; `registry.json` metadata reader; per-server health; docker.sock for spawning server containers.
 - **Ops Controller** `:9000` (internal) — Authenticated REST; start/stop/restart/logs/pull; append-only JSONL audit log; docker.sock access with allowlisted operations only.
-- **Dashboard** `:8080` — No docker.sock; calls controller for ops; model inventory + default-model management; MCP tool management + health badges; throughput stats + benchmark; hardware stats; RAG status. Auth: Bearer token or Basic password.
+- **Dashboard** `:8080` — No docker.sock; calls controller for ops; model inventory + default-model management; MCP tool management + health badges; throughput stats + benchmark; hardware stats; RAG status. Auth: optional Bearer token (`DASHBOARD_AUTH_TOKEN`).
 - **Ollama** `:11434` — LLM inference; backend-only by default (use `overrides/ollama-expose.yml` for Cursor/CLI access); GPU via `overrides/compute.yml`.
 - **Qdrant** `:6333` — Vector database; backend-only; used by Open WebUI for RAG and by `rag-ingestion` service.
 - **RAG Ingestion** — Watch-mode document ingester (`--profile rag`); reads `data/rag-input/`; chunks and embeds via model gateway; stores in Qdrant.
-- **OpenClaw Gateway** `:18789/:18790` — Agentic runtime; routes models via gateway provider; MCP tools via bridge plugin.
+- **OpenClaw Gateway** `:6680/:6681` (default host ports; `overrides/openclaw-secure.yml`: **18789**/18790) — Agentic runtime; routes models via gateway provider; MCP tools via bridge plugin.
 - **OpenClaw CLI** — Interactive CLI (`--profile openclaw-cli`); gateway token only; no session credentials.
 - **Supporting services** — Open WebUI (`:3000`, connected to Qdrant), N8N (`:5678`), ComfyUI (`:8188`), openclaw sync/config/plugin services.
 
@@ -199,7 +199,7 @@ Audit query:      Dashboard → GET /audit (auth) → Controller reads JSONL
 ┌───────────────────────────────────────────────────────────────────────────────┐
 │  Host                                                                         │
 │  ┌─────────────┐ ┌──────────┐ ┌──────────────────────────────────────────┐   │
-│  │ Open WebUI  │ │   N8N    │ │  OpenClaw Gateway  :18789                │   │
+│  │ Open WebUI  │ │   N8N    │ │  OpenClaw Gateway  :6680 (def.)            │   │
 │  │ :3000       │ │ :5678    │ └───────────────────────────┬──────────────┘   │
 │  └──────┬──────┘ └────┬─────┘                             │                  │
 │         │             │           OPENAI_API_BASE         │ gateway provider │
@@ -352,7 +352,7 @@ model-gateway:
 
 **Base URL:** `http://dashboard:8080` (`:8080` host port)
 
-**Auth:** Bearer token (`DASHBOARD_AUTH_TOKEN`) or Basic password (`DASHBOARD_PASSWORD`) on all `/api/*` except health, auth/config, hardware, rag/status.
+**Auth:** Bearer token (`DASHBOARD_AUTH_TOKEN`) on all `/api/*` except health, auth/config, hardware, rag/status.
 
 | Endpoint | Method | Auth | Description |
 |----------|--------|------|-------------|
@@ -541,7 +541,7 @@ _audit("logs", service_id, "ok", metadata={"tail": min(tail, 500)})
 | MCP tools (filesystem) | Data exfiltration via tool | Enabled in servers.txt; broken without root-dir | Remove from default servers.txt; require explicit opt-in |
 | MCP tools (browser/playwright) | SSRF → RFC1918/metadata | No egress blocks yet | Add `DOCKER-USER` iptables egress block; document in runbooks |
 | Tool output → model | Prompt injection via tool output | No sandbox; tool output passed to model | Allowlists; structured tool calls (tool output in `<tool_result>` tags); validate tool schemas |
-| Dashboard auth | Unauthenticated admin | Optional (`DASHBOARD_AUTH_TOKEN` / `DASHBOARD_PASSWORD`) | Document: set one of these; pre-deployment checklist item |
+| Dashboard auth | Unauthenticated admin | Optional `DASHBOARD_AUTH_TOKEN` | Document: set for networked use; pre-deployment checklist item |
 | `openclaw.json` plaintext keys | Key exposure if file shared/backed up | In gitignored `data/`; acceptable on local disk | Flag in docs: avoid including `data/openclaw/` in cloud backups without encryption |
 | WEBUI_AUTH=False | Open WebUI accessible without auth | Explicit in compose env | Change default to `WEBUI_AUTH=${WEBUI_AUTH:-True}`; opt-out, not opt-in |
 | Model gateway | No auth on `/v1/` endpoints | None; local-first intentional | Acceptable for localhost; add API key support if exposed to LAN |
@@ -549,7 +549,6 @@ _audit("logs", service_id, "ok", metadata={"tail": min(tail, 500)})
 **AuthN/AuthZ approach:**
 - **Tier 0:** No auth (health endpoints, read-only model list)
 - **Tier 1:** Bearer token (ops controller — `OPS_CONTROLLER_TOKEN`; optional dashboard — `DASHBOARD_AUTH_TOKEN`)
-- **Tier 2:** Password (dashboard — `DASHBOARD_PASSWORD` for Basic auth via browser)
 - **Future Tier 3:** OAuth / OIDC (if multi-user or Tailscale integration needed)
 - **RBAC:** Currently binary (authed = full access). Future: read-only role (view logs, health) vs admin role (start/stop).
 
@@ -1042,7 +1041,7 @@ deploy:
     limits:
       memory: 2G
 healthcheck:
-  test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:18789"]
+  test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:6680"]
   start_period: 60s
   interval: 30s
   timeout: 10s
@@ -1116,11 +1115,10 @@ prevent injected instructions from escalating privileges:
 | `OPS_CONTROLLER_URL` | dashboard | Ops controller URL | `http://ops-controller:9000` |
 | `OPS_CONTROLLER_TOKEN` | dashboard, ops-controller | Bearer token for ops API | *(required)* |
 | `DASHBOARD_AUTH_TOKEN` | dashboard | Bearer token for dashboard API | *(optional)* |
-| `DASHBOARD_PASSWORD` | dashboard | Basic auth password for dashboard | *(optional)* |
 | `DEFAULT_MODEL` | dashboard, open-webui | Default model shown in Open WebUI chat | *(optional)* |
 | `OPENCLAW_GATEWAY_TOKEN` | openclaw | Gateway auth token | *(required)* |
-| `OPENCLAW_GATEWAY_PORT` | openclaw-gateway | OpenClaw gateway host port | `18789` |
-| `OPENCLAW_BRIDGE_PORT` | openclaw-gateway | OpenClaw bridge host port | `18790` |
+| `OPENCLAW_GATEWAY_PORT` | openclaw-gateway | OpenClaw gateway host port | `6680` (default; secure override often **18789**) |
+| `OPENCLAW_BRIDGE_PORT` | openclaw-gateway | OpenClaw bridge host port | `6681` (default; secure override often **18790**) |
 | `OPENCLAW_CONFIG_DIR` | openclaw | OpenClaw config directory | `${BASE_PATH}/data/openclaw` |
 | `OPENCLAW_WORKSPACE_DIR` | openclaw | OpenClaw workspace directory | `${BASE_PATH}/data/openclaw/workspace` |
 | `MCP_GATEWAY_PORT` | mcp-gateway | MCP gateway host port | `8811` |

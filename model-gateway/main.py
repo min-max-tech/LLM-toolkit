@@ -11,11 +11,12 @@ from typing import Any
 from fastapi import FastAPI, Request
 from fastapi.responses import StreamingResponse
 from httpx import AsyncClient
-from pydantic import BaseModel, Field
+from pydantic import BaseModel
 
 app = FastAPI(title="Model Gateway", version="1.0.0")
 
 import logging
+
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger("gateway")
 
@@ -79,7 +80,7 @@ def _ollama_model_id_with_hf_fallback(name: str) -> str:
     model = _ollama_model_id(name)
     model_lower = model.lower()
     # Already fully qualified
-    if not ("/" in model) or model_lower.startswith("hf.co/") or model_lower.startswith("huggingface.co/") or model_lower.startswith("library/"):
+    if "/" not in model or model_lower.startswith("hf.co/") or model_lower.startswith("huggingface.co/") or model_lower.startswith("library/"):
         return model
     # Check model cache: if the bare name is already known, don't add hf.co/
     known_ids = {m.get("id", "").lower() for m in _model_cache} if _model_cache else set()
@@ -1275,7 +1276,8 @@ async def anthropic_messages(request: Request):
                                     if tc_idx not in tool_calls_acc:
                                         call_id = tc.get("id") or f"toolu_{uuid.uuid4().hex[:12]}"
                                         name = (tc.get("function") or {}).get("name", "")
-                                        bi = next_block; next_block += 1
+                                        bi = next_block
+                                        next_block += 1
                                         tool_block_idx[tc_idx] = bi
                                         tool_calls_acc[tc_idx] = {"id": call_id, "name": name, "arguments": ""}
                                         yield _sse("content_block_start", {"type": "content_block_start", "index": bi, "content_block": {"type": "tool_use", "id": call_id, "name": name, "input": {}}})

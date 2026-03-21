@@ -1516,6 +1516,18 @@
       return `http://${host}:${port}`;
     }
 
+    /** Prefer API `url` (paths + query e.g. OpenClaw ?token=) and match dashboard hostname. */
+    function serviceOpenHref(s, host) {
+      if (!s.url) return serviceUrl(host, s.port);
+      try {
+        const u = new URL(s.url);
+        u.hostname = (host === 'localhost' || host === '127.0.0.1') ? '127.0.0.1' : host;
+        return u.href;
+      } catch (_) {
+        return serviceUrl(host, s.port);
+      }
+    }
+
     async function loadServices() {
       const el = document.getElementById('services');
       const summaryEl = document.getElementById('status-summary');
@@ -1544,7 +1556,7 @@
               ${escapeHtml(s.name)}
               ${s.port ? `<span class="service-port">:${s.port}</span>` : ''}
             </div>
-            <a href="${serviceUrl(host, s.port)}" target="_blank" rel="noopener" class="service" style="text-decoration:none;color:inherit;" aria-label="Open ${s.name} (opens in new tab)">
+            <a href="${serviceOpenHref(s, host)}" target="_blank" rel="noopener" class="service" style="text-decoration:none;color:inherit;" aria-label="Open ${s.name} (opens in new tab)">
               <span class="status ${s.ok ? 'ok' : 'fail'}" aria-hidden="true"></span>
               <span class="label">${s.ok ? 'Running' : 'Offline'}</span>
               <span class="external" aria-hidden="true">↗</span>

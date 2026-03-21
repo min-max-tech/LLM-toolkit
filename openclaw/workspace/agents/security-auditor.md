@@ -64,7 +64,7 @@ Security changes require explicit user approval. Present the fix as a diff or ex
 | Area | What to verify |
 |---|---|
 | `.env` | Not committed to git (`git status` — confirm `.env` in gitignore) |
-| `DASHBOARD_AUTH_TOKEN` / `DASHBOARD_LOGIN_ID` | Set? Dashboard is open to network without these |
+| `DASHBOARD_AUTH_TOKEN` | Set? Dashboard API is open without it (when unset) |
 | `OPS_CONTROLLER_TOKEN` | Set? Without it, service restarts/model downloads are blocked |
 | `docker-compose.yml` ports | MCP gateway (8811), Ollama (11434), Qdrant (6333) should NOT have host port mappings by default |
 | Model gateway | No auth by design (local-only, acceptable for this setup) |

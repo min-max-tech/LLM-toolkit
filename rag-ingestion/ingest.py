@@ -1,7 +1,6 @@
 """RAG ingestion service — watches WATCH_DIR, chunks files, embeds via model-gateway, stores in Qdrant."""
 from __future__ import annotations
 
-import hashlib
 import json
 import os
 import time

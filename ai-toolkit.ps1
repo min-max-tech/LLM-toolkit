@@ -158,7 +158,7 @@ function Invoke-Initialize {
         @("Open WebUI",    "http://localhost:3000"),
         @("ComfyUI",       "http://localhost:8188"),
         @("N8N",           "http://localhost:5678"),
-        @("OpenClaw",      "http://localhost:6682"),
+        @("OpenClaw",      "http://localhost:6680"),
         @("Model Gateway", "http://localhost:11435")
     )
     foreach ($u in $urls) {

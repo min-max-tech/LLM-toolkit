@@ -5,7 +5,14 @@
 name: ai-toolkit
 
 services:
+  dashboard:
+    environment:
+      # Secure override maps gateway to 18789:18789 — dashboard probes must use container port 18789.
+      OPENCLAW_GATEWAY_INTERNAL_PORT: "18789"
+
   openclaw-gateway:
     ports:
       - "127.0.0.1:${OPENCLAW_GATEWAY_PORT:-18789}:18789"
       - "127.0.0.1:${OPENCLAW_BRIDGE_PORT:-18790}:18790"
+    healthcheck:
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:18789"]

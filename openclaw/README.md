@@ -44,7 +44,11 @@ Use the token from `.env` when prompted.
 
 ### 5. Access the UI
 
-Open **http://localhost:18789/** in your browser. Paste the gateway token into Settings → Token. In Settings → Model, choose a model from the **gateway** provider (e.g. `gateway/ollama/deepseek-r1:7b`) — this routes through the Model Gateway so dashboard monitoring shows performance. MCP tools (web search, etc.) from the gateway at `http://mcp-gateway:8811/mcp` are exposed via the **openclaw-mcp-bridge** plugin — the agent can call them automatically. **Existing config?** Ensure `plugins.entries["openclaw-mcp-bridge"]` is set as in [mcp/README.md](../mcp/README.md#openclaw); this repo’s `data/openclaw/openclaw.json` already includes it.
+With the **main** `docker-compose.yml`, the web Control UI is on the **gateway** port (default **6680**). Open **`http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>`** (token from `.env`). In Settings → Model, choose a model from the **gateway** provider (e.g. `gateway/ollama/deepseek-r1:7b`) — this routes through the Model Gateway so dashboard monitoring shows performance. MCP tools (web search, etc.) from the gateway at `http://mcp-gateway:8811/mcp` are exposed via the **openclaw-mcp-bridge** plugin — the agent can call them automatically. **Do not use :6682** for this UI — that port is the browser/CDP bridge only.
+
+If you use **`overrides/openclaw-secure.yml`**, the mapped gateway port is typically **18789** on localhost — see [OPENCLAW_SECURE.md.example](OPENCLAW_SECURE.md.example).
+
+**Existing config?** Ensure `plugins.entries["openclaw-mcp-bridge"]` is set as in [mcp/README.md](../mcp/README.md#openclaw); this repo’s `data/openclaw/openclaw.json` already includes it.
 
 **Not reachable?** When using the main AI-toolkit compose, the gateway is configured with `OPENCLAW_GATEWAY_BIND=lan` so it accepts connections from the host. If you run OpenClaw standalone from `openclaw/`, add `OPENCLAW_GATEWAY_BIND=lan` to your `.env`. Then verify: `docker compose ps` (gateway running), `docker compose logs openclaw-gateway` (no errors).
 
@@ -81,7 +85,7 @@ See [OpenClaw Discord docs](https://docs.openclaw.ai/channels/discord) for bot t
 
 ## CLI Commands
 
-When the stack runs in Docker, the CLI must target the gateway by service name. Use the helper script (from repo root), which passes `--url ws://openclaw-gateway:18789` and token from the project root `.env`:
+When the stack runs in Docker, the CLI must target the gateway by service name. Use the helper script (from repo root), which passes `--url ws://openclaw-gateway:6680` (container gateway port in the default compose) and token from the project root `.env`:
 
 ```powershell
 # List devices (requires gateway running)

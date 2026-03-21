@@ -27,6 +27,8 @@ No GPU required for chat (Ollama runs on CPU, slower but works).
 
 `docker compose up -d` — all services (Ollama, Open WebUI, ComfyUI, n8n, OpenClaw, MCP Gateway).
 
+**OpenClaw web UI:** `http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>` (not `:6682` — that port is the browser bridge only).
+
 ### Direct Ollama (Cursor, CLI)
 
 By default Ollama is backend-only (no host port). To expose it on the host (e.g. for Cursor or `ollama run` from your machine):

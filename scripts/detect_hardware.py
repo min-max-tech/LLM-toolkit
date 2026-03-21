@@ -405,7 +405,7 @@ def main() -> int:
     override_path = base / "overrides" / "compute.yml"
     override_path.parent.mkdir(exist_ok=True)
     override_path.write_text(override_content, encoding="utf-8")
-    print(f"Compute override:")
+    print("Compute override:")
     print(f"  Wrote {override_path}")
 
     # Update .env with COMPOSE_FILE and COMPUTE_MODE

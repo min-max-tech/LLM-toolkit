@@ -139,7 +139,6 @@ services:
       - OPS_CONTROLLER_URL=http://ops-controller:9000
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
       - DASHBOARD_AUTH_TOKEN=${DASHBOARD_AUTH_TOKEN:-}
-      - DASHBOARD_PASSWORD=${DASHBOARD_PASSWORD:-}
       - THROUGHPUT_RECORD_TOKEN=${THROUGHPUT_RECORD_TOKEN:-}
       - HF_TOKEN=${HF_TOKEN:-}
       - COMFYUI_URL=http://comfyui:8188
@@ -148,6 +147,8 @@ services:
       - OPENCLAW_CONFIG_PATH=/openclaw-config/openclaw.json
       - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
       - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT:-6680}
+      # Must match container listen port (see openclaw-gateway ports … :6680); not the host-mapped port.
+      - OPENCLAW_GATEWAY_INTERNAL_PORT=${OPENCLAW_GATEWAY_INTERNAL_PORT:-6680}
       - OPENCLAW_UI_PORT=${OPENCLAW_UI_PORT:-6682}
       - DASHBOARD_DATA_PATH=/data/dashboard
     volumes:
@@ -568,8 +569,8 @@ services:
     init: true
     restart: unless-stopped
     healthcheck:
-      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:${OPENCLAW_GATEWAY_PORT:-6680}"]
-      # OpenClaw binds to OPENCLAW_GATEWAY_PORT internally
+      # Inside the container OpenClaw listens on 6680 (host port is the left side of ports: … :6680).
+      test: ["CMD", "wget", "-q", "-O", "/dev/null", "http://localhost:6680"]
       start_period: 60s
       interval: 30s
       timeout: 10s

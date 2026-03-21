@@ -16,7 +16,7 @@ Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), 
 | **open-webui** | 3000 | Chat UI — [localhost:3000](http://localhost:3000) |
 | **comfyui** | 8188 | Stable Diffusion / LTX-2 — [localhost:8188](http://localhost:8188) |
 | **n8n** | 5678 | Workflow automation — [localhost:5678](http://localhost:5678) |
-| **OpenClaw** | 18789 | Personal AI assistant — [openclaw/](openclaw/) |
+| **OpenClaw** | **6680** (Control UI; add `?token=`) · 6682 = browser bridge only | [openclaw/](openclaw/) · optional [openclaw-secure](overrides/openclaw-secure.yml) uses **18789** on localhost |
 | **MCP Gateway** | 8811 | Shared MCP tools — [mcp/](mcp/) |
 | **ops-controller** | — | Start/stop/restart services from dashboard (set `OPS_CONTROLLER_TOKEN`) |
 | model-puller | — | Ready to pull Ollama models on demand |

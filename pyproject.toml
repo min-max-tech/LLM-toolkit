@@ -1,0 +1,23 @@
+[project]
+name = "ai-toolkit"
+version = "0"
+description = "Local LLM stack (Docker); tooling is per-service requirements.txt"
+readme = "README.md"
+requires-python = ">=3.12"
+
+[tool.ruff]
+target-version = "py312"
+line-length = 120
+src = ["dashboard", "tests", "model-gateway", "ops-controller", "rag-ingestion", "scripts"]
+
+[tool.ruff.lint]
+select = ["E", "F", "I", "UP"]
+ignore = ["E501"]
+
+[tool.ruff.lint.per-file-ignores]
+# Imports intentionally ordered after _state_lock / app for readability
+"dashboard/app.py" = ["E402"]
+"model-gateway/main.py" = ["E402"]
+
+[tool.ruff.lint.isort]
+known-first-party = ["dashboard"]

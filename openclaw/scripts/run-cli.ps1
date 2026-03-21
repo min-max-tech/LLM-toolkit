@@ -14,7 +14,8 @@ if (-not $line -or -not $line.Matches.Groups[1].Value) {
     Write-Error "OPENCLAW_GATEWAY_TOKEN not found in .env"
 }
 $token = $line.Matches.Groups[1].Value.Trim()
-$gatewayUrl = "ws://openclaw-gateway:18789"
+# Must match gateway listen port inside the container (default compose: 6680; openclaw-secure override may use 18789).
+$gatewayUrl = "ws://openclaw-gateway:6680"
 $dockerArgs = @("compose", "--profile", "openclaw-cli", "run", "--rm", "openclaw-cli") + @($CliArgs) + @("--url", $gatewayUrl, "--token", $token)
 Push-Location $base
 try {

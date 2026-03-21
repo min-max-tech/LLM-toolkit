@@ -13,6 +13,8 @@ data/
 # Debug / temporary
 .claude
 comfyui-logs.txt
+comfyui*.log
+openclaw*.log
 .pytest_cache
 __pycache__
 *.pyc

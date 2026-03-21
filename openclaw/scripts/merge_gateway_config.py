@@ -186,8 +186,8 @@ def main() -> int:
         if not control_ui.get("dangerouslyAllowHostHeaderOriginFallback"):
             control_ui["dangerouslyAllowHostHeaderOriginFallback"] = True
             modified = True
-        # Ensure both gateway port (6680) and UI port (6682) are in allowedOrigins
-        # so the browser UI can make requests to the gateway without CORS errors.
+        # Gateway :6680 serves the Control UI HTML; :6682 inside the container is the browser/CDP helper.
+        # Include both in allowedOrigins so the SPA can call the gateway without CORS errors.
         lan_ip = os.environ.get("LAN_IP", "192.0.2.1")
         required_origins = {
             "http://localhost:6680", "http://127.0.0.1:6680", f"http://{lan_ip}:6680",

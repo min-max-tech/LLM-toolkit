@@ -65,7 +65,7 @@ All runtime data is stored under `BASE_PATH/data/` via bind mounts. Ensure appro
 | OpenClaw prompt injection → credential access | Browser-tier holds zero credentials; two-tier model (see [PRD](docs/Product%20Requirements%20Document.md)) |
 | Container privilege escalation (OpenClaw) | `cap_drop: [ALL]` + `no-new-privileges:true` on both openclaw containers |
 | Secret exfiltration (general) | No secrets in browser-tier workers; controller-only API keys |
-| Unauthenticated admin | Set `DASHBOARD_AUTH_TOKEN` or `DASHBOARD_PASSWORD` for Tailscale/group use |
+| Unauthenticated admin | Set `DASHBOARD_AUTH_TOKEN` for Tailscale/group use |
 
 ## Audit
 

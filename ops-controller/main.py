@@ -7,13 +7,12 @@ import os
 import re
 import subprocess
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import docker
 import httpx
-from fastapi import Depends, HTTPException, Request
-from fastapi import FastAPI
+from fastapi import Depends, FastAPI, HTTPException, Request
 from pydantic import BaseModel
 
 app = FastAPI(title="Ops Controller", version="1.0.0")
@@ -75,7 +74,6 @@ def _maybe_rotate_audit_log() -> None:
             return
         if AUDIT_LOG_PATH.stat().st_size < AUDIT_LOG_MAX_BYTES:
             return
-        parent = AUDIT_LOG_PATH.parent
         rotated = AUDIT_LOG_PATH.with_suffix(AUDIT_LOG_PATH.suffix + ".1")
         if rotated.exists():
             rotated.unlink()
@@ -97,7 +95,7 @@ def _audit(
         AUDIT_LOG_PATH.parent.mkdir(parents=True, exist_ok=True)
         _maybe_rotate_audit_log()
         entry = {
-            "ts": datetime.now(timezone.utc).isoformat().replace("+00:00", "Z"),
+            "ts": datetime.now(UTC).isoformat().replace("+00:00", "Z"),
             "action": action,
             "resource": resource or "",
             "actor": "dashboard",

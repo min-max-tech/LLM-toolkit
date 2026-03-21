@@ -97,15 +97,11 @@ ssh -L 9000:localhost:9000 user@host
 
 ## 4. Dashboard Auth
 
-By default, `DASHBOARD_AUTH_TOKEN` and `DASHBOARD_PASSWORD` are empty and auth is disabled.
-For any multi-user or networked deployment, set one of these in `.env`:
+By default, `DASHBOARD_AUTH_TOKEN` is empty and dashboard API auth is disabled.
+For any multi-user or networked deployment, set a Bearer token in `.env`:
 
 ```bash
-# Bearer token auth (recommended for programmatic access)
 DASHBOARD_AUTH_TOKEN=$(openssl rand -hex 32)
-
-# OR: Basic password auth (for browser use)
-DASHBOARD_PASSWORD=<strong-passphrase>
 ```
 
 Then restart the dashboard: `docker compose up -d dashboard`.

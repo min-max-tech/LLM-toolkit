@@ -2,7 +2,6 @@
 from __future__ import annotations
 
 import asyncio
-import base64
 import json
 import logging
 import os
@@ -10,6 +9,7 @@ import subprocess
 import threading
 import time
 import urllib.request
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 # Lock for shared mutable state accessed from both async handlers and background threads
@@ -22,17 +22,25 @@ logger = logging.getLogger(__name__)
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-import httpx
 from httpx import AsyncClient
 from pydantic import BaseModel
 
-app = FastAPI(title="AI-toolkit Dashboard", version="1.0.0")
-
-# Dashboard auth (login/password or bearer token)
+# Dashboard auth (optional bearer token only)
 DASHBOARD_AUTH_TOKEN = os.environ.get("DASHBOARD_AUTH_TOKEN", "").strip()
-DASHBOARD_LOGIN_ID = os.environ.get("DASHBOARD_LOGIN_ID", "").strip()
-DASHBOARD_PASSWORD = os.environ.get("DASHBOARD_PASSWORD", "").strip()
-_AUTH_REQUIRED = bool(DASHBOARD_AUTH_TOKEN or DASHBOARD_PASSWORD)
+_AUTH_REQUIRED = bool(DASHBOARD_AUTH_TOKEN)
+
+
+@asynccontextmanager
+async def _lifespan(_app: FastAPI):
+    if not _AUTH_REQUIRED:
+        logger.warning(
+            "Dashboard is running WITHOUT authentication. "
+            "Set DASHBOARD_AUTH_TOKEN in .env to require Bearer auth on /api/*."
+        )
+    yield
+
+
+app = FastAPI(title="AI-toolkit Dashboard", version="1.0.0", lifespan=_lifespan)
 
 
 def _verify_auth(request: Request) -> bool:
@@ -40,21 +48,10 @@ def _verify_auth(request: Request) -> bool:
     if not _AUTH_REQUIRED:
         return True
     auth = request.headers.get("Authorization", "")
-    if not auth:
+    if not auth.startswith("Bearer "):
         return False
-    if DASHBOARD_AUTH_TOKEN and auth.startswith("Bearer "):
-        token = auth[7:].strip()
-        return token == DASHBOARD_AUTH_TOKEN
-    if DASHBOARD_PASSWORD and auth.startswith("Basic "):
-        try:
-            decoded = base64.b64decode(auth[6:].strip()).decode()
-            username, password = decoded.split(":", 1)
-            password_ok = password == DASHBOARD_PASSWORD
-            login_ok = (not DASHBOARD_LOGIN_ID) or (username == DASHBOARD_LOGIN_ID)
-            return password_ok and login_ok
-        except Exception:
-            return False
-    return False
+    token = auth[7:].strip()
+    return token == DASHBOARD_AUTH_TOKEN
 
 
 @app.middleware("http")
@@ -88,22 +85,8 @@ async def auth_middleware(request: Request, call_next):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing X-Throughput-Token"})
         return await call_next(request)
     if _AUTH_REQUIRED and not _verify_auth(request):
-        if DASHBOARD_PASSWORD:
-            return JSONResponse(
-                status_code=401,
-                content={"detail": "Authentication required"},
-                headers={"WWW-Authenticate": "Basic realm=Dashboard"},
-            )
         return JSONResponse(status_code=401, content={"detail": "Bearer token required"})
     return await call_next(request)
-
-@app.on_event("startup")
-async def _startup_warnings():
-    if not _AUTH_REQUIRED:
-        logger.warning(
-            "Dashboard is running WITHOUT authentication. "
-            "Set DASHBOARD_LOGIN_ID + DASHBOARD_PASSWORD (or DASHBOARD_AUTH_TOKEN) in .env to secure it."
-        )
 
 
 OLLAMA_URL = os.environ.get("OLLAMA_URL", "http://ollama:11434")
@@ -111,6 +94,9 @@ MODEL_GATEWAY_URL = os.environ.get("MODEL_GATEWAY_URL", "http://model-gateway:11
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
 OPENCLAW_CONFIG_PATH = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/openclaw-config/openclaw.json"))
 OPENCLAW_GATEWAY_PORT = os.environ.get("OPENCLAW_GATEWAY_PORT", "6680")
+# Host port (OPENCLAW_GATEWAY_PORT) maps to a fixed container port in docker-compose (6680 by default).
+# Dashboard probes openclaw-gateway by Docker DNS — must use the container listen port, not the host port.
+OPENCLAW_GATEWAY_INTERNAL_PORT = os.environ.get("OPENCLAW_GATEWAY_INTERNAL_PORT", "6680")
 OPENCLAW_UI_PORT = os.environ.get("OPENCLAW_UI_PORT", "6682")
 OPENCLAW_GATEWAY_TOKEN = os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
 MODELS_DIR = Path(os.environ.get("MODELS_DIR", "/models"))
@@ -367,8 +353,8 @@ def _run_comfyui_pull_subprocess(packs: str | None = None):
 
 def _run_comfyui_pull(packs: str | None = None):
     """Pull ComfyUI models via Manager API; falls back to subprocess if ComfyUI is unreachable."""
-    import uuid
     import json as _json
+    import uuid
 
     global _comfyui_status
     with _state_lock:
@@ -721,10 +707,14 @@ SERVICES = [
      "hint": "ComfyUI uses auto-detected compute (NVIDIA/AMD/Intel/CPU). Run ./compose up -d. Pull LTX-2 via dashboard."},
     {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
      "hint": "Check: docker compose logs n8n"},
-    {"id": "openclaw", "name": "OpenClaw", "port": int(OPENCLAW_UI_PORT),
-     "url": f"http://localhost:{OPENCLAW_UI_PORT}/?token={OPENCLAW_GATEWAY_TOKEN}" if OPENCLAW_GATEWAY_TOKEN else f"http://localhost:{OPENCLAW_UI_PORT}",
-     "check": f"http://openclaw-gateway:{OPENCLAW_GATEWAY_PORT}/",
-     "hint": f"Open Control UI on port {OPENCLAW_UI_PORT}. Token: {OPENCLAW_GATEWAY_TOKEN or '(not set)'}. Check: docker compose logs openclaw-gateway"},
+    # Control UI HTML is served on the gateway port (6680), not the browser-bridge port (6682 host → CDP helper).
+    {"id": "openclaw", "name": "OpenClaw", "port": int(OPENCLAW_GATEWAY_PORT),
+     "url": f"http://localhost:{OPENCLAW_GATEWAY_PORT}/?token={OPENCLAW_GATEWAY_TOKEN}" if OPENCLAW_GATEWAY_TOKEN else f"http://localhost:{OPENCLAW_GATEWAY_PORT}",
+     "check": f"http://openclaw-gateway:{OPENCLAW_GATEWAY_INTERNAL_PORT}/",
+     "hint": (
+         f"Control UI: port {OPENCLAW_GATEWAY_PORT} with ?token=. "
+         f"Not :{OPENCLAW_UI_PORT} (browser/CDP bridge). Logs: docker compose logs openclaw-gateway"
+     )},
     {"id": "qdrant", "name": "Qdrant", "port": 6333, "url": "http://localhost:6333",
      "check": "http://qdrant:6333/readyz",
      "hint": "Vector DB for RAG. Drop files in data/rag-input/ (with --profile rag) or upload via Open WebUI Documents tab."},
@@ -1000,11 +990,7 @@ async def auth_config():
     """Return auth config for frontend. No auth required."""
     if not _AUTH_REQUIRED:
         return {"auth_required": False, "auth_type": None}
-    return {
-        "auth_required": True,
-        "auth_type": "bearer" if DASHBOARD_AUTH_TOKEN else "basic",
-        "login_id_required": bool(DASHBOARD_LOGIN_ID),
-    }
+    return {"auth_required": True, "auth_type": "bearer"}
 
 
 @app.get("/api/health")

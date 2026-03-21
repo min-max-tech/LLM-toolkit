@@ -41,6 +41,9 @@ jobs:
       - name: Install dependencies
         run: pip install -r tests/requirements.txt
 
+      - name: Ruff lint
+        run: python -m ruff check dashboard tests model-gateway ops-controller rag-ingestion scripts
+
       - name: Create minimal .env for compose tests
         run: |
           echo "BASE_PATH=." > .env
