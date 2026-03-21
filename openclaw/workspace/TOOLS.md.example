@@ -1,5 +1,3 @@
-<!-- Copy to TOOLS.md and customize for your environment -->
-
 # TOOLS.md
 
 Environment-specific notes for this AI-toolkit install.
@@ -11,17 +9,29 @@ Environment-specific notes for this AI-toolkit install.
 | **Model Gateway** | `http://model-gateway:11435/v1` | All LLM calls (OpenAI-compatible) |
 | **Ollama** | `http://ollama:11434` | Direct Ollama API (prefer gateway) |
 | **MCP Gateway** | `http://mcp-gateway:8811/mcp` | MCP tools (search, fetch, GitHub, etc.) |
-| **Dashboard** | `http://localhost:8080` | Manage models, services, MCP tools |
+| **Dashboard** | `http://dashboard:8080` (inside container) / `http://localhost:8080` (host browser) | Manage models, services, MCP tools |
 | **Qdrant** | `http://qdrant:6333` | Vector DB (RAG documents) |
 
 ## MCP tools
 
-Check what's active: `data/mcp/servers.txt` or the dashboard MCP tab.
+Check what's active: **`workspace/data/mcp/servers.txt`** inside the OpenClaw container (path may vary; use `exec find ... -name servers.txt` if unsure) or the **dashboard → MCP** tab. Do not assume `/home/node/.openclaw/data/mcp/` exists.
+
+**Web search:** Prefer **`gateway__call`** with **`duckduckgo__search`** for lookups. The native OpenClaw **`web_search`** tool may require a **Brave API key** — if you see `missing_brave_api_key`, use DuckDuckGo via the gateway instead of repeating `web_search`.
 
 **Typical setup (all via MCP gateway):**
 - `n8n` — workflow automation. Set `N8N_API_KEY` in `.env` for full access.
-- `playwright` — preferred browser tool (navigate, screenshot, click, fill forms).
-- `comfyui` — image/audio/video generation via ComfyUI. For advanced management (queue, workflows, outputs), call the ComfyUI HTTP API directly at `http://comfyui:8188` using fetch.
+- `playwright` — browser screenshots, page navigation, snapshots. **Call via `gateway__call` only** (not as a separate top-level tool).
+  - Navigate: `gateway__call` → `{tool: "playwright__browser_navigate", args: {url: "http://dashboard:8080", targetUrl: "http://dashboard:8080"}}`
+  - Screenshot: `gateway__call` → `{tool: "playwright__browser_screenshot", args: {targetUrl: "http://dashboard:8080"}}`
+  - Snapshot: `gateway__call` → `{tool: "playwright__browser_snapshot", args: {targetUrl: "http://dashboard:8080"}}`
+  - **Use Docker service names** (`dashboard:8080`, `comfyui:8188`) not localhost or host-only IPs from inside the container.
+  - **If the error mentions `gateway__playwright__...` or `Tool not found` for Playwright:** that is an **OpenClaw bridge ↔ mcp-gateway naming mismatch**, not a wrong underscore in your JSON. **Do not retry the same call in a loop.** Tell the user; optionally fetch **HTML only** via `exec` + `wget` to `http://dashboard:8080` (not a visual screenshot).
+  - **NEVER substitute a ComfyUI render for a dashboard screenshot.** If browser tools fail, say so.
+  - **Timeouts:** Playwright runs on the **`gateway`** MCP server (not `comfyui`). `openclaw-mcp-bridge` uses per-server `requestTimeoutMs` — **`gateway` is set to 180000 ms (3 min)** in `openclaw.json` so navigate/snapshot/screenshot can exceed the default 30s. If a very heavy page still times out, raise `plugins.entries["openclaw-mcp-bridge"].config.servers.gateway.requestTimeoutMs` and restart `openclaw-gateway`.
+- `duckduckgo` — text web search (returns snippets/URLs, cannot render pages or take screenshots).
+  - `gateway__call` → `{tool: "duckduckgo__search", args: {query: "..."}}`
+- `comfyui` — image/audio/video generation. Use `comfyui__call` with tool names. For ComfyUI HTTP API (`/queue`, `/history`, etc.) use `exec` + `wget` — **NOT** `gateway__call`/fetch (private IP blocked).
+  - **Long runs:** `openclaw-mcp-bridge` defaults to **30s** per MCP request unless raised in `openclaw.json` (`requestTimeoutMs` on the `comfyui` server — repo default **600000** ms). The **comfyui-mcp** image also polls ComfyUI for up to **`COMFY_MCP_MAX_WAIT_SEC`** (default **600**). If you still see timeouts, increase both and rebuild `comfyui-mcp` / restart `openclaw-gateway`.
 - `fetch` — parse any URL into readable text.
 - `github-official` — needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env`
 
