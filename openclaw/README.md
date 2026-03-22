@@ -59,20 +59,29 @@ If you use **`overrides/openclaw-secure.yml`**, the mapped gateway port is typic
 
 ## Workspace Files
 
-The agent reads these files at session start:
+Layering (see templates in `openclaw/workspace/`). **In git:** only `*.md.example` templates (plus `agents/*.md` and `health_check.sh`) are tracked; personalized top-level `SOUL.md`, `AGENTS.md`, etc. are listed in `.gitignore` — your working copies live under `data/openclaw/workspace/` or are created locally from the examples.
 
-| File        | Purpose                                                |
-|-------------|--------------------------------------------------------|
-| `SOUL.md`   | Agent identity, tone, and boundaries                    |
-| `AGENTS.md` | Session rules, memory system, safety guidelines        |
-| `TOOLS.md`  | Your environment-specific notes (SSH, cameras, TTS, etc.) |
+| File | Purpose |
+|------|---------|
+| `SOUL.md` | Identity, tone, boundaries — minimal operational detail |
+| `USER.md` | Operator profile and preferences (optional; from `USER.md.example`) |
+| `IDENTITY.md` | Optional display name / avatar notes (from `IDENTITY.md.example`) |
+| `AGENTS.md` | Operating policy: startup order, when to use tools, failure and memory rules, safety |
+| `TOOLS.md` | **Environment contract:** URLs, MCP invocation, ComfyUI/dashboard runbooks, failure modes |
+| `MEMORY.md` | Curated long-term notes (main session) |
+| `HEARTBEAT.md` | Optional operator checklist (from `HEARTBEAT.md.example`) |
+| `memory/` | Dated episodic notes (`YYYY-MM-DD.md`) |
 
-Templates live in `openclaw/workspace/*.example`. On first setup, `ensure_openclaw_workspace.ps1` copies them to `data/openclaw/workspace/` (as `AGENTS.md`, `SOUL.md`, `TOOLS.md`). Edit them in `data/openclaw/workspace/`—they persist in your data folder. The originals in `openclaw/workspace/` are gitignored so you can keep personalized copies there for sync (`docker compose up openclaw-workspace-sync`).
+Sub-agents read **AGENTS.md** and **TOOLS.md**, not `SOUL.md` — keep critical rules there or in TOOLS.
+
+**Seeding:** `ensure_openclaw_workspace.ps1` copies missing files from `openclaw/workspace/` (or `*.example`) into `data/openclaw/workspace/`.
+
+**Docker sync (`openclaw-workspace-sync`):** For each workspace `*.md`, copies from the repo **only if the file does not already exist** in `data/openclaw/workspace/` (so local edits persist). **`health_check.sh`** and **`agents/`** are still refreshed from the repo on every sync. To pick up a new upstream template for a given markdown file, remove that file from `data/openclaw/workspace/` once, then restart the stack (or re-run the sync service).
 
 ## Data Paths
 
 - **Config:** `data/openclaw/` (openclaw.json, agents, etc.)
-- **Workspace:** `data/openclaw/workspace/` (SOUL.md, AGENTS.md, TOOLS.md, MEMORY.md, `memory/`)
+- **Workspace:** `data/openclaw/workspace/` (files above, plus `memory/`)
 
 ## Discord (default channel)
 
@@ -121,6 +130,8 @@ Then set `OPENCLAW_IMAGE=openclaw:local` in `.env` and point `OPENCLAW_CONFIG_DI
 
 ## Docs
 
+- [OPENCLAW_SECURE.md](OPENCLAW_SECURE.md) — trust model, channel env vars, backups
+- [docs/runbooks/SECURITY_HARDENING.md](../docs/runbooks/SECURITY_HARDENING.md) — §11 `openclaw.json` / SecretRefs
 - [OpenClaw Docker Guide](https://docs.openclaw.ai/install/docker)
 - [Setup](https://docs.openclaw.ai/setup)
 - [Agent Workspace](https://docs.openclaw.ai/concepts/agent-workspace)

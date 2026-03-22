@@ -1,0 +1,10 @@
+<!-- Copy to IDENTITY.md — optional display name / avatar notes separate from SOUL.md -->
+
+# IDENTITY.md
+
+Optional: stable **display name**, avatar hints, or public-facing persona notes.
+
+- **Display name:** _(e.g. Primus)_
+- **Avatar / visual notes:** _(optional)_
+
+Keep **values and boundaries** in `SOUL.md`; keep **operator-specific prefs** in `USER.md`.

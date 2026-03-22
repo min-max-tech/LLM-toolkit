@@ -1,0 +1,21 @@
+<!-- Copy to USER.md — who you are helping and how they like to work -->
+
+# USER.md
+
+## About the operator
+
+- **Name / handle:** _(optional)_
+- **Context:** _(e.g. homelab, work project, research)_
+
+## Preferences
+
+- **Communication:** _(e.g. terse vs. verbose, step-by-step vs. summaries)_
+- **Priorities:** _(e.g. reliability over speed, privacy, cost)_
+
+## Standing constraints
+
+- _(Things the agent should always respect — schedules, tools to avoid, compliance notes)_
+
+## What “good” looks like
+
+- _(Examples of outcomes or style you want)_

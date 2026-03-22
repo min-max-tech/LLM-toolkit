@@ -151,7 +151,7 @@ Section 10 defines what “very strong” means for this repo, the **missing con
 | **Config sync** | `openclaw-config-sync` runs `merge_gateway_config.py` before gateway start; adds gateway provider if missing | `docker-compose.yml` |
 | **Auth** | Gateway token via `OPENCLAW_GATEWAY_TOKEN` in `.env`; gateway auth mode `token` | `.env`, `openclaw.json` |
 | **Service ID header** | `headers.X-Service-Name: openclaw` → dashboard shows "openclaw" in throughput | `openclaw.json` |
-| **Workspace sync** | Copies `SOUL.md`, `AGENTS.md`, `TOOLS.md` from `openclaw/workspace/` to `data/openclaw/workspace/` on startup | `docker-compose.yml` |
+| **Workspace sync** | Seeds workspace `*.md` from `openclaw/workspace/` into `data/openclaw/workspace/` when missing; always refreshes `health_check.sh` and `agents/` | `docker-compose.yml` |
 
 ---
 

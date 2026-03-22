@@ -1,4 +1,4 @@
-# Copies workspace templates (SOUL.md, AGENTS.md, TOOLS.md) to data/openclaw/workspace
+# Copies workspace templates to data/openclaw/workspace when missing
 # if they don't already exist. Uses *.example as source (gitignored originals stay local).
 # Run after ensure_dirs.ps1.
 $ErrorActionPreference = "Stop"
@@ -7,7 +7,7 @@ $data = if ($env:DATA_PATH) { $env:DATA_PATH -replace '\\', '/' } else { Join-Pa
 $workspace = Join-Path $data "openclaw\workspace"
 $templates = Join-Path $base "openclaw\workspace"
 
-$files = @("SOUL.md", "AGENTS.md", "TOOLS.md")
+$files = @("SOUL.md", "AGENTS.md", "TOOLS.md", "MEMORY.md", "USER.md", "IDENTITY.md", "HEARTBEAT.md")
 foreach ($f in $files) {
     $dst = Join-Path $workspace $f
     if (-not (Test-Path $dst)) {

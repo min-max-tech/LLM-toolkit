@@ -19,10 +19,8 @@ openclaw*.log
 __pycache__
 *.pyc
 
-# OpenClaw personalized workspace (copy from *.example)
-openclaw/workspace/AGENTS.md
-openclaw/workspace/SOUL.md
-openclaw/workspace/TOOLS.md
+# OpenClaw workspace: ignore personalized top-level *.md (templates use *.md.example and are tracked)
+openclaw/workspace/*.md
 openclaw/OPENCLAW_SECURE.md
 
 # Local dev (personal notes, full troubleshooting)

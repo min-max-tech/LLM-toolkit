@@ -12,3 +12,5 @@ All notable changes to this project are documented here. The format is loosely b
 ### Changed
 
 - **Documentation:** `SECURITY_HARDENING.md` §11 and `.env.example` describe channel SecretRef behavior and Telegram env wiring.
+- **OpenClaw docs:** `openclaw/README.md`, `openclaw/OPENCLAW_SECURE.md`, and `openclaw/OPENCLAW_SECURE.md.example` updated for Discord/Telegram `.env` + `merge_gateway_config.py` SecretRef flow.
+- **OpenClaw workspace:** Layered `SOUL.md` / `AGENTS.md` / `TOOLS.md` (policy vs environment contract); expanded `TOOLS.md` runbook; optional `USER.md.example`, `IDENTITY.md.example`, `HEARTBEAT.md.example`; `MEMORY.md` guidance; `openclaw-workspace-sync` now copies workspace `*.md` **only when missing** in `data/` (still refreshes `health_check.sh` and `agents/`); `ensure_openclaw_workspace.ps1` seeds the additional files.

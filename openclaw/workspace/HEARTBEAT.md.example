@@ -1,0 +1,11 @@
+<!-- Copy to HEARTBEAT.md — optional periodic operator checklist (not a duplicate of dashboard doctor) -->
+
+# HEARTBEAT.md
+
+Lightweight checks when you want a **fresh snapshot** of the stack (e.g. after upgrades). Details and commands live in **`TOOLS.md`**.
+
+- [ ] Dashboard `GET /api/health` — any service `"ok": false`?
+- [ ] Model Gateway `GET /v1/models` — expected models listed?
+- [ ] MCP — `servers.txt` / dashboard MCP tab matches what you expect?
+- [ ] OpenClaw — Control UI on **6680** (not 6682); gateway token in `.env`?
+- [ ] Update the **Last verified** block at the top of **`TOOLS.md`** when done.

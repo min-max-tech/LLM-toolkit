@@ -160,7 +160,7 @@ All data is stored under `BASE_PATH` via bind mounts — no Docker named volumes
 | `data/comfyui-workflows` | API-format workflows for MCP (`list_workflows` / `run_workflow`), OpenClaw (`/comfyui-workflows`), and ComfyUI UI sidebar under **Workflow → mcp-api** |
 | `data/n8n-data` | Workflows |
 | `data/n8n-files` | Shared files |
-| `data/openclaw` | OpenClaw config + workspace (SOUL.md, AGENTS.md, TOOLS.md) |
+| `data/openclaw` | OpenClaw config + workspace (SOUL/AGENTS/TOOLS + optional USER, MEMORY, etc.) |
 | `models/comfyui/` | LTX-2 models (downloaded on demand) |
 
 ## MCP (Model Context Protocol)

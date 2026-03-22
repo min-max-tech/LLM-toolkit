@@ -25,7 +25,7 @@ wget -q -O - --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" \
 ### Step 2 — Read before diagnosing
 
 Read the relevant source files before proposing a cause. Never diagnose from memory alone. Key files to check:
-- For model errors: `AGENTS.md` (ComfyUI MCP: Error Recovery section)
+- For ComfyUI / MCP tool errors: `TOOLS.md` (§D ComfyUI error recovery, §C MCP invocation)
 - For service errors: `docker-compose.yml` (env vars, volumes, depends_on)
 - For Python errors: the actual `.py` file at the line number in the traceback
 

@@ -2,48 +2,203 @@
 
 # TOOLS.md
 
-Environment-specific notes for this AI-toolkit install.
+Environment contract and runbook for this AI-toolkit OpenClaw install. **Keep this file accurate** when URLs, tools, or services change.
 
-## Services
+## Last verified (manual)
 
-| Service | URL (internal) | Purpose |
-|---------|---------------|---------|
-| **Model Gateway** | `http://model-gateway:11435/v1` | All LLM calls (OpenAI-compatible) |
-| **Ollama** | `http://ollama:11434` | Direct Ollama API (prefer gateway) |
-| **MCP Gateway** | `http://mcp-gateway:8811/mcp` | MCP tools (search, fetch, GitHub, etc.) |
-| **OpenClaw gateway (Control UI)** | `http://openclaw-gateway:6680` (from host: `http://localhost:6680/?token=…`) | Web UI and gateway WebSocket — **not** `:6682` (that is the browser/CDP bridge only) |
-| **Dashboard** | `http://dashboard:8080` (from host: `http://localhost:8080`) | Manage models, services, MCP tools |
-| **Qdrant** | `http://qdrant:6333` | Vector DB (RAG documents) |
+_Update when you change the stack — helps spot stale agent context._
 
-## MCP tools
-
-Check what's active: `data/mcp/servers.txt` or the dashboard MCP tab.
-
-**Typical setup (all via MCP gateway):**
-- `n8n` — workflow automation. Set `N8N_API_KEY` in `.env` for full access.
-- `playwright` — preferred browser tool (navigate, screenshot, click, fill forms).
-- `comfyui` — image/audio/video generation via ComfyUI. For advanced management (queue, workflows, outputs), call the ComfyUI HTTP API directly at `http://comfyui:8188` using fetch.
-- `fetch` — parse any URL into readable text.
-- `github-official` — needs `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env`
-
-To add a tool: dashboard → MCP tab → add from catalog or paste a Hub URL.
-
-## Models
-
-Primary model: **qwen3.5-uncensored:27b** (`gateway/ollama/qwen3.5-uncensored:27b`)
-- 128K context window, balanced speed and reasoning
-- Good for: general questions, research, agentic tasks, coding
-
-Other models (switch via config.patch or model selector):
-- `gateway/ollama/deepseek-r1:7b` — explicit chain-of-thought reasoning
-- `gateway/ollama/deepseek-coder:6.7b` — code-focused fine-tune
-
-## RAG (documents)
-
-Drop files into `data/rag-input/` to auto-embed (requires `--profile rag`).
-Or upload directly via Open WebUI → Documents tab.
-Qdrant collection: `documents` (check at `http://localhost:6333/dashboard`).
+- **Date:** _(YYYY-MM-DD)_
+- **Notable models / MCP servers:** _(short note or “see model-gateway / servers.txt”)_
 
 ---
 
-*Add your specifics below: SSH hosts, device names, camera streams, etc.*
+## A. Stable entrypoints
+
+| Entry | URL | Notes |
+|-------|-----|--------|
+| **Model Gateway** | `http://model-gateway:11435/v1` | All normal LLM calls (OpenAI-compatible). Prefer `gateway/…` model IDs from OpenClaw. |
+| **Ollama (direct)** | `http://ollama:11434` | **Diagnosis only** — prefer Model Gateway for routine use. |
+| **MCP Gateway** | `http://mcp-gateway:8811/mcp` | All shared MCP tools. **Do not** probe with plain `curl`/`wget` GET — MCP expects SSE/POST; use `gateway__call` / `comfyui__call`. |
+| **OpenClaw Control UI** | `http://openclaw-gateway:6680` (host: `http://localhost:6680/?token=…`) | Web UI + gateway WebSocket. **`:6682` is browser/CDP bridge only** — not the Control UI. |
+| **Dashboard** | `http://dashboard:8080` (host: `http://localhost:8080`) | Models, services, MCP registry. Use **service hostname** from inside containers, not `localhost`. |
+| **ComfyUI HTTP** | `http://comfyui:8188` | Direct API for queues, stats, advanced workflows — see §ComfyUI. |
+| **Qdrant** | `http://qdrant:6333` | Vector DB (RAG). |
+
+Active MCP servers: `data/mcp/servers.txt` (in the gateway: often under `workspace/data/mcp/servers.txt`) or Dashboard → MCP.
+
+---
+
+## B. Per-service contracts
+
+### Model Gateway
+
+- **Primary path:** `POST/GET … http://model-gateway:11435/v1` (OpenAI-style).
+- **Use for:** All default LLM traffic from OpenClaw when using `gateway/…` models.
+- **Health:** `GET /v1/models` returns model list; gateway syncs from Ollama.
+- **Fallback:** None inside the prompt layer — report failure. For operator diagnosis only, try direct Ollama.
+- **Do not:** Hardcode a “primary model” in markdown — set defaults in OpenClaw UI / `openclaw.json`.
+
+### MCP Gateway
+
+- **Primary path:** tools via **`gateway__call`** and **`comfyui__call`** only (see §C).
+- **Use for:** Browser, search, fetch, GitHub, n8n, ComfyUI MCP tools, etc.
+- **Health:** Tool enumeration through OpenClaw; dashboard MCP health.
+- **Fallback:** Direct service HTTP **only** where documented below (ComfyUI, dashboard APIs).
+- **Do not:** Invent top-level tool names like `comfyui__generate_image` or `gateway__playwright__…` — they are not registered.
+
+### OpenClaw Control UI (6680 vs 6682)
+
+- **6680:** Control UI and gateway (correct URL for humans).
+- **6682:** Internal browser/CDP bridge — **not** the main UI.
+
+### Dashboard
+
+- **`$DASHBOARD_URL`** in the gateway is typically `http://dashboard:8080`.
+- **`/api/health`:** unauthenticated; JSON with top-level `"ok"` and `"services"` array (`id`, `ok`, `error`).
+- **Protected routes:** if `DASHBOARD_AUTH_TOKEN` is set, send `Authorization: Bearer <token>` on `/api/*` (except health as documented in your build).
+
+### ComfyUI
+
+- **MCP path:** `comfyui__call` / `gateway__call` with `comfyui__…` tools (see §C).
+- **Direct HTTP:** `http://comfyui:8188` — queues, `/system_stats`, `/prompt`, `/view`, etc. Use **`exec` + `wget`/`curl`** — `fetch_content` to private IPs is often blocked.
+- **Workflow files:** API-format JSON under **`/comfyui-workflows/<id>.json`** in the gateway (host: `data/comfyui-workflows/`). After changes, `list_workflows` must show the id; else **`docker compose restart comfyui-mcp`**.
+
+### RAG (Qdrant)
+
+- Ingest: `data/rag-input/` with `--profile rag`, or Open WebUI Documents.
+- Collection name: typically `documents` — confirm in compose / env.
+
+---
+
+## C. MCP invocation (`gateway__call`, `comfyui__call`)
+
+All tools are reached through the MCP gateway. Add/remove servers via Dashboard MCP tab.
+
+**Proxy tools:** OpenClaw exposes **`gateway__call`** and **`comfyui__call`** as the ComfyUI/MCP entry points. There is **no** separate top-level tool named `comfyui__generate_image` / `comfyui__list_workflows` / `gateway__comfyui__list_workflows` — those names **fail** with “Tool not found”. Reference: [comfyui-mcp-server](https://github.com/joenorton/comfyui-mcp-server).
+
+**JSON shape (OpenClaw validation):** For both wrappers, put **`tool` at the top level** next to **`args`**. Do **not** nest `tool` inside `args`.
+
+- **`gateway__call`** — Top-level **`tool`** = server-prefixed name (double underscore): e.g. `playwright__browser_navigate`, `duckduckgo__search`, `comfyui__list_models`, `n8n__workflow_list`. **`args`** = only the target tool’s parameters.  
+  **Wrong:** `{"args": {"tool": "playwright__browser_navigate", …}}` without top-level `tool`.  
+  **Wrong:** single-underscore names like `playwright_navigate`.
+
+- **`comfyui__call`** — Top-level **`tool`** has **no** `comfyui__` prefix: `list_models`, `set_defaults`, `generate_image`, `view_image`, `get_job`, `list_assets`, `list_workflows`, `run_workflow`, etc.
+
+**`comfyui__call` args (Pydantic):**
+
+- **`run_workflow`:** `args` **must** include **`workflow_id`** (filename stem under `/comfyui-workflows/`). Put prompt/size/seed in **`overrides`**.
+- **`generate_image`:** `args` **must** include non-empty **`prompt`**.
+- **`list_workflows` / `list_models`:** `args` may be `{}`.
+
+**Prefer MCP over raw `POST /prompt`:** Raw graphs from shell often fail (`no_prompt`, `bad_linked_input`, etc.). Use **`generate_image`** or **`run_workflow`** so comfyui-mcp builds a valid graph.
+
+**Workflow volume:** Only files on the **comfyui-mcp** workflow volume count. Gateway path **`/comfyui-workflows/`** — not random `workspace/.../workflows/`. **API-format JSON** (keys `"1"`, `"2"`, …), not visual-only exports.
+
+**Canvas vs MCP:** `run_workflow` runs **on-disk API JSON**; the ComfyUI browser canvas may still show an unrelated or empty graph until a file is opened from **Workflow → mcp-api**.
+
+**`get_job` / cache:** If history shows **`execution_cached`** and empty **`outputs`**, vary **`seed`** or **`filename_prefix`**. Do not claim outputs until **`get_job`** shows filenames.
+
+**Screenshots:** Only via `gateway__call` with `playwright__…` — there is no `gateway__playwright__…` top-level tool. Native OpenClaw browser tool may fail if no browser is installed in the gateway image.
+
+**Fetch / GitHub / search:**
+
+- **Fetch:** `gateway__call` with `tool: "fetch__fetch_content"` (or the actual fetch tool name from the gateway).
+- **GitHub:** `gateway__call` with `tool: "github__…"`. Needs `GITHUB_PERSONAL_ACCESS_TOKEN`.
+- **Web search:** `gateway__call` with `tool: "duckduckgo__search"`. **Wrong:** `gateway__duckduckgo__search`. Native `web_search` may need `BRAVE_API_KEY`.
+
+**`read` tool:** File paths only — not directories (EISDIR). List dirs with `exec ls` first.
+
+**Docker:** The OpenClaw gateway container typically **cannot** run `docker` / `docker compose`. Use **dashboard APIs** for model downloads (see §Dashboard model API).
+
+---
+
+## D. ComfyUI error recovery (operator runbook)
+
+1. **Diagnose:** `clip input is invalid: None` / incomplete metadata → corrupted checkpoint. `model not found` → not downloaded. `LATENT mismatch` / bad nodes → stop hand-building JSON; use `generate_image` / `run_workflow`.
+2. **`list_models`** via `comfyui__call`.
+3. **Re-pull (example, flux-schnell):** use dashboard download API (§Dashboard model API) with HF URL for `flux1-schnell-fp8.safetensors` when appropriate.
+4. **Poll** download status; cap waits (e.g. ~10 min polling) and then report to the user.
+5. **`set_defaults`** then **`generate_image`** again.
+6. **Video (LTX):** use `run_workflow` with the packaged LTX workflow id — do not use `SaveImage` pipelines for MP4. Verify output with **`get_job`** before claiming success.
+
+**Blog + ComfyUI asset pipeline:** See `blog/ai-toolkit/blog-post-generator-agent-comfyui.md` and related templates under `blog/ai-toolkit/` for figure generation conventions.
+
+---
+
+## E. ComfyUI HTTP reference (direct)
+
+Use **`exec`** with `wget` or `curl` (not `fetch_content` to `comfyui:8188` if policy blocks private IPs).
+
+- `GET /queue` — pending/running  
+- `POST /queue` — cancel (`{"delete": [prompt_id]}` or `{"clear": true}`)  
+- `GET /history`, `GET /history/{prompt_id}`  
+- `GET /system_stats`  
+- `GET /object_info`  
+- `POST /prompt` — `{"prompt": {…}}` (advanced)  
+- `GET /models/{type}`  
+- `GET /view?filename=…&type=output`  
+- `POST /upload/image`  
+
+---
+
+## F. Dashboard model API (from gateway `exec`)
+
+- **Base:** `$DASHBOARD_URL` = `http://dashboard:8080` (never `localhost:8080` from inside the gateway).
+- **Auth:** Bearer `$DASHBOARD_AUTH_TOKEN` when set.
+
+Examples (wget):
+
+```bash
+wget -q -O - --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" "$DASHBOARD_URL/api/health"
+wget -q -O - --post-data='{"url":"…","category":"checkpoints","filename":"…"}' \
+  --header='Content-Type: application/json' \
+  --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" \
+  "$DASHBOARD_URL/api/models/download"
+wget -q -O - --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" "$DASHBOARD_URL/api/models/download/status"
+```
+
+**FLUX.1-dev (gated):** use pack pull API — see dashboard docs / `docker-ops` agent. **Do not** use `ltx-2.3-22b` checkpoint as a fallback for **image** generation.
+
+**Service restart (when permitted):** e.g. `wget -q -O - --post-data='' --header='Authorization: Bearer '"$DASHBOARD_AUTH_TOKEN" "$DASHBOARD_URL/api/ops/services/<name>/restart"`
+
+---
+
+## G. Session hygiene (optional)
+
+_Not required every message — useful after stack changes or at session start._
+
+1. **Dashboard health:** `GET $DASHBOARD_URL/api/health` (with Bearer if required). If any service has `"ok": false`, mention it to the user.  
+2. **Model list:** `GET http://model-gateway:11435/v1/models` — you may summarize available IDs for the operator or update the “Last verified” section above.  
+3. **ComfyUI image checkpoints:** `comfyui__call` `list_models` before promising image generation.  
+
+---
+
+## H. Known failure modes
+
+| Symptom | Likely cause | What to do |
+|--------|----------------|------------|
+| `Tool not found` for `comfyui__generate_image` | Wrong tool name | Use **`comfyui__call`** with top-level `tool: "generate_image"` or **`gateway__call`** with `tool: "comfyui__generate_image"`. |
+| `must have required property 'tool'` | `tool` nested in `args` | Top-level `tool` + `args`. |
+| MCP GET / `Accept` errors | Raw HTTP to MCP URL | Use `gateway__call`, not curl GET to `/mcp`. |
+| `401` on dashboard | Missing Bearer | Set `DASHBOARD_AUTH_TOKEN` in `.env` and pass header. |
+| Connection refused | Service down | Health check; restart via dashboard / docker-ops protocols. |
+| No `gateway/…` models in OpenClaw | Gateway provider / sync | Check `openclaw.json` gateway provider; `merge_gateway_config.py` / dashboard. |
+| ComfyUI `Workflow not found` | Wrong path / not rescanned | Files under **`/comfyui-workflows/`**; restart **comfyui-mcp**; `list_workflows`. |
+| Playwright / snapshot errors | Missing `targetUrl` | Pass full `targetUrl` as required by runtime. |
+| DuckDuckGo missing | Server disabled | Ensure `duckduckgo` in `servers.txt`. |
+
+---
+
+## I. Advanced / operator-only — `config.patch`
+
+**Warning:** Persistent config changes from chat are risky on shared or untrusted-input surfaces. Use **only** when the operator explicitly requested a config merge.
+
+- **`config.patch`:** partial JSON merge. Pass **`raw`** as a JSON **string** of the fragment, e.g. `{"agents":{"defaults":{"model":{"primary":"gateway/ollama/qwen3:8b"}}}}`. Without `raw` → “missing raw parameter”.
+- **`restart`:** may be disabled in config; fallback: dashboard or `docker compose restart openclaw-gateway`.
+
+---
+
+## J. Local overrides
+
+_Add SSH hosts, device names, camera URLs, org-specific endpoints below._
