@@ -1,6 +1,8 @@
 #!/usr/bin/env python3
 """Merge gateway provider into openclaw.json. Fetches models from model-gateway (Ollama).
-Injects OPENCLAW_GATEWAY_TOKEN from env when set."""
+Injects OPENCLAW_GATEWAY_TOKEN from env when set.
+When DISCORD_TOKEN / DISCORD_BOT_TOKEN or TELEGRAM_BOT_TOKEN is set in the environment,
+rewrites channel secrets to OpenClaw SecretRef form so tokens are not stored plaintext in JSON."""
 from __future__ import annotations
 
 import json
@@ -41,6 +43,40 @@ _ctx_raw = os.environ.get("OLLAMA_NUM_CTX", "16384").strip()
 OLLAMA_NUM_CTX = int(_ctx_raw) if _ctx_raw.isdigit() and int(_ctx_raw) > 0 else 16384
 
 
+def _secret_ref(env_id: str) -> dict:
+    return {"source": "env", "id": env_id}
+
+
+def _inject_channel_secret_refs(data: dict) -> bool:
+    """If env provides Discord/Telegram tokens, set channels.* to env-backed SecretRef."""
+    modified = False
+    channels = data.setdefault("channels", {})
+    if not isinstance(channels, dict):
+        return False
+
+    discord_env = (
+        os.environ.get("DISCORD_TOKEN", "").strip()
+        or os.environ.get("DISCORD_BOT_TOKEN", "").strip()
+    )
+    if discord_env:
+        cd = channels.setdefault("discord", {})
+        if isinstance(cd, dict):
+            ref = _secret_ref("DISCORD_BOT_TOKEN")
+            if cd.get("token") != ref:
+                cd["token"] = ref
+                modified = True
+
+    if os.environ.get("TELEGRAM_BOT_TOKEN", "").strip():
+        ct = channels.setdefault("telegram", {})
+        if isinstance(ct, dict):
+            ref = _secret_ref("TELEGRAM_BOT_TOKEN")
+            if ct.get("botToken") != ref:
+                ct["botToken"] = ref
+                modified = True
+
+    return modified
+
+
 def _fetch_models_from_gateway() -> list[dict] | None:
     """Fetch /v1/models from model-gateway. Returns list of model dicts for OpenClaw, or None on failure."""
     try:
@@ -73,7 +109,6 @@ def _fetch_models_from_gateway() -> list[dict] | None:
         # Vision/embed heuristic
         lower_id = mid.lower()
         has_vision = "vision" in lower_id or "llava" in lower_id or "puppy" in lower_id
-        is_embed = "embed" in lower_id
         is_reasoning = (
             "r1" in lower_id or "reasoning" in lower_id
             or "qwen3" in lower_id  # Qwen3 family has built-in thinking mode
@@ -91,7 +126,7 @@ def _fetch_models_from_gateway() -> list[dict] | None:
 
 
 def main() -> int:
-    config_path = Path("/config/openclaw.json")
+    config_path = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/config/openclaw.json"))
     if not config_path.exists():
         return 0  # No config yet; ensure_dirs or first run will create it
 
@@ -104,6 +139,9 @@ def main() -> int:
     providers = data.setdefault("models", {}).setdefault("providers", {})
     modified = False
     msg = ""
+    did_channel_refs = _inject_channel_secret_refs(data)
+    if did_channel_refs:
+        modified = True
 
     # Strip baseUrl/apiKey from model objects (OpenClaw 2026.2.x rejects them per-model)
     for pv in providers.values() if isinstance(providers, dict) else []:
@@ -202,7 +240,13 @@ def main() -> int:
         return 0
     try:
         config_path.write_text(json.dumps(data, indent=2), encoding="utf-8")
-        print(f"merge_gateway_config: {msg} in openclaw.json")
+        summary_parts: list[str] = []
+        if did_channel_refs:
+            summary_parts.append("channel SecretRefs from env")
+        if msg:
+            summary_parts.append(msg)
+        summary = "; ".join(summary_parts) if summary_parts else "updated"
+        print(f"merge_gateway_config: {summary} in openclaw.json")
     except OSError as e:
         print(f"merge_gateway_config: write failed: {e}", file=sys.stderr)
         return 1
@@ -234,7 +278,7 @@ def main() -> int:
                 "key": api_key,
             }
             auth_path.write_text(json.dumps({"version": 1, "profiles": profiles}, indent=2), encoding="utf-8")
-            print(f"merge_gateway_config: wrote auth-profiles.json for default agent")
+            print("merge_gateway_config: wrote auth-profiles.json for default agent")
     except OSError as e:
         print(f"merge_gateway_config: auth-profiles.json write skipped: {e}", file=sys.stderr)
 

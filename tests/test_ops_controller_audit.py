@@ -64,3 +64,34 @@ def test_audit_schema_correlation_id():
         lines = audit_path.read_text().strip().splitlines()
         entry = json.loads(lines[0])
         assert entry["correlation_id"] == "req-abc123"
+
+
+def test_audit_log_rotates_when_over_max_bytes():
+    """_maybe_rotate_audit_log renames audit.log to audit.log.1 when over AUDIT_LOG_MAX_BYTES."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        audit_path = Path(tmp) / "audit.log"
+        audit_path.write_text("x" * 500)
+        oc.AUDIT_LOG_PATH = audit_path
+        oc.AUDIT_LOG_MAX_BYTES = 100
+        oc._maybe_rotate_audit_log()
+        assert not audit_path.exists()
+        rotated = Path(tmp) / "audit.log.1"
+        assert rotated.exists()
+        assert rotated.stat().st_size == 500
+
+
+def test_audit_after_rotation_writes_fresh_file():
+    """After rotation, _audit appends to a new audit.log."""
+
+    with tempfile.TemporaryDirectory() as tmp:
+        audit_path = Path(tmp) / "audit.log"
+        audit_path.write_text("x" * 200)
+        oc.AUDIT_LOG_PATH = audit_path
+        oc.AUDIT_LOG_MAX_BYTES = 100
+        oc._maybe_rotate_audit_log()
+        oc._audit("ping", "test", "ok", "")
+        assert audit_path.exists()
+        lines = audit_path.read_text().strip().splitlines()
+        assert len(lines) == 1
+        assert json.loads(lines[0])["action"] == "ping"

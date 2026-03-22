@@ -86,6 +86,23 @@ docker compose build model-gateway dashboard
 docker compose up -d model-gateway dashboard
 ```
 
+After pulling changes that touch the dashboard UI (RAG section, Dependencies registry, throughput, etc.), **rebuild the dashboard image** so the container serves updated static assets — otherwise you may still see an old UI while APIs are new.
+
+### RAG profile (Qdrant + rag-ingestion)
+
+If you use document RAG in Open WebUI:
+
+```bash
+docker compose --profile rag up -d
+```
+
+Ensure the embedding model (default `nomic-embed-text`) is pulled. Ingestion watches `data/rag-input/` (under `DATA_PATH` when set). See [GETTING_STARTED.md](../GETTING_STARTED.md#rag-documents-in-chat).
+
+### Health / diagnostics (M7)
+
+- **`./scripts/doctor.sh`** or **`.\scripts\doctor.ps1`** — probes dashboard, model-gateway, optional Ollama/MCP on localhost, and validates `openclaw.json` when present.
+- Model-gateway **`GET /ready`** — inference readiness (HTTP 503 when not ready).
+
 ### OpenClaw
 
 ```bash

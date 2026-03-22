@@ -70,7 +70,7 @@ Section 10 defines what “very strong” means for this repo, the **missing con
 
 ## SECTION 1 — Current State (Grounded)
 
-*Last verified: 2026-03-04 against `model-gateway/main.py`, `ops-controller/main.py`, `dashboard/app.py`, `docker-compose.yml`, `rag-ingestion/`, `tests/`.* **2026-03-22:** Section 10 / M7 reliability requirements added (not yet implemented).
+*Last verified: 2026-03-04 against `model-gateway/main.py`, `ops-controller/main.py`, `dashboard/app.py`, `docker-compose.yml`, `rag-ingestion/`, `tests/`.* **2026-03-22:** Section 10 / M7 reliability requirements added. **2026-03-22 (update):** Core M7 spine shipped — dependency registry, `/api/dependencies`, model-gateway `/health` + `/ready`, `doctor` + `validate_openclaw_config.py`, CI checks; extended Section 10 items (circuit breakers, golden traces, etc.) remain future work.
 
 ### 1.1 Architecture Diagram (Current)
 
@@ -599,7 +599,7 @@ Fields:
 **Secret handling end-to-end:**
 - `.env` — gitignored, host-only, not committed ✓
 - `mcp/.env` — gitignored, host-only; mount as Docker secret via compose `secrets:` block
-- `data/openclaw/openclaw.json` — gitignored; contains Telegram token, skill API key, gateway auth token. **Recommendation:** Move sensitive values to `.env` and reference via compose `env_file:`. The `merge_gateway_config.py` can inject from env.
+- `data/openclaw/openclaw.json` — gitignored; may list skill keys; gateway and Discord/Telegram tokens should be supplied via `.env` (`merge_gateway_config.py` injects gateway token and channel SecretRefs when env vars are set).
 - Gateway tokens — in `.env`, set via compose `environment:` ✓
 - **Secret rotation:** Update `.env`, `docker compose up -d --force-recreate <service>`. Document in `BACKUP_RESTORE.md`.
 
@@ -665,8 +665,8 @@ SSRF scripts live at `scripts/ssrf-egress-block.sh` (Linux/WSL2) and `scripts/ss
 
 **Planned (M6):**
 - Add `nomic-embed-text` to `model-puller` default model list
-- Document RAG setup in `GETTING_STARTED.md`
-- Add `test_rag_ingestion.py` contract test
+- ~~Document RAG setup in `GETTING_STARTED.md`~~ — done (2026-03-22)
+- ~~Add `test_rag_ingestion.py` contract test (ingestion service)~~ — unit tests in `tests/test_rag_ingestion_unit.py` (`_chunk`, `_file_key`); dashboard `GET /api/rag/status` in `tests/test_rag_status.py`
 
 **Network assignment (current):**
 
@@ -740,8 +740,8 @@ LLM-toolkit/
 | **M4** | ✅ Done | Explicit Docker networks (frontend/backend); correlation IDs (X-Request-ID → audit); vLLM compose profile; smoke tests |
 | **M5** | ✅ Done | Dashboard MCP health dots (green/yellow/red); SSRF egress scripts; hardware stats; throughput benchmark; default-model management |
 | **M5-ext** | ✅ Done | RAG pipeline (Qdrant + rag-ingestion); Open WebUI → Qdrant; RAG status endpoint; Responses API + completions compat; cache-bust endpoint; openclaw-cli profile |
-| **M6** | 🔲 Planned | `WEBUI_AUTH` default → True; mcp-gateway backend-only; CI pipeline; MCP per-client policy; audit log rotation; openclaw.json token externalization |
-| **M7** | 🔲 Planned | **Reliability spine** (Section 10): dependency registry + typed readiness; L1–L3 health; timeouts/retry policy; model-gateway fallbacks + warmup/streaming/schema hardening; MCP circuit breakers + schema validation + execution classes; browser session lifecycle; golden trace + failure taxonomy + SLO-style reporting; stack “doctor” / config validation |
+| **M6** | 🟨 Partial (no auth) | **Done / in repo:** mcp-gateway backend-only; CI (`.github/workflows/ci.yml`); audit log rotation (`AUDIT_LOG_MAX_BYTES`); OpenClaw gateway + Discord/Telegram channel tokens via env SecretRef (`merge_gateway_config.py`). **Deferred:** MCP per-client / `X-Client-ID` (upstream). **Skipped unless re-scoped:** `WEBUI_AUTH` default → True (explicit product choice). **Open:** skill/plugin API keys in JSON where upstream has no SecretRef |
+| **M7** | 🟨 Core done | **Reliability spine (core shipped):** dependency registry + `GET /api/dependencies`; model-gateway `/health` + `/ready`; dashboard probes UI; `doctor` / `validate_openclaw_config.py`; CI fixture validation. **Remaining (Section 10):** L3 semantics everywhere, retry/circuit policies, MCP hardening, golden traces, browser session lifecycle — see §10.12 |
 
 ---
 
@@ -856,18 +856,24 @@ Security/audit checklist for M3:
 
 ---
 
-### M6 — Planned
+### M6 — Partial (non-auth track)
 
-**Priority items:**
+**Shipped in repo (this milestone track):**
+
+| Item | Notes |
+|------|--------|
+| mcp-gateway → backend only | Default compose; use `overrides/mcp-expose.yml` for host access |
+| CI pipeline | `.github/workflows/ci.yml` |
+| Audit log rotation | `ops-controller`: `AUDIT_LOG_MAX_BYTES` (default 10MB) |
+| Channel token externalization | `merge_gateway_config.py`: `OPENCLAW_GATEWAY_TOKEN`; Discord/Telegram via SecretRef when `.env` has `DISCORD_TOKEN` / `TELEGRAM_BOT_TOKEN` |
+
+**Still open / deferred:**
 
 | Item | Rationale | Effort |
 |------|-----------|--------|
-| `WEBUI_AUTH` default → `True` | Security: Open WebUI currently ships open | XS — 1-line compose change + UPGRADE.md note |
-| mcp-gateway → backend network only | Reduce attack surface; internal services don't need host port | S |
-| CI pipeline (GitHub Actions) | Run compose smoke tests + contract tests on push | M |
-| Audit log rotation | `data/ops-controller/audit.log` grows unbounded; add in-process rotation at 10MB | S |
-| MCP per-client policy enforcement | `allow_clients` currently metadata-only; needs Docker MCP Gateway `X-Client-ID` support | L (external dep) |
-| openclaw.json token externalization | Move Telegram token + skill API keys from JSON to `.env` via `merge_gateway_config.py` | M |
+| `WEBUI_AUTH` default → `True` | Security: Open WebUI ships open by default | XS — skipped unless product opts in |
+| MCP per-client policy enforcement | `allow_clients` metadata; needs upstream `X-Client-ID` | L (external dep) |
+| Skill API keys in `openclaw.json` | Per-plugin; use upstream SecretRef where available | M |
 | RBAC (read-only role) | View logs/health without start/stop access | L |
 
 ### M7 — Reliability spine (planned — see Section 10)
@@ -996,15 +1002,15 @@ docker inspect $(docker compose ps -q model-gateway) --format '{{.HostConfig.Cap
 | 1 | **Ops-controller docker GID:** `user: "1000:<gid>"` value for ops-controller/mcp-gateway depends on host docker GID | ✅ Resolved — ops-controller runs without explicit user (docker.sock access via root-equiv); acceptable since no host port |
 | 2 | **Open WebUI `OPENAI_API_BASE`:** Does `open-webui:v0.8.4` support this env? | ✅ Resolved — uses `OPENAI_API_BASE_URL`; working in compose |
 | 3 | **MCP gateway policy:** Does Docker MCP Gateway support `X-Client-ID` header for per-client allowlist enforcement? | 🔲 Open — not yet; per-client policy deferred to M6 |
-| 4 | **openclaw.json token externalization:** Can `merge_gateway_config.py` inject tokens from env? | 🔲 Open — planned for M6 |
+| 4 | **openclaw.json token externalization:** Can `merge_gateway_config.py` inject tokens from env? | ✅ Resolved for gateway auth + Discord/Telegram (SecretRef); skill keys depend on upstream |
 | 5 | **Ollama host port:** Remove to reduce attack surface? | ✅ Resolved — Ollama is backend-only by default; `overrides/ollama-expose.yml` for Cursor/CLI |
-| 6 | **Audit log rotation:** `audit.log` grows unbounded | 🔲 Open — in-process rotation at 10MB planned for M6 |
+| 6 | **Audit log rotation:** `audit.log` grows unbounded | ✅ Resolved — size-based rotation in ops-controller (`AUDIT_LOG_MAX_BYTES`) |
 | 7 | **vLLM timing** | ✅ Resolved — `overrides/vllm.yml` with `--profile vllm`; available now |
 | 8 | **ComfyUI non-root** | 🔲 Open — `yanwk/comfyui-boot:cpu` runs as root; image limitation; acceptable for now |
-| 9 | **Smoke test in CI** | 🔲 Open — no CI pipeline yet; M6 item |
+| 9 | **Smoke test in CI** | ✅ Resolved — see `.github/workflows/ci.yml` |
 | 10 | **N8N LLM node** | 🔲 Open — use OpenAI-compat node with `baseURL: http://model-gateway:11435/v1`; needs example workflow doc |
 | 11 | **RAG embed model pull** | 🔲 Open — `nomic-embed-text` must be pulled before `rag-ingestion` can embed; add to model-puller default list or document in GETTING_STARTED |
-| 12 | **Reliability spine (M7):** dependency registry schema, `/ready` vs `/health` split, circuit-breaker semantics | 🔲 Open — requirements in Section 10; APIs TBD |
+| 12 | **Reliability spine (M7):** dependency registry schema, `/ready` vs `/health` split, circuit-breaker semantics | 🟨 Partial — registry + `/health`/`/ready` + doctor/validation shipped; circuit breakers / full L3 semantics remain in §10 |
 
 ---
 
@@ -1021,7 +1027,7 @@ separate credential-holding processes from action-taking processes.
 │  ORCHESTRATOR TIER                                              │
 │  openclaw-gateway                                               │
 │  • Holds all session credentials (CLAUDE_*_SESSION_KEY, etc.)  │
-│  • Holds openclaw.json (Telegram token, skill API keys)         │
+│  • Holds openclaw.json (gateway auth; channel tokens via SecretRef + .env when configured) │
 │  • Directs tool calls and model calls                           │
 │  • Trusts tool outputs structurally, not verbatim               │
 └──────────────────────────────┬──────────────────────────────────┘

@@ -550,6 +550,7 @@ services:
       OPENCLAW_SKIP_SERVICE_CHECK: "true"
       OPENCLAW_GATEWAY_BIND: "lan"
       DISCORD_BOT_TOKEN: ${DISCORD_TOKEN:-}
+      TELEGRAM_BOT_TOKEN: ${TELEGRAM_BOT_TOKEN:-}
       # For agent to download ComfyUI models via dashboard API (Option B)
       DASHBOARD_URL: http://dashboard:8080
       DASHBOARD_AUTH_TOKEN: ${DASHBOARD_AUTH_TOKEN:-}
@@ -675,8 +676,10 @@ services:
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/rag-input:/watch
     depends_on:
-      - model-gateway
-      - qdrant
+      model-gateway:
+        condition: service_healthy
+      qdrant:
+        condition: service_healthy
     logging:
       driver: json-file
       options:

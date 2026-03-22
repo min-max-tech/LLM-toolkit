@@ -1139,6 +1139,7 @@
         <nav class="nav-anchors" aria-label="Page sections">
           <a href="#services-section">⚡ Services</a>
           <a href="#dependencies-section">🔗 Dependencies</a>
+          <a href="#rag-section">📚 RAG</a>
           <a href="#throughput-section">📊 Throughput</a>
           <a href="#models-section">📦 Models</a>
         </nav>
@@ -1250,6 +1251,14 @@
       <p class="section-desc">Canonical registry (M7): live HTTP probes from this dashboard. URLs use Docker DNS names as seen from the dashboard container; use <code>scripts/doctor</code> from the host for localhost ports.</p>
       <div class="deps-wrap" id="dependencies-wrap">
         <div class="skeleton skeleton-line" style="height:120px;width:100%;"></div>
+      </div>
+    </section>
+
+    <section id="rag-section">
+      <h2>RAG</h2>
+      <p class="section-desc">Qdrant collection used by Open WebUI and <code>rag-ingestion</code> (<code>--profile rag</code>). Drop files under <code>data/rag-input/</code>. Pull <strong>nomic-embed-text</strong> (or your <code>EMBED_MODEL</code>) before ingesting.</p>
+      <div class="throughput-panel" id="rag-status-wrap">
+        <div class="skeleton skeleton-line" style="height:48px;width:100%;max-width:520px;"></div>
       </div>
     </section>
 
@@ -1784,6 +1793,25 @@
       if (ms == null || ms === '') return '—';
       const n = Number(ms);
       return Number.isFinite(n) ? `${n.toFixed(1)}ms` : '—';
+    }
+
+    async function loadRagStatus() {
+      const wrap = document.getElementById('rag-status-wrap');
+      if (!wrap) return;
+      try {
+        const r = await api('/api/rag/status');
+        const d = await r.json();
+        if (d.ok) {
+          const pc = d.points_count != null ? d.points_count : '—';
+          const st = d.status != null ? d.status : '—';
+          const col = escapeHtml(d.collection || 'documents');
+          wrap.innerHTML = `<p class="subsection-desc" style="margin:0;"><strong>Collection</strong> <code>${col}</code> · <strong>Points</strong> ${escapeHtml(String(pc))} · <strong>Status</strong> ${escapeHtml(String(st))}</p>`;
+        } else {
+          wrap.innerHTML = '<p class="subsection-desc" style="margin:0;color:var(--muted);">Qdrant unreachable or RAG not running. Start with <code>docker compose --profile rag up -d</code> and ensure Qdrant is healthy.</p>';
+        }
+      } catch (e) {
+        wrap.innerHTML = '<p class="subsection-desc" style="margin:0;color:var(--danger);">Could not load RAG status.</p>';
+      }
     }
 
     async function loadDependencies() {
@@ -2604,7 +2632,7 @@
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
       if (!ollamaLibrary.length) await loadOllamaLibrary();
-      await Promise.all([loadServices(), loadDependencies(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers(), loadOpenclawModels()]);
+      await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers(), loadOpenclawModels()]);
       loadThroughputStats();
       loadThroughputServiceUsage();
       btn.classList.remove('loading');

@@ -28,7 +28,7 @@ We will acknowledge receipt and aim to respond within a reasonable timeframe.
 
 - **Open WebUI:** The default `WEBUI_AUTH=False` disables login. This is intended for **local/single-user** use only. If you expose the stack to a network (e.g., via port forwarding or LAN access), **enable authentication** by setting `WEBUI_AUTH=True` in the environment.
 - **OpenClaw:** Requires `OPENCLAW_GATEWAY_TOKEN`. Generate with `openssl rand -hex 32` and keep it secret.
-- **n8n:** No built-in auth by default. Consider n8n's security options if exposed.
+- **n8n:** No built-in auth by default. If port **5678** is reachable from others (LAN, port-forward, Tailscale), enable n8n authentication (Basic Auth or full user management in n8n settings) or restrict access with a firewall / reverse proxy. Prefer not exposing n8n to the public internet without TLS and auth.
 
 ### Network Binding
 
@@ -40,6 +40,7 @@ Services bind to `0.0.0.0` to allow access from other machines on your network. 
 - Use `.env.example` as a template; copy to `.env` and fill in values locally.
 - API keys (OpenAI, Anthropic, etc.) and tokens should only live in `.env` files, never in the repository.
 - **Never commit** `data/` — it is gitignored and contains user-specific config (OpenClaw gateway token, Discord guild/user IDs, session data, etc.). All secrets and setup-specific values belong in `data/` or `.env`, not in shared code.
+- **OpenClaw channels:** Prefer `DISCORD_TOKEN` and `TELEGRAM_BOT_TOKEN` in `.env`; `openclaw-config-sync` can rewrite channel entries to env-backed SecretRefs so bot tokens are not stored as plaintext in `openclaw.json` (see `docs/runbooks/SECURITY_HARDENING.md` §11).
 
 ### Data
 

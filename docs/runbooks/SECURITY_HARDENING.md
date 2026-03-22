@@ -213,13 +213,11 @@ To enable it safely:
 OpenClaw stores config in `data/openclaw/openclaw.json`, which may contain sensitive values in plaintext:
 
 - **Gateway auth:** `gateway.auth.token` — set `OPENCLAW_GATEWAY_TOKEN` in `.env`; `openclaw-config-sync` injects it into `openclaw.json` at startup so the token lives only in `.env` and is not committed. Rotate in `.env` and restart the stack (or openclaw-gateway).
-- **Channels:** e.g. `channels.telegram.botToken` — stored in the JSON by OpenClaw; not currently injectable from env via this stack.
-- **Skills:** e.g. `skills.entries.<name>.apiKey` — same as above.
+- **Channels (Discord / Telegram):** When `DISCORD_TOKEN` (mapped to `DISCORD_BOT_TOKEN` in the gateway container) or `TELEGRAM_BOT_TOKEN` is set in `.env`, `openclaw-config-sync` runs `merge_gateway_config.py`, which rewrites `channels.discord.token` / `channels.telegram.botToken` to OpenClaw **SecretRef** form (`{"source":"env","id":"…"}`) so the bot token is not stored as plaintext in `openclaw.json`. Ensure the same variables are available to `openclaw-gateway` (see `docker-compose.yml`).
+- **Skills:** e.g. `skills.entries.<name>.apiKey` — still typically stored in JSON unless the upstream skill supports env / SecretRef; rotate in place if exposed.
 
 **Recommendations:**
 
 - **Do not** include `data/openclaw/` in unencrypted cloud backups. If you back up `data/`, exclude `openclaw.json` or encrypt the backup.
 - **Rotate** the gateway token via `.env` and then update `openclaw.json` (or re-run OpenClaw setup) so `gateway.auth.token` matches; restart the gateway.
-- **Rotate** Telegram or other API keys in the provider’s dashboard, then update the corresponding keys in `data/openclaw/openclaw.json` and restart the OpenClaw gateway.
-
-Future improvement: if OpenClaw adds support for env vars (e.g. `OPENCLAW_TELEGRAM_BOT_TOKEN`) for these fields, the config sync or entrypoint could inject them and avoid storing secrets in the JSON file.
+- **Rotate** Discord/Telegram keys in the provider’s dashboard, update `.env`, and restart `openclaw-gateway`. For channels covered by SecretRef, you do not need to edit `openclaw.json` for the token value.

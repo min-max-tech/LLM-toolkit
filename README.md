@@ -4,7 +4,7 @@ Hey, I am Cam, I made this repo to simplify my local-LLM setup. I wanted a bunch
 
 Ollama + Open WebUI + ComfyUI + N8N in Docker. One command (`./compose up -d`), auto-detects hardware for best performance.
 
-→ [Getting started](docs/GETTING_STARTED.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture](docs/Product%20Requirements%20Document.md)
+→ [Getting started](docs/GETTING_STARTED.md) (includes **RAG** profile) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture](docs/Product%20Requirements%20Document.md)
 
 ## Services
 
@@ -83,6 +83,7 @@ The **dashboard** at [localhost:8080](http://localhost:8080) gives you a single 
 - **Restart services** — when `OPS_CONTROLLER_TOKEN` is set in `.env`
 - **Pull models** — searchable dropdown with 150+ Ollama models; or type any model name
 - **Jump to services** — Open WebUI, ComfyUI, N8N, OpenClaw, MCP Gateway
+- **RAG** — `docker compose --profile rag up -d`, drop files in `data/rag-input/`; details in [Getting started — RAG](docs/GETTING_STARTED.md#rag-documents-in-chat)
 
 **Not seeing updates?** After pulling code changes, rebuild: `.\compose.ps1 build dashboard` then `.\compose.ps1 up -d`
 

@@ -20,6 +20,7 @@ OpenClaw uses a **two-tier trust model** that mirrors Anthropic's agent safety g
                   ├── CLAUDE_WEB_SESSION_KEY
                   ├── CLAUDE_WEB_COOKIE
                   ├── OPENCLAW_GATEWAY_TOKEN
+                  ├── DISCORD_BOT_TOKEN (from root .env DISCORD_TOKEN) / TELEGRAM_BOT_TOKEN ← channel bots when configured
                   ├── /home/node/.openclaw     (read-write config + secrets)
                   └── /home/node/.openclaw/workspace (read-write)
 
@@ -32,7 +33,7 @@ OpenClaw uses a **two-tier trust model** that mirrors Anthropic's agent safety g
 
 **Core invariants:**
 1. Session credentials (`CLAUDE_*`) never appear in any browser-tier container environment.
-2. `openclaw.json` (Discord bot token, skill API keys) is never mounted in browser-tier containers.
+2. `openclaw.json` is never mounted in browser-tier containers. When `DISCORD_TOKEN` / `TELEGRAM_BOT_TOKEN` are set in the project `.env`, `openclaw-config-sync` runs `openclaw/scripts/merge_gateway_config.py` so Discord/Telegram entries use env-backed **SecretRef** in JSON instead of plaintext tokens. Skill or plugin API keys may still appear in JSON where OpenClaw requires it.
 3. Workspace is read-only in browser-tier containers.
 4. Egress from browser-tier containers is blocked to RFC1918 and cloud metadata endpoints.
 
@@ -100,7 +101,8 @@ sudo iptables -I DOCKER-USER -s "$SUBNET" -p tcp --dport 53   -j ACCEPT
 
 - Session credentials (`CLAUDE_AI_SESSION_KEY`, `CLAUDE_WEB_SESSION_KEY`, `CLAUDE_WEB_COOKIE`) are set only on `openclaw-gateway` via `.env`
 - `openclaw-cli` and any browser worker receive **only** `OPENCLAW_GATEWAY_TOKEN`
-- `data/openclaw/openclaw.json` (Discord bot token, skill API keys) is only mounted in `openclaw-gateway`
+- Channel bots: `DISCORD_BOT_TOKEN` (from root `.env` `DISCORD_TOKEN`) and optional `TELEGRAM_BOT_TOKEN` are passed to `openclaw-gateway` only; prefer SecretRefs in `openclaw.json` (applied by `merge_gateway_config.py` when those env vars are set) so tokens are not plaintext on disk
+- `data/openclaw/openclaw.json` (model routing, plugins, optional skill keys) is only mounted in `openclaw-gateway`
 - **Do not** include `data/openclaw/` in unencrypted cloud backups
 
 ### 5. Container hardening

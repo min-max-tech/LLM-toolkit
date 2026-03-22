@@ -29,6 +29,21 @@ No GPU required for chat (Ollama runs on CPU, slower but works).
 
 **OpenClaw web UI:** `http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>` (not `:6682` — that port is the browser bridge only).
 
+### RAG (documents in chat)
+
+Use local files as context in **Open WebUI** via Qdrant + the `rag-ingestion` service.
+
+1. **Pull the embedding model** (once): use the dashboard or `docker compose run --rm model-puller` so **`nomic-embed-text`** (or your `EMBED_MODEL`) is available in Ollama.
+2. **Start the RAG profile** (adds Qdrant + `rag-ingestion`):
+   ```bash
+   docker compose --profile rag up -d
+   ```
+3. **Drop documents** under `data/rag-input/` (paths come from your `DATA_PATH` / `BASE_PATH`; default is `<repo>/data/rag-input/`). Supported types include `.txt`, `.md`, `.pdf`, and common code extensions — see `rag-ingestion/ingest.py` for `SUPPORTED_EXTENSIONS`.
+4. **Open WebUI** → enable RAG for chat (vector DB is already pointed at Qdrant in compose).
+5. **Check status:** dashboard `GET /api/rag/status` or open the dashboard UI — collection name defaults to `documents` (`RAG_COLLECTION`).
+
+Env knobs (optional, in `.env`): `EMBED_MODEL`, `RAG_COLLECTION`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP` — see `.env.example` **RAG** section. The dashboard **RAG** section shows Qdrant collection point count when the stack can reach Qdrant. See the PRD **WS6: RAG Pipeline** for the full picture.
+
 ### Direct Ollama (Cursor, CLI)
 
 By default Ollama is backend-only (no host port). To expose it on the host (e.g. for Cursor or `ollama run` from your machine):

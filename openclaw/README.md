@@ -27,6 +27,7 @@ Edit `.env` and set:
 - `OPENCLAW_GATEWAY_TOKEN` — generate with `openssl rand -hex 32`
 - **Ollama** — enabled by default when using the main compose; models from `ollama` are auto-discovered
 - Optional cloud APIs: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`
+- **Discord / Telegram (optional):** set `DISCORD_TOKEN` and/or `TELEGRAM_BOT_TOKEN` in the **project root** `.env` (same file the main compose uses). On startup, `openclaw-config-sync` runs `openclaw/scripts/merge_gateway_config.py`, which rewrites channel entries in `data/openclaw/openclaw.json` to OpenClaw **SecretRef** form so bot tokens are not stored as plaintext in the JSON. See [OPENCLAW_SECURE.md](OPENCLAW_SECURE.md) §4.
 
 ### 3. Start OpenClaw
 
@@ -75,13 +76,19 @@ Templates live in `openclaw/workspace/*.example`. On first setup, `ensure_opencl
 
 ## Discord (default channel)
 
-Discord is the default client for interacting with OpenClaw. Set up via:
+Discord is the default client for interacting with OpenClaw.
+
+**Recommended (AI-toolkit compose):** put the bot token in the **repo root** `.env` as `DISCORD_TOKEN`. Compose maps it to `DISCORD_BOT_TOKEN` inside `openclaw-gateway`, and `merge_gateway_config.py` (run by `openclaw-config-sync` before the gateway starts) updates `openclaw.json` to reference that env var instead of saving the token in the file.
+
+**Alternative:** interactive login via CLI (writes config for you):
 
 ```powershell
 docker compose run --rm openclaw-cli channels login
 ```
 
 See [OpenClaw Discord docs](https://docs.openclaw.ai/channels/discord) for bot token, guild/channel restrictions, and configuration.
+
+**Telegram:** set `TELEGRAM_BOT_TOKEN` in the root `.env`; the gateway container receives it and the merge step can apply the same SecretRef pattern for `channels.telegram`. See upstream [Telegram channel docs](https://docs.openclaw.ai/channels/telegram).
 
 ## CLI Commands
 
