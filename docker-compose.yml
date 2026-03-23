@@ -472,6 +472,7 @@ services:
     command:
       - |
         set -e
+        apk add --no-cache git >/dev/null 2>&1 || true
         PLUGIN_DIR=/extensions/openclaw-mcp-bridge
         MANIFEST="$$PLUGIN_DIR/openclaw.plugin.json"
         MCP_URL="$${MCP_GATEWAY_URL:-http://mcp-gateway:8811/mcp}"
@@ -487,7 +488,6 @@ services:
           echo "Forked plugin installed."
         elif [ ! -f "$$PLUGIN_DIR/dist/index.js" ]; then
           echo "Installing openclaw-mcp-bridge npm package..."
-          apk add --no-cache git >/dev/null 2>&1 || true
           cd /tmp
           npm pack openclaw-mcp-bridge 2>/dev/null
           tar xzf openclaw-mcp-bridge-*.tgz
@@ -497,6 +497,12 @@ services:
           cd "$$PLUGIN_DIR"
           npm install --omit=dev --ignore-scripts 2>&1
           echo "Plugin package installed."
+        fi
+
+        # OpenClaw blocks world-writable extension paths (npm on Docker volume often yields 777)
+        if [ -d "$$PLUGIN_DIR" ]; then
+          chown -R 1000:1000 "$$PLUGIN_DIR" 2>/dev/null || true
+          chmod -R go-w "$$PLUGIN_DIR" 2>/dev/null || true
         fi
 
         # Create/update manifest (npm package v0.1.0 omits it)
