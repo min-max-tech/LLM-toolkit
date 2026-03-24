@@ -1,13 +1,18 @@
+```
+    ___    ____     __              ____   _ __
+   /   |  /  _/    / /_____  ____  / / /__(_) /_
+  / /| |  / /_____/ __/ __ \/ __ \/ / //_/ / __/
+ / ___ |_/ /_____/ /_/ /_/ / /_/ / / ,< / / /_  
+/_/  |_/___/     \__/\____/\____/_/_/|_/_/\__/
+
+──────────────────────────────────────────────────
+Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation (n8n), and OpenClaw — with a unified dashboard.
+```
+
 <!--
   Badges (optional): add when repo URL and CI are stable, e.g.:
   [![CI](...)](...)  [![License: MIT](https://img.shields.io/badge/License-MIT-yellow.svg)](./LICENSE)
 -->
-
-```
-██████╗ AI-toolkit
-──────────────────
-Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation (n8n), and OpenClaw — with a unified dashboard.
-```
 
 ## Overview
 
