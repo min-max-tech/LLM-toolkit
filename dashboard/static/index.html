@@ -624,6 +624,55 @@
       gap: var(--space-6);
     }
     @media (max-width: 900px) { .models-grid { grid-template-columns: 1fr; gap: var(--space-4); } }
+    .claude-env-toggle {
+      display: inline-flex;
+      align-items: center;
+      gap: var(--space-3);
+      cursor: pointer;
+      user-select: none;
+      font-size: var(--text-sm);
+      color: var(--fg);
+    }
+    .claude-env-toggle input {
+      position: absolute;
+      opacity: 0;
+      width: 0;
+      height: 0;
+      pointer-events: none;
+    }
+    .claude-env-toggle .track {
+      width: 44px;
+      height: 24px;
+      border-radius: 12px;
+      background: var(--surface);
+      border: 1px solid var(--border);
+      transition: background 0.2s, border-color 0.2s;
+      position: relative;
+      flex-shrink: 0;
+    }
+    .claude-env-toggle .track::after {
+      content: '';
+      position: absolute;
+      top: 2px;
+      left: 2px;
+      width: 18px;
+      height: 18px;
+      border-radius: 50%;
+      background: var(--fg-muted);
+      transition: transform 0.2s, background 0.2s;
+    }
+    .claude-env-toggle input:checked + .track {
+      background: var(--success-dim);
+      border-color: var(--success);
+    }
+    .claude-env-toggle input:checked + .track::after {
+      transform: translateX(20px);
+      background: var(--success);
+    }
+    .claude-env-toggle:focus-within .track {
+      outline: 2px solid var(--accent);
+      outline-offset: 2px;
+    }
     .model-panel {
       background: var(--bg-elevated);
       border-radius: var(--radius);
@@ -1443,6 +1492,18 @@
               <button id="openclaw-default-btn" class="secondary" title="Set as OpenClaw agent default">Set Default</button>
             </div>
             <div id="openclaw-default-status" style="font-size:0.8rem;color:var(--fg-muted);margin-top:var(--space-1);min-height:1.2em;"></div>
+          </div>
+        </div>
+        <div class="model-panel claude-env-panel" style="grid-column: 1 / -1;">
+          <h3>Claude Code — host CLI</h3>
+          <div class="pull-area">
+            <p class="section-desc" style="margin:0 0 var(--space-3);">Controls whether setup scripts set <code>ANTHROPIC_API_KEY</code> and <code>ANTHROPIC_BASE_URL</code> so the Claude Code CLI talks to your local Model Gateway (Ollama). Turn off to stop overriding and use Anthropic’s API with your own credentials.</p>
+            <label class="claude-env-toggle">
+              <input type="checkbox" id="claude-env-overwrite" checked aria-describedby="claude-env-hint" />
+              <span class="track" aria-hidden="true"></span>
+              <span>Local Model Gateway ANTHROPIC overrides</span>
+            </label>
+            <p id="claude-env-hint" style="font-size:0.8rem;color:var(--fg-muted);margin-top:var(--space-3);">Re-run <code>./scripts/ensure_dirs.ps1</code> or <code>./scripts/ensure_dirs.sh</code> after changing this so your user environment or shell profile picks up the change.</p>
           </div>
         </div>
       </div>
@@ -2628,11 +2689,50 @@
       }
     });
 
+    async function loadClaudeCodeEnvOverwrite() {
+      const input = document.getElementById('claude-env-overwrite');
+      if (!input) return;
+      try {
+        const d = await api('/api/claude-code/env-overwrite').then(r => r.json());
+        input.checked = d.enabled !== false;
+      } catch (_) {
+        input.checked = true;
+      }
+    }
+
+    document.getElementById('claude-env-overwrite')?.addEventListener('change', async function() {
+      const enabled = this.checked;
+      const prev = !enabled;
+      try {
+        const r = await api('/api/claude-code/env-overwrite', {
+          method: 'PUT',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ enabled }),
+        });
+        const d = await r.json().catch(() => ({}));
+        if (!r.ok) {
+          this.checked = prev;
+          const err = d.detail;
+          toast(typeof err === 'string' ? err : 'Save failed', 'error');
+          return;
+        }
+        toast(
+          enabled
+            ? 'Local ANTHROPIC overrides enabled — re-run ensure_dirs on the host to apply.'
+            : 'Local ANTHROPIC overrides disabled — re-run ensure_dirs on the host to clear or keep env.',
+          'success',
+        );
+      } catch (e) {
+        this.checked = prev;
+        toast('Failed to save: ' + (e.message || e), 'error');
+      }
+    });
+
     async function refresh() {
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
       if (!ollamaLibrary.length) await loadOllamaLibrary();
-      await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers(), loadOpenclawModels()]);
+      await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers(), loadOpenclawModels(), loadClaudeCodeEnvOverwrite()]);
       loadThroughputStats();
       loadThroughputServiceUsage();
       btn.classList.remove('loading');

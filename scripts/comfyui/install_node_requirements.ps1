@@ -22,7 +22,7 @@ if (-not (Test-Path -LiteralPath $Req)) {
 
 Push-Location $Base
 try {
-    docker compose exec comfyui pip install -r "/root/ComfyUI/custom_nodes/$Posix/requirements.txt"
+    docker compose exec comfyui python3 -m pip install -r "/root/ComfyUI/custom_nodes/$Posix/requirements.txt"
 } finally {
     Pop-Location
 }

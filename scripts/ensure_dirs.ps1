@@ -9,6 +9,7 @@ $dirs = @(
     (Join-Path $data "open-webui"),
     (Join-Path $data "comfyui-storage"),
     (Join-Path $data "comfyui-storage\ComfyUI\custom_nodes"),
+    (Join-Path $data "comfyui-storage\ComfyUI\user\__manager"),
     (Join-Path $data "comfyui-output"),
     (Join-Path $data "comfyui-workflows"),
     (Join-Path $data "comfyui-storage\ComfyUI\user\default\workflows"),
@@ -28,6 +29,14 @@ foreach ($d in $dirs) {
     Write-Host "OK $d"
 }
 
+# ComfyUI-Manager: seed security_level=weak so git/pip installs work when ComfyUI uses --listen (Docker)
+$managerSeed = Join-Path $base "config\comfyui-manager-seed.ini"
+$managerCfg = Join-Path $data "comfyui-storage\ComfyUI\user\__manager\config.ini"
+if ((Test-Path $managerSeed) -and -not (Test-Path $managerCfg)) {
+    Copy-Item $managerSeed $managerCfg -Force
+    Write-Host ('OK ' + $managerCfg + ' (ComfyUI-Manager security_level=weak)')
+}
+
 # Seed data/comfyui-workflows from repo templates (data/ is gitignored; COMFY_MCP_DEFAULT_WORKFLOW_ID defaults to generate_image)
 $wfTemplateDir = Join-Path $base "workflow-templates\comfyui-workflows"
 $wfDataDir = Join-Path $data "comfyui-workflows"
@@ -45,8 +54,8 @@ if (Test-Path $wfTemplateDir) {
 $mcpServers = Join-Path $data "mcp\servers.txt"
 $mcpRegistry = Join-Path $data "mcp\registry-custom.yaml"
 if (-not (Test-Path $mcpServers)) {
-    Set-Content -Path $mcpServers -Value "n8n,playwright,comfyui,duckduckgo" -NoNewline
-    Write-Host "OK $mcpServers (n8n,playwright,comfyui,duckduckgo)"
+    Set-Content -Path $mcpServers -Value "duckduckgo,n8n,tavily,comfyui" -NoNewline
+    Write-Host "OK $mcpServers (duckduckgo,n8n,tavily,comfyui)"
 }
 # Bootstrap custom registry for ComfyUI (gateway uses --additional-registry)
 $registryTemplate = Join-Path $base "mcp\gateway\registry-custom.yaml"
@@ -102,13 +111,35 @@ if (Test-Path $detectScript) {
     if ($LASTEXITCODE -eq 0) { Write-Host "OK Hardware detected (overrides/compute.yml)" }
 }
 
-# Configure Claude Code to route through the local model-gateway
+# Configure Claude Code to route through the local model-gateway (optional; dashboard toggle: data/dashboard/claude_code_env_overwrite.json)
+$claudeEnvJson = Join-Path $data "dashboard\claude_code_env_overwrite.json"
+$claudeEnvOverwrite = $true
+if (Test-Path $claudeEnvJson) {
+    try {
+        $j = Get-Content $claudeEnvJson -Raw | ConvertFrom-Json
+        if ($null -ne $j.PSObject.Properties["enabled"]) {
+            $claudeEnvOverwrite = [bool]$j.enabled
+        }
+    } catch { }
+}
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     $port = if ($env:MODEL_GATEWAY_PORT) { $env:MODEL_GATEWAY_PORT } else { "11435" }
-    [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "local", "User")
-    [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "http://localhost:$port", "User")
-    Write-Host "OK Claude Code configured -> http://localhost:$port (restart terminal to apply)"
-    Write-Host "   Usage: claude --model <ollama-model-name>"
+    if ($claudeEnvOverwrite) {
+        [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "local", "User")
+        [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "http://localhost:$port", "User")
+        Write-Host "OK Claude Code configured -> http://localhost:$port (restart terminal to apply)"
+        Write-Host "   Usage: claude --model <ollama-model-name>"
+    } else {
+        $curKey = [System.Environment]::GetEnvironmentVariable("ANTHROPIC_API_KEY", "User")
+        $curUrl = [System.Environment]::GetEnvironmentVariable("ANTHROPIC_BASE_URL", "User")
+        if ($curKey -eq 'local' -and $curUrl -match '^http://localhost:\d+$') {
+            [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", $null, "User")
+            [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", $null, "User")
+            Write-Host "OK Claude Code ANTHROPIC_* user overrides cleared (local routing off in dashboard). Restart terminal."
+        } else {
+            Write-Host 'Claude Code: local Model Gateway routing disabled in dashboard - skipped setting ANTHROPIC_*.'
+        }
+    }
 } else {
     Write-Host "Note: Claude Code not installed. To install:"
     Write-Host "        npm install -g @anthropic-ai/claude-code"

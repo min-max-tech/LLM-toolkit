@@ -15,6 +15,7 @@ dirs=(
   "$data/open-webui"
   "$data/comfyui-storage"
   "$data/comfyui-storage/ComfyUI/custom_nodes"
+  "$data/comfyui-storage/ComfyUI/user/__manager"
   "$data/comfyui-output"
   "$data/comfyui-workflows"
   "$data/comfyui-storage/ComfyUI/user/default/workflows"
@@ -35,6 +36,14 @@ for d in "${dirs[@]}"; do
   echo "OK $d"
 done
 
+# ComfyUI-Manager: seed security_level=weak so git/pip installs work when ComfyUI uses --listen (Docker)
+manager_seed="$base/config/comfyui-manager-seed.ini"
+manager_cfg="$data/comfyui-storage/ComfyUI/user/__manager/config.ini"
+if [[ -f "$manager_seed" ]] && [[ ! -f "$manager_cfg" ]]; then
+  cp "$manager_seed" "$manager_cfg"
+  echo "OK $manager_cfg (ComfyUI-Manager security_level=weak)"
+fi
+
 # Seed data/comfyui-workflows from repo templates (data/ is gitignored; COMFY_MCP_DEFAULT_WORKFLOW_ID defaults to generate_image)
 wf_template="$base/workflow-templates/comfyui-workflows"
 wf_data="$data/comfyui-workflows"
@@ -53,8 +62,8 @@ fi
 mcp_servers="$data/mcp/servers.txt"
 mcp_registry="$data/mcp/registry-custom.yaml"
 if [[ ! -f "$mcp_servers" ]]; then
-  echo "n8n,playwright,comfyui,duckduckgo" > "$mcp_servers"
-  echo "OK $mcp_servers (n8n,playwright,comfyui,duckduckgo)"
+  echo "duckduckgo,n8n,tavily,comfyui" > "$mcp_servers"
+  echo "OK $mcp_servers (duckduckgo,n8n,tavily,comfyui)"
 fi
 # Bootstrap custom registry for ComfyUI (gateway uses --additional-registry)
 if [[ ! -f "$mcp_registry" ]] && [[ -f "$base/mcp/gateway/registry-custom.yaml" ]]; then
@@ -120,22 +129,32 @@ if [[ -f "$base/scripts/ssrf-egress-block.sh" ]] && command -v iptables >/dev/nu
   echo "Note: After first 'docker compose up', run: sudo ./scripts/ssrf-egress-block.sh (blocks SSRF from MCP)"
 fi
 
-# Configure Claude Code to route through the local model-gateway
+# Configure Claude Code to route through the local model-gateway (optional; dashboard toggle: data/dashboard/claude_code_env_overwrite.json)
+claude_env_json="$data/dashboard/claude_code_env_overwrite.json"
+claude_env_overwrite=true
+if [[ -f "$claude_env_json" ]] && command -v python3 >/dev/null 2>&1; then
+  en=$(python3 -c "import json,sys; d=json.load(open(sys.argv[1])); print(1 if d.get('enabled',True) else 0)" "$claude_env_json" 2>/dev/null || echo 1)
+  [[ "$en" == "0" ]] && claude_env_overwrite=false
+fi
 if command -v claude >/dev/null 2>&1; then
   port="${MODEL_GATEWAY_PORT:-11435}"
-  configured=false
-  for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
-    if [[ -f "$rc" ]] && ! grep -q 'ANTHROPIC_BASE_URL' "$rc"; then
-      printf '\n# Claude Code — local model-gateway\nexport ANTHROPIC_API_KEY=local\nexport ANTHROPIC_BASE_URL=http://localhost:%s\n' "$port" >> "$rc"
-      configured=true
+  if [[ "$claude_env_overwrite" == "true" ]]; then
+    configured=false
+    for rc in "$HOME/.bashrc" "$HOME/.zshrc"; do
+      if [[ -f "$rc" ]] && ! grep -q 'ANTHROPIC_BASE_URL' "$rc"; then
+        printf '\n# Claude Code — local model-gateway\nexport ANTHROPIC_API_KEY=local\nexport ANTHROPIC_BASE_URL=http://localhost:%s\n' "$port" >> "$rc"
+        configured=true
+      fi
+    done
+    if [[ "$configured" == "true" ]]; then
+      echo "OK Claude Code configured -> http://localhost:$port (run: source ~/.bashrc)"
+    else
+      echo "OK Claude Code already configured in shell rc"
     fi
-  done
-  if [[ "$configured" == "true" ]]; then
-    echo "OK Claude Code configured -> http://localhost:$port (run: source ~/.bashrc)"
+    echo "   Usage: claude --model <ollama-model-name>"
   else
-    echo "OK Claude Code already configured in shell rc"
+    echo "Claude Code: local Model Gateway routing disabled (data/dashboard/claude_code_env_overwrite.json). Remove ANTHROPIC_* from ~/.bashrc or ~/.zshrc if you no longer want local routing."
   fi
-  echo "   Usage: claude --model <ollama-model-name>"
 else
   echo "Note: Claude Code not installed. To install:"
   echo "        npm install -g @anthropic-ai/claude-code"

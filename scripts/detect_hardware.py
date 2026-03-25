@@ -344,6 +344,7 @@ def main() -> int:
                     "CLI_ARGS": "--disable-xformers --lowvram --enable-manager",
                     "PYTORCH_CUDA_ALLOC_CONF": "expandable_segments:True,pinned_use_cuda_host_register:True",
                     "HF_TOKEN": "${HF_TOKEN:-}",
+                    "GITHUB_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN:-}",
                 },
                 "deploy": {
                     "resources": {
@@ -365,6 +366,7 @@ def main() -> int:
                 "environment": {
                     "CLI_ARGS": "--disable-xformers --lowvram --enable-manager",
                     "HF_TOKEN": "${HF_TOKEN:-}",
+                    "GITHUB_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN:-}",
                 },
                 "deploy": {"resources": {"limits": {"memory": comfyui_mem}}},
                 "devices": ["/dev/kfd", "/dev/dri"],
@@ -380,6 +382,7 @@ def main() -> int:
                 "environment": {
                     "CLI_ARGS": "--disable-xformers --lowvram --enable-manager",
                     "HF_TOKEN": "${HF_TOKEN:-}",
+                    "GITHUB_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN:-}",
                 },
                 "deploy": {"resources": {"limits": {"memory": comfyui_mem}}},
                 "devices": ["/dev/dri"],
@@ -395,6 +398,7 @@ def main() -> int:
                 "environment": {
                     "CLI_ARGS": "--cpu --enable-manager",
                     "HF_TOKEN": "${HF_TOKEN:-}",
+                    "GITHUB_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN:-}",
                 },
                 "deploy": {"resources": {"limits": {"memory": comfyui_mem}}},
             },
@@ -408,6 +412,7 @@ def main() -> int:
                 "environment": {
                     "CLI_ARGS": "--cpu --enable-manager",
                     "HF_TOKEN": "${HF_TOKEN:-}",
+                    "GITHUB_TOKEN": "${GITHUB_PERSONAL_ACCESS_TOKEN:-}",
                 },
                 "deploy": {"resources": {"limits": {"memory": comfyui_mem}}},
             },

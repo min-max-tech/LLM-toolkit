@@ -51,6 +51,8 @@ These files are **persistent** — they survive container restarts because they 
 | comfyui | `data/comfyui-output/` | `/root/ComfyUI/output/` | bind mount | Generated outputs |
 | comfyui | `data/comfyui-storage/` | `/root/` | bind mount | ComfyUI storage (base images) |
 
+**ComfyUI-Manager:** `scripts/ensure_dirs` seeds `data/comfyui-storage/ComfyUI/user/__manager/config.ini` (once) with `security_level = weak` so git installs, pip, and model/node downloads work while ComfyUI listens on all interfaces in Docker. Set `HF_TOKEN` / `GITHUB_PERSONAL_ACCESS_TOKEN` in `.env` for gated Hugging Face models and GitHub API limits. Compose passes `--enable-manager` via `CLI_ARGS`.
+
 ### Docker Socket Mounts
 
 | Service | Mount | Purpose |

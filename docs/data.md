@@ -102,7 +102,7 @@ This document describes data sources, schemas, lifecycle, and persistence rules 
 
 ```json
 {
-  "servers": ["n8n", "playwright", "comfyui"],
+  "servers": ["duckduckgo", "n8n", "tavily", "comfyui"],
   "metadata": {
     "n8n": {
       "allow_clients": ["dashboard", "openclaw"],

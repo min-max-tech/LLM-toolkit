@@ -168,6 +168,25 @@ def _inject_channel_secret_refs(data: dict) -> bool:
     return modified
 
 
+def _merge_deny_builtin_browser_unless_opt_in(data: dict) -> bool:
+    """Deny built-in `browser` (no Chrome in gateway). Use Tavily MCP + web_fetch for web. Opt-in: OPENCLAW_ALLOW_BUILTIN_BROWSER=1."""
+    if os.environ.get("OPENCLAW_ALLOW_BUILTIN_BROWSER", "").strip() == "1":
+        return False
+    tools = data.get("tools")
+    if not isinstance(tools, dict):
+        return False
+    modified = False
+    deny = tools.get("deny")
+    if not isinstance(deny, list):
+        deny = []
+        tools["deny"] = deny
+        modified = True
+    if "browser" not in deny:
+        deny.append("browser")
+        modified = True
+    return modified
+
+
 def _merge_elevated_allow_webchat(data: dict) -> bool:
     """If OPENCLAW_ELEVATED_ALLOW_WEBCHAT=1, enable tools.elevated for webchat sessions."""
     if os.environ.get("OPENCLAW_ELEVATED_ALLOW_WEBCHAT", "").strip() != "1":
@@ -451,6 +470,10 @@ def main() -> int:
                 if isinstance(search, dict) and search.get("enabled") is not False:
                     search["enabled"] = False
                     modified = True
+
+    # Built-in `browser` requires Chrome in the gateway — unavailable in default Docker. Use Tavily MCP + web_fetch instead.
+    if _merge_deny_builtin_browser_unless_opt_in(data):
+        modified = True
 
     # Opt-in: full exec + elevated in gateway container (security-sensitive). Supersedes webchat-only.
     if _merge_unrestricted_gateway_container(data):

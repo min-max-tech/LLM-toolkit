@@ -141,6 +141,26 @@ def test_merge_unrestricted_gateway_container_off(monkeypatch: pytest.MonkeyPatc
     assert mg._merge_unrestricted_gateway_container(data) is False
 
 
+def test_merge_deny_builtin_browser_default(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENCLAW_ALLOW_BUILTIN_BROWSER", raising=False)
+    data: dict = {"tools": {"web": {"search": {"enabled": False}}}}
+    assert mg._merge_deny_builtin_browser_unless_opt_in(data) is True
+    assert data["tools"]["deny"] == ["browser"]
+
+
+def test_merge_deny_builtin_browser_idempotent(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.delenv("OPENCLAW_ALLOW_BUILTIN_BROWSER", raising=False)
+    data: dict = {"tools": {"deny": ["browser"]}}
+    assert mg._merge_deny_builtin_browser_unless_opt_in(data) is False
+
+
+def test_merge_deny_builtin_browser_opt_in(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENCLAW_ALLOW_BUILTIN_BROWSER", "1")
+    data: dict = {"tools": {}}
+    assert mg._merge_deny_builtin_browser_unless_opt_in(data) is False
+    assert "deny" not in data["tools"]
+
+
 def test_merge_unrestricted_gateway_container_on(monkeypatch: pytest.MonkeyPatch) -> None:
     monkeypatch.setenv("OPENCLAW_UNRESTRICTED_GATEWAY_CONTAINER", "1")
     monkeypatch.delenv("OPENCLAW_ELEVATED_ALLOW_WEBCHAT", raising=False)

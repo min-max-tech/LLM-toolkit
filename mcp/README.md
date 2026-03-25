@@ -6,13 +6,13 @@ The [Model Context Protocol (MCP)](https://modelcontextprotocol.io/) lets AI app
 
 | Path | Role |
 |------|------|
-| **[gateway/](gateway/)** | Image entrypoint (`gateway-wrapper.sh`) and **template** `registry-custom.yaml` (ComfyUI custom catalog). `ensure_dirs` copies the registry into **`data/mcp/`**; the running gateway reads **`data/mcp/`** via the compose bind mount. |
+| **[gateway/](gateway/)** | Image entrypoint (`gateway-wrapper.sh`) and **template** `registry-custom.yaml` (DuckDuckGo + Tavily + ComfyUI overrides). `ensure_dirs` copies the registry into **`data/mcp/`**; the running gateway reads **`data/mcp/`** via the compose bind mount. |
 | **[docs/](docs/)** | MCP-specific architecture (e.g. [ComfyUI + OpenClaw](docs/comfyui-openclaw.md)). |
 | **`Dockerfile`** | Builds `ai-toolkit-mcp-gateway` from `docker/mcp-gateway` + the wrapper above. |
 
 **Runtime state** (not in git): **`data/mcp/`** — `servers.txt`, `registry-custom.yaml` (from template), generated `registry-custom.docker.yaml`, optional `registry.json` for policy metadata.
 
-**OpenClaw:** Use **one** MCP URL for every catalog server — **`plugins.entries["openclaw-mcp-bridge"].config.servers.gateway.url`** → `http://mcp-gateway:8811/mcp`. Do not add separate `servers.comfyui` / per-server URLs; the Docker MCP Gateway aggregates DuckDuckGo, n8n, Playwright, ComfyUI, etc.
+**OpenClaw:** Use **one** MCP URL for every catalog server — **`plugins.entries["openclaw-mcp-bridge"].config.servers.gateway.url`** → `http://mcp-gateway:8811/mcp`. Do not add separate `servers.comfyui` / per-server URLs; the Docker MCP Gateway aggregates DuckDuckGo, n8n, Tavily, ComfyUI, etc.
 
 ### Hardening + operating the full stack from OpenClaw
 
@@ -60,8 +60,9 @@ The scripts update the config file and the gateway reloads automatically.
 
 | Server | Purpose |
 |--------|---------|
+| `duckduckgo` | **Web search** — **`duckduckgo__search`** / **`gateway__duckduckgo__search`**. |
 | `n8n` | Workflow automation. Set `N8N_API_KEY` in `.env` for full access. |
-| `playwright` | **Preferred browser tool** — navigate, screenshot, click, fill forms. |
+| `tavily` | **[Tavily](https://app.tavily.com)** — **`tavily_search`**, **`tavily_extract`**, **`tavily_crawl`**, **`tavily_map`**, **`tavily_research`**. Requires **`TAVILY_API_KEY`** in root **`.env`** (injected into **`mcp/tavily`** via **`registry-custom.yaml`**). Image: **`mcp/tavily`** ([catalog](https://hub.docker.com/mcp/server/tavily)). |
 | `comfyui` | Image/audio/video via ComfyUI (custom registry). **`list_workflows`**, **`run_workflow`**, per-workflow tools, **`install_custom_node_requirements`**, **`restart_comfyui`**. OpenClaw + n8n parity: [**mcp/docs/comfyui-openclaw.md**](docs/comfyui-openclaw.md). Registry template: **`mcp/gateway/registry-custom.yaml`**; entrypoint: **`mcp/gateway/gateway-wrapper.sh`**. |
 
 ### Other catalog servers
@@ -148,7 +149,9 @@ If the gateway reports an unrecognized key or fails to start, remove the `mcp` b
 
 ## Secrets
 
-MCP servers like `github-official` need API keys. Use Docker secrets:
+**Tavily:** set **`TAVILY_API_KEY`** in the **repo root** **`.env`** (same file as **`OPS_CONTROLLER_TOKEN`**). Compose passes it into **`mcp-gateway`**; **`gateway-wrapper.sh`** injects it into **`registry-custom.docker.yaml`** for the **`mcp/tavily`** container. Get a key from [Tavily](https://app.tavily.com).
+
+Other MCP servers like `github-official` need API keys. Optionally use Docker secrets:
 
 1. Create `mcp/.env` with your keys (do **not** commit)
 2. Uncomment the `secrets` block in `docker-compose.yml` for `mcp-gateway`

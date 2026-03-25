@@ -60,7 +60,7 @@ After a fix is applied, verify it resolves the issue:
 ## Tool allowlist for this role
 
 - `exec` — read-only commands (grep, cat, ls, curl GET, wget GET, git log)
-- `gateway__call` with: `playwright__browser_snapshot`, `duckduckgo__search`, `fetch__fetch_content`
+- `gateway__call` with: `tavily_search`, `tavily_extract`, `duckduckgo__search`, `fetch__fetch_content`
 - `gateway__call` with inner `tool` for ComfyUI (e.g. `comfyui__list_models`, `comfyui__get_job`) — same MCP gateway as DuckDuckGo
 - Dashboard API: GET only (logs, health, services list)
 

@@ -15,7 +15,8 @@
       "Bash(done)",
       "Bash(mv /tmp/juno-move/* .)",
       "Bash(curl -s http://localhost:8188/object_info)",
-      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''\\\\n''''.join\\(sorted\\(d.keys\\(\\)\\)[:50]\\)\\)\")"
+      "Bash(python3 -c \"import json,sys; d=json.load\\(sys.stdin\\); print\\(''''\\\\n''''.join\\(sorted\\(d.keys\\(\\)\\)[:50]\\)\\)\")",
+      "WebSearch"
     ]
   }
 }

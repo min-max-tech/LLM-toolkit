@@ -464,7 +464,10 @@ def _comfyui_pip_install_sync(node_path: str) -> dict:
     except Exception as e:
         return {"ok": False, "http_status": 503, "detail": f"Docker: {e}"}
     try:
-        er = container.exec_run(["pip", "install", "-r", req_container], demux=False)
+        er = container.exec_run(
+            ["python3", "-m", "pip", "install", "-r", req_container],
+            demux=False,
+        )
         exit_code = getattr(er, "exit_code", None)
         output = getattr(er, "output", b"")
         if exit_code is None and isinstance(er, tuple):
@@ -654,15 +657,23 @@ async def models_download_status(_: None = Depends(verify_token)):
         return dict(_dl_status)
 
 
-def _run_model_pull(pack: str, correlation_id: str = "") -> None:
-    """Run comfyui-model-puller via docker compose. Uses the same logic as manual pull (works for gated models)."""
+def _run_model_pull(packs_csv: str, correlation_id: str = "") -> None:
+    """Run comfyui-model-puller via docker compose. COMFYUI_PACKS may be comma-separated (e.g. ltx-2.3-t2v-basic,ltx-2.3-extras)."""
     with _pull_lock:
-        _pull_status.update({"running": True, "output": f"Starting pack: {pack}", "done": False, "success": None, "pack": pack})
+        _pull_status.update(
+            {
+                "running": True,
+                "output": f"Starting packs: {packs_csv}",
+                "done": False,
+                "success": None,
+                "pack": packs_csv,
+            }
+        )
     compose_files = [f.strip() for f in COMPOSE_FILE_ENV.split(";") if f.strip()]
     cmd = ["docker-compose"]
     for cf in compose_files:
         cmd += ["-f", f"/workspace/{cf}"]
-    cmd += ["--profile", "comfyui-models", "run", "--rm", "-e", f"COMFYUI_PACKS={pack}", "comfyui-model-puller"]
+    cmd += ["--profile", "comfyui-models", "run", "--rm", "-e", f"COMFYUI_PACKS={packs_csv}", "comfyui-model-puller"]
     env = {**os.environ, "BASE_PATH": BASE_PATH, "DATA_PATH": os.environ.get("DATA_PATH", BASE_PATH + "/data")}
     try:
         proc = subprocess.Popen(
@@ -680,7 +691,7 @@ def _run_model_pull(pack: str, correlation_id: str = "") -> None:
                 _pull_status["output"] = "\n".join(output_lines[-20:])
         proc.wait()
         ok = proc.returncode == 0
-        _audit("model_pull", pack, "ok" if ok else "error", f"exit={proc.returncode}", correlation_id=correlation_id)
+        _audit("model_pull", packs_csv, "ok" if ok else "error", f"exit={proc.returncode}", correlation_id=correlation_id)
         with _pull_lock:
             _pull_status["success"] = ok
             _pull_status["output"] = "\n".join(output_lines[-30:])
@@ -688,7 +699,7 @@ def _run_model_pull(pack: str, correlation_id: str = "") -> None:
                 _pull_status["output"] += f"\nExit code: {proc.returncode}"
     except Exception as e:
         logger.error("Model pull failed: %s", e)
-        _audit("model_pull", pack, "error", str(e)[:200], correlation_id=correlation_id)
+        _audit("model_pull", packs_csv, "error", str(e)[:200], correlation_id=correlation_id)
         with _pull_lock:
             _pull_status["success"] = False
             _pull_status["output"] += f"\nError: {e}"
@@ -715,15 +726,41 @@ def _valid_packs() -> set[str]:
     return {"flux1-dev", "flux-schnell", "sd15", "sd35-medium", "sdxl"}
 
 
+@app.get("/models/packs")
+async def models_packs(_: None = Depends(verify_token)):
+    """List ComfyUI model pack IDs and descriptions from scripts/comfyui/models.json."""
+    path = Path("/workspace/scripts/comfyui/models.json")
+    if not path.exists():
+        raise HTTPException(status_code=404, detail="models.json not found in workspace")
+    try:
+        data = json.loads(path.read_text())
+    except json.JSONDecodeError as e:
+        raise HTTPException(status_code=500, detail=f"Invalid models.json: {e}") from e
+    packs_out: dict = {}
+    for pid, p in data.get("packs", {}).items():
+        if not isinstance(p, dict):
+            continue
+        packs_out[pid] = {
+            "description": p.get("description", ""),
+            "model_count": len(p.get("models", [])),
+        }
+    return {"ok": True, "packs": packs_out}
+
+
 @app.post("/models/pull")
 async def models_pull(body: ModelPullRequest, request: Request, _: None = Depends(verify_token)):
-    """Run comfyui-model-puller for a pack (e.g. flux1-dev). Works for gated models. Auth required."""
-    pack = body.pack.strip().lower()
-    if not pack:
-        raise HTTPException(status_code=400, detail="pack is required")
+    """Run comfyui-model-puller for one or more comma-separated packs (e.g. ltx-2.3-t2v-basic,ltx-2.3-extras). Auth required."""
+    parts = [p.strip().lower() for p in (body.pack or "").split(",") if p.strip()]
+    if not parts:
+        raise HTTPException(status_code=400, detail="pack is required (comma-separated names allowed)")
     valid = _valid_packs()
-    if pack not in valid:
-        raise HTTPException(status_code=400, detail=f"Unknown pack. Valid: {', '.join(sorted(valid))}")
+    unknown = [p for p in parts if p not in valid]
+    if unknown:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Unknown pack(s): {unknown}. Valid: {', '.join(sorted(valid))}",
+        )
+    packs_csv = ",".join(parts)
     if not body.confirm:
         raise HTTPException(status_code=400, detail="Set confirm: true to execute")
     with _pull_lock:
@@ -731,11 +768,11 @@ async def models_pull(body: ModelPullRequest, request: Request, _: None = Depend
             raise HTTPException(status_code=409, detail="A pull is already in progress")
     thread = threading.Thread(
         target=_run_model_pull,
-        args=(pack, _correlation_id(request)),
+        args=(packs_csv, _correlation_id(request)),
         daemon=True,
     )
     thread.start()
-    return {"status": "started", "pack": pack}
+    return {"status": "started", "pack": packs_csv}
 
 
 @app.get("/models/pull/status")

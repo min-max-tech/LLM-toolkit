@@ -1,5 +1,11 @@
 {
   "servers": {
+    "duckduckgo": {
+      "image": "mcp/duckduckgo",
+      "scopes": ["search"],
+      "allow_clients": ["*"],
+      "description": "Web search (DuckDuckGo) — gateway__duckduckgo__search"
+    },
     "n8n": {
       "image": "mcp/n8n",
       "scopes": ["workflow"],
@@ -10,11 +16,11 @@
         "N8N_API_KEY": "optional"
       }
     },
-    "playwright": {
-      "image": "mcp/playwright",
-      "scopes": ["browser"],
+    "tavily": {
+      "image": "mcp/tavily",
+      "scopes": ["search", "web"],
       "allow_clients": ["*"],
-      "description": "Preferred browser tool — navigate, screenshot, click, fill forms"
+      "description": "Tavily API — tavily_search, tavily_extract, tavily_crawl, tavily_map, tavily_research (set TAVILY_API_KEY in .env)"
     },
     "comfyui": {
       "image": "ai-toolkit-comfyui-mcp:latest",

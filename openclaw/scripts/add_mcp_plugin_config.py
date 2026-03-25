@@ -18,7 +18,7 @@ MCP_PLUGIN_CONFIG = {
     "enabled": True,
     "config": {
         "servers": {
-            # Single endpoint: Docker MCP Gateway (aggregates n8n, playwright, comfyui, …).
+            # Single endpoint: Docker MCP Gateway (aggregates n8n, tavily, comfyui, …).
             "gateway": {"url": _mcp_url},
         },
         "debug": False,

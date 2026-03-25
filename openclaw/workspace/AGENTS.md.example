@@ -4,8 +4,8 @@
 
 Core behavior, priorities, and response style for this workspace.
 
-- **MCP:** Use **one** MCP gateway URL (`servers.gateway`); use **`gateway__call`** with inner **`tool`** + **`args`**, or any **flat** tool the bridge lists (e.g. **`gateway__duckduckgo__search`**, **`gateway__comfyui__run_workflow`**). Details: **`TOOLS.md`**.
-- **Browser / screenshots:** **MCP Playwright** only (**`gateway__playwright__browser_navigate`**, **`gateway__playwright__browser_take_screenshot`**, **`gateway__call`** + **`playwright__…`**). “Chrome binary isn’t available” = do not use built-in **`browser`** / local Playwright in the gateway. URLs: **`http://dashboard:8080`**, not **`localhost`** — **`TOOLS.md`**.
+- **MCP:** Use **one** MCP gateway URL (`servers.gateway`); use **`gateway__call`** with inner **`tool`** + **`args`**, or any **flat** tool the bridge lists (e.g. **`gateway__duckduckgo__search`**, **`gateway__tavily__tavily_search`**). Details: **`TOOLS.md`**.
+- **Web:** **Tavily MCP** (**`gateway__tavily__tavily_*`**) + optional DuckDuckGo; built-in **`browser`** is denied in Docker. No Playwright MCP in default stack.
 - Read `SOUL.md`, `USER.md`, `MEMORY.md`, and today’s `memory/YYYY-MM-DD.md` when your build loads them; on `/new` or explicit reset, drop prior task context unless the user continues it.
 - Lead with the deliverable; keep answers as short as the task allows.
 - Use tools when the answer depends on live or external state; skip tools for pure reasoning when the user did not ask for current data.

@@ -139,10 +139,11 @@ Symptoms from **Control UI / webchat** (e.g. “No supported browser”, “Sand
 
 | Symptom | Cause | What to do |
 |--------|--------|------------|
-| **`browser`** / sandbox browser errors | The **`openclaw-gateway`** image does not ship Chrome/Edge; sandbox browser needs extra Docker-sandbox setup (not enabled in default compose). | For **screenshots of this stack**, use **Playwright MCP** via **`gateway__call`** (navigate + screenshot tools from the live tool list). Use **`http://dashboard:8080`**, **`http://openclaw-gateway:6680`**, etc. — **not** **`http://localhost:8080`** (containers do not see the host’s localhost). Keep **`playwright`** in **`data/mcp/servers.txt`**. |
-| **“Chrome binary isn’t available” / local Playwright** | The model (or a built-in tool) is using a **browser or Playwright path inside `openclaw-gateway`**, where there is **no** Chromium. That is **not** the same as **Playwright MCP**: browsers run in **`mcp/playwright`** containers spawned by **`mcp-gateway`** (Docker socket on **`mcp-gateway`**). | **Do not** rely on a generic “playwright” or **`browser`** tool name alone. Use **MCP** explicitly: flat tools **`gateway__playwright__browser_navigate`**, **`gateway__playwright__browser_snapshot`**, **`gateway__playwright__browser_take_screenshot`**, or **`gateway__call`** with **`tool`**: **`playwright__browser_navigate`** (and matching **`args`**). Verify **`plugins.entries["openclaw-mcp-bridge"].config.servers.gateway.url`** in **`data/openclaw/openclaw.json`** is **`http://mcp-gateway:8811/mcp`**, **`docker compose ps mcp-gateway`** is healthy, and **`playwright`** appears in **`data/mcp/servers.txt`**. After upgrading images: **`docker compose pull`** (or pre-pull **`mcp/playwright`**) so the catalog image is present. |
-| **`web_fetch`** blocked private URL | By design (SSRF protection). | Same as above: **Playwright** on the MCP network, or **`exec`/`curl`** to internal hostnames if appropriate. |
-| **`elevated is not available`** (webchat) | OpenClaw gates **`elevated`** per channel/provider. | **Optional (security-sensitive):** set **`OPENCLAW_ELEVATED_ALLOW_WEBCHAT=1`** in `.env`, run **`docker compose run --rm openclaw-config-sync`**, restart **`openclaw-gateway`**. This still **does not** add **`apt`**/Chrome to the container; **`sudo apt`** inside the gateway usually fails (non-root, read-only-ish image). Prefer **Playwright** for browser capture and **host** installs for a real desktop browser. |
+| **`browser`** / sandbox browser errors | The **`openclaw-gateway`** image does not ship Chrome/Edge; merged config often **`deny`**s the built-in **`browser`** tool. | Use **Tavily MCP** (**`gateway__tavily__tavily_search`**, **`gateway__tavily__tavily_extract`**, **`gateway__call`** + **`tavily_*`**) for web search and page content; **`web_fetch`** for simple HTML. **Pixel screenshots** are not available without a headless browser MCP — this stack uses **[Tavily](https://app.tavily.com)** instead of Playwright. Internal URLs: **`http://dashboard:8080`**, not **`localhost`**. **`tavily`** must be in **`data/mcp/servers.txt`** and **`TAVILY_API_KEY`** in **`.env`**. |
+| **“Chrome binary isn’t available” / built-in `browser`** | The model chose OpenClaw’s **`browser`** tool (or **`canvas`** / nodes expectations). No Chromium in the gateway container. | Use **`gateway__tavily__…`** or **`gateway__duckduckgo__search`** — not **`browser`**. Confirm **`http://mcp-gateway:8811/mcp`** in **`openclaw.json`** (bridge) and **`docker compose ps mcp-gateway`** is healthy. |
+| **`web_fetch`** blocked private URL | By design (SSRF protection). | **Tavily** / **`exec`+`curl`** to internal hostnames, or stack DNS names (**`http://dashboard:8080`**). |
+| **`elevated is not available`** (webchat) | OpenClaw gates **`elevated`** per channel/provider. | **Optional:** **`OPENCLAW_ELEVATED_ALLOW_WEBCHAT=1`**, **`openclaw-config-sync`**, restart gateway. Does not add a browser binary. |
+| **Tavily errors / empty tools** | Missing **`TAVILY_API_KEY`**, or **`tavily`** not in **`servers.txt`**. | Set **`TAVILY_API_KEY`** from [app.tavily.com](https://app.tavily.com) in root **`.env`**, restart **`mcp-gateway`**. See **[mcp/README.md](../../mcp/README.md)**. |
 
 Workspace contract: **`openclaw/workspace/TOOLS.md`** and **`AGENTS.md`** (browser bullet).
 
@@ -176,6 +177,7 @@ Symptoms in **job run history** or the Control UI often **do not match** what yo
 | `status: "ok"` but `deliveryStatus: "not-delivered"` (often with **`sessionTarget: "isolated"`**) | Cron run finished, but the **delivery hook** did not attach the final reply — can be a **tracking gap**, not “nothing posted”. | Check the **channel** for a new message. If the summary is there, ignore the flag. If not, see rows below. |
 | `error: "⚠️ ✉️ Message failed"` | **Discord API rejected** the `message` tool call (permissions, content rules, size, rate limit). | Confirm the bot has **Send Messages** (and **Embed Links** if you use links) in that channel. Shorten the post (Discord default **2000 characters** per message). Split into two messages if needed. |
 | `error: "Discord recipient is required…"` | The **`message`** tool was called **without** `to`, or with wrong shape. | Use **`to: "channel:<snowflake>"`** exactly (e.g. `channel:1483464800464797697`). Do not paste only the numeric ID. |
+| **`model 'default' not found`** (cron / scheduled job) | **`data/openclaw/cron/jobs.json`** had **`payload.model": "default"`** — that is not a real gateway model id. | Set **`payload.model`** to the same string as **`agents.defaults.model.primary`** in **`openclaw.json`** (e.g. **`gateway/nemotron-cascade-2:latest`**). After changing the primary model, update cron jobs to match. |
 | Agent says “search unavailable” / `Tool not found` for `gateway__duckduckgo__search` | With the **stock** npm bridge, that id was never registered (only `gateway__call`). This repo’s **forked** bridge registers namespaced tools — reinstall plugin per [openclaw/extensions/openclaw-mcp-bridge/README-AI-TOOLKIT.md](../../openclaw/extensions/openclaw-mcp-bridge/README-AI-TOOLKIT.md). Otherwise use **`gateway__call`** with **`tool: "duckduckgo__search"`**. |
 
 **Job payload tips (ai-daily-news style):**
@@ -238,6 +240,10 @@ When **`DASHBOARD_AUTH_TOKEN`** is set in `.env`, most **`/api/*`** routes requi
 
 Automated tools and agents calling the dashboard from **inside** the stack should pass this header (see **`TOOLS.md`** §F). **`GET /api/health`** and **`GET /api/dependencies`** stay unauthenticated unless your build changed that.
 
+### ComfyUI — Manager blocks git / pip (`security level` / `This action is not allowed`)
+
+ComfyUI listens on **non-loopback** addresses in Docker, so ComfyUI-Manager defaults to **`normal-`** security and **blocks** high-risk actions (git URL install, pip, some channels). **`scripts/ensure_dirs`** seeds **`data/comfyui-storage/ComfyUI/user/__manager/config.ini`** with **`security_level = weak`** (only if that file does not exist yet). After upgrading ComfyUI, confirm the Manager config path in the startup log and edit **`config.ini`** there if installs still fail. Optional: set **`GITHUB_PERSONAL_ACCESS_TOKEN`** in **`.env`** — compose passes it as **`GITHUB_TOKEN`** to **`comfyui`** for GitHub API rate limits.
+
 ### ComfyUI — LTX 2.3 video and `clip input is invalid: None`
 
 **`ltx-2.3-22b`** is not a generic SD1.5 checkpoint graph: plain **`CLIPTextEncode`** off **`CheckpointLoaderSimple`** often yields **no CLIP**. Use the **LTX / Gemma text path** your ComfyUI build documents (e.g. **`LTXAVTextEncoderLoader`** + **`CLIPTextEncodeFlux`** wired to that CLIP), or **`gateway__call`** with **`tool`**: **`comfyui__run_workflow`** (and a **`workflow_id`** that matches your nodes) — see **`TOOLS.md`** and packaged workflows under **`data/comfyui-workflows/`**.
@@ -248,6 +254,20 @@ These tools are registered by the **ComfyUI MCP** image (`comfyui-mcp`). They ca
 
 - **`mcp-gateway`** must receive **`OPS_CONTROLLER_TOKEN`** and a **`registry-custom.yaml`** that includes **`OPS_CONTROLLER_TOKEN: PLACEHOLDER_OPS_CONTROLLER_TOKEN`** (repo template: **`mcp/gateway/registry-custom.yaml`**). The gateway **entrypoint** substitutes the token into **`registry-custom.docker.yaml`**. If you created **`data/mcp/registry-custom.yaml`** before this layout, **merge** those lines from the repo template or delete the file and re-run **`scripts/ensure_dirs`** so a fresh copy is created (then re-add **`comfyui`** to **`servers.txt`** if needed).
 - Rebuild the ComfyUI MCP image after pulling: **`docker compose build comfyui-mcp-image`** (or **`docker compose build comfyui-mcp`**) and restart **`mcp-gateway`** and **`openclaw-gateway`**.
+
+### ComfyUI — `Tool not found` for `gateway__list_comfyui_model_packs` / `gateway__pull_comfyui_models`
+
+The ComfyUI server name must appear **between** `gateway` and the tool id.
+
+| Wrong (not registered) | Correct flat tool | `gateway__call` inner `tool` |
+|------------------------|-------------------|-------------------------------|
+| `gateway__list_comfyui_model_packs` | `gateway__comfyui__list_comfyui_model_packs` | `comfyui__list_comfyui_model_packs` |
+| `gateway__pull_comfyui_models` | `gateway__comfyui__pull_comfyui_models` | `comfyui__pull_comfyui_models` |
+| `gateway__gateway__comfyui__…` | (never double-prefix) | one `comfyui__…` only |
+
+**OpenClaw CLI** has **no** `list-model-packs` / `pull-model-pack` subcommands — those errors are expected. **`openclaw gateway <anything>`** also fails (the `gateway` command takes **no** extra arguments in current CLI).
+
+**“Value not in list” / empty ComfyUI dropdowns** for LTX-2.3 (Gemma, projection, VAE, UNET, upscaler): weights are not on disk yet. Pull packs **`ltx-2.3-t2v-basic`** and **`ltx-2.3-extras`** (see **`scripts/comfyui/models.json`**), with **`HF_TOKEN`** if Hugging Face gates the repo. **Host fallback:** `docker compose --profile comfyui-models run --rm comfyui-model-puller` (set **`COMFYUI_PACKS`** / env per **`docker-compose.yml`**) or use the **dashboard** model download UI.
 
 ### ComfyUI — `Tool not found` for `gateway__run_workflow` / OpenClaw
 

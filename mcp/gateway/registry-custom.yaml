@@ -1,9 +1,15 @@
-# Custom MCP registry — ComfyUI (not in Docker MCP catalog).
+# Custom MCP registry — merges with the Docker MCP catalog (override / add servers).
 # Template: mcp/gateway/registry-custom.yaml — copied to data/mcp/ by ensure_dirs.
-# Gateway uses --additional-registry to load it.
-# ComfyUI MCP uses stdio (see comfyui-mcp/Dockerfile CMD) so the gateway can communicate.
-# PLACEHOLDER_OPS_CONTROLLER_TOKEN is replaced at gateway startup from mcp-gateway env (see gateway-wrapper.sh).
+# PLACEHOLDER_* values are replaced at mcp-gateway startup (gateway-wrapper.sh).
+#
+# Tavily: https://app.tavily.com — set TAVILY_API_KEY in repo root .env (passed into mcp-gateway).
 servers:
+  duckduckgo:
+    image: mcp/duckduckgo
+  tavily:
+    image: mcp/tavily
+    env:
+      TAVILY_API_KEY: PLACEHOLDER_TAVILY_API_KEY
   comfyui:
     image: ai-toolkit-comfyui-mcp:latest
     env:

@@ -22,4 +22,4 @@ fi
 
 cd "$BASE"
 exec docker compose exec comfyui \
-  pip install -r "/root/ComfyUI/custom_nodes/$NODE_PATH_POSIX/requirements.txt"
+  python3 -m pip install -r "/root/ComfyUI/custom_nodes/$NODE_PATH_POSIX/requirements.txt"

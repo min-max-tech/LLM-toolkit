@@ -19,6 +19,34 @@ OPS_CONTROLLER_URL = os.environ.get("OPS_CONTROLLER_URL", "http://ops-controller
 OPS_CONTROLLER_TOKEN = os.environ.get("OPS_CONTROLLER_TOKEN", "").strip()
 
 
+def _ops_get(path: str, timeout: int = 60) -> dict:
+    """GET from ops-controller (Bearer token)."""
+    if not OPS_CONTROLLER_TOKEN:
+        return {
+            "ok": False,
+            "error": (
+                "OPS_CONTROLLER_TOKEN is not set on the ComfyUI MCP server. "
+                "Set it in .env and pass it through mcp/gateway/registry-custom.yaml."
+            ),
+        }
+    url = f"{OPS_CONTROLLER_URL}{path}"
+    headers = {"Authorization": f"Bearer {OPS_CONTROLLER_TOKEN}"}
+    try:
+        r = requests.get(url, headers=headers, timeout=timeout)
+        try:
+            data = r.json()
+        except Exception:
+            data = {"detail": r.text}
+        if not isinstance(data, dict):
+            data = {"detail": data}
+        if r.status_code >= 400:
+            return {"ok": False, "status_code": r.status_code, **data}
+        return {"ok": True, **data}
+    except requests.RequestException as e:
+        logger.warning("ops-controller GET failed: %s", e)
+        return {"ok": False, "error": str(e)}
+
+
 def _ops_post(path: str, body: Dict[str, Any], timeout: int = 600) -> dict:
     if not OPS_CONTROLLER_TOKEN:
         return {
@@ -86,3 +114,31 @@ def register_management_tools(mcp: FastMCP) -> None:
         if not confirm:
             return {"ok": False, "error": "confirm must be true to execute"}
         return _ops_post("/services/comfyui/restart", {"confirm": True}, timeout=120)
+
+    @mcp.tool()
+    def list_comfyui_model_packs() -> dict:
+        """List downloadable ComfyUI model pack IDs, descriptions, and per-pack file counts (from scripts/comfyui/models.json on the host). Use before pull_comfyui_models."""
+        return _ops_get("/models/packs")
+
+    @mcp.tool()
+    def pull_comfyui_models(packs: str, confirm: bool = True) -> dict:
+        """Download HuggingFace weights into the shared ComfyUI models volume (same job as the dashboard / comfyui-model-puller). Runs in the background; poll get_comfyui_model_pull_status.
+
+        Args:
+            packs: One or more comma-separated pack IDs, e.g. "ltx-2.3-t2v-basic,ltx-2.3-extras".
+                For Kijai/LTX-2.3 Basic-style workflows (CLIPLoader Gemma+LTX, distilled UNET under LTXVideo/v2, KJ VAEs, taeltx preview), use at least ltx-2.3-t2v-basic; add ltx-2.3-extras for the spatial latent upscaler file.
+            confirm: Must be true to start the download.
+
+        Requires: OPS_CONTROLLER_TOKEN, ops-controller reachable, HF_TOKEN in repo .env for gated repos.
+        """
+        if not confirm:
+            return {"ok": False, "error": "confirm must be true to execute"}
+        p = (packs or "").strip()
+        if not p:
+            return {"ok": False, "error": "packs is required (e.g. ltx-2.3-t2v-basic,ltx-2.3-extras)"}
+        return _ops_post("/models/pull", {"pack": p, "confirm": True}, timeout=120)
+
+    @mcp.tool()
+    def get_comfyui_model_pull_status() -> dict:
+        """Poll the last pull_comfyui_models run: running, done, success, output log, pack string."""
+        return _ops_get("/models/pull/status")

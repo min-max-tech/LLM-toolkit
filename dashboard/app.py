@@ -359,7 +359,17 @@ def _run_comfyui_pull_subprocess(packs: str | None = None):
 
 
 def _run_comfyui_pull(packs: str | None = None):
-    """Pull ComfyUI models via Manager API; falls back to subprocess if ComfyUI is unreachable."""
+    """Pull ComfyUI models from ``models.json``.
+
+    Defaults to **direct HuggingFace download** (``pull_comfyui_models.py``). ComfyUI
+    Manager's ``/manager/queue/install_model`` only accepts models that appear in its
+    curated ``model-list.json`` (``check_whitelist_for_model`` in Manager); arbitrary
+    URLs from our config return **400 Invalid model install request**.
+
+    Set ``COMFYUI_USE_MANAGER_FOR_PULL=1`` to use Manager's queue (only useful if the
+    model triple matches Manager's catalog). If ComfyUI is unreachable, falls back to
+    direct download when Manager mode was requested.
+    """
     import json as _json
     import uuid
 
@@ -367,17 +377,23 @@ def _run_comfyui_pull(packs: str | None = None):
     with _state_lock:
         _comfyui_status = {"running": True, "output": "", "done": False, "success": None}
 
-    # Check if ComfyUI Manager is reachable
-    use_manager = False
-    try:
-        urllib.request.urlopen(f"{COMFYUI_URL}/", timeout=5)
-        use_manager = True
-    except Exception:
-        pass
+    use_manager = os.environ.get("COMFYUI_USE_MANAGER_FOR_PULL", "").strip().lower() in (
+        "1",
+        "true",
+        "yes",
+    )
+    if use_manager:
+        try:
+            urllib.request.urlopen(f"{COMFYUI_URL}/", timeout=5)
+        except Exception:
+            use_manager = False
 
     if not use_manager:
         with _state_lock:
-            _comfyui_status["output"] = "ComfyUI not reachable — falling back to subprocess downloader.\n"
+            _comfyui_status["output"] = (
+                "Downloading models directly (ComfyUI Manager only installs its cataloged "
+                "models; arbitrary HF URLs get 400 — see dashboard _run_comfyui_pull docstring).\n"
+            )
         _run_comfyui_pull_subprocess(packs)
         return
 
@@ -712,15 +728,15 @@ async def models_pull_status(request: Request):
     return data
 
 
-MCP_GATEWAY_SERVERS = os.environ.get("MCP_GATEWAY_SERVERS", "n8n,playwright,comfyui")
+MCP_GATEWAY_SERVERS = os.environ.get("MCP_GATEWAY_SERVERS", "duckduckgo,n8n,tavily,comfyui")
 MCP_CONFIG_PATH = os.environ.get("MCP_CONFIG_PATH")
 # Suggested servers (dropdown). Users can also add any valid server name via custom input.
 MCP_CATALOG = [
-    "n8n", "playwright", "comfyui", "fetch", "dockerhub", "github-official",
+    "duckduckgo", "n8n", "tavily", "comfyui", "fetch", "dockerhub", "github-official",
     "mongodb", "postgres", "stripe", "notion", "grafana", "elasticsearch",
     "documentation", "perplexity", "excalidraw", "miro", "neo4j",
     "time", "slack", "filesystem", "puppeteer", "context7", "memory",
-    "firecrawl", "github", "git", "atlassian", "obsidian", "n8n",
+    "firecrawl", "github", "git", "atlassian", "obsidian",
     "hugging-face",
 ]
 
@@ -759,7 +775,7 @@ def _read_mcp_servers() -> list[str]:
             return normalized
         # Migrate: init file from .env on first run
         path.parent.mkdir(parents=True, exist_ok=True)
-        initial = ",".join(s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()) or "n8n,playwright,comfyui"
+        initial = ",".join(s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()) or "duckduckgo,n8n,tavily,comfyui"
         path.write_text(initial)
         return [s.strip() for s in initial.split(",") if s.strip()]
     return [s.strip() for s in MCP_GATEWAY_SERVERS.split(",") if s.strip()]
@@ -959,6 +975,34 @@ _MAX_SERVICE_USAGE = 500
 
 DASHBOARD_DATA_PATH = Path(os.environ.get("DASHBOARD_DATA_PATH", "/tmp"))
 _THROUGHPUT_FILE = DASHBOARD_DATA_PATH / "throughput.json"
+CLAUDE_CODE_ENV_OVERWRITE_FILE = DASHBOARD_DATA_PATH / "claude_code_env_overwrite.json"
+
+
+def _load_claude_code_env_overwrite_enabled() -> bool:
+    """Whether ensure_dirs / host setup should set ANTHROPIC_* for Claude Code → model-gateway. Default: on."""
+    if not CLAUDE_CODE_ENV_OVERWRITE_FILE.exists():
+        return True
+    try:
+        data = json.loads(CLAUDE_CODE_ENV_OVERWRITE_FILE.read_text(encoding="utf-8"))
+        if isinstance(data, dict) and "enabled" in data:
+            return bool(data["enabled"])
+    except Exception as e:
+        logger.warning("Claude Code env overwrite read failed: %s", e)
+    return True
+
+
+def _save_claude_code_env_overwrite_enabled(enabled: bool) -> None:
+    try:
+        CLAUDE_CODE_ENV_OVERWRITE_FILE.parent.mkdir(parents=True, exist_ok=True)
+        CLAUDE_CODE_ENV_OVERWRITE_FILE.write_text(
+            json.dumps({"enabled": bool(enabled)}, indent=2),
+            encoding="utf-8",
+        )
+    except OSError as e:
+        logger.warning("Claude Code env overwrite write failed: %s", e)
+        raise HTTPException(
+            status_code=500, detail=f"Cannot save preference: {e}",
+        ) from e
 
 
 def _load_throughput_state() -> None:
@@ -1334,6 +1378,26 @@ async def set_default_model(req: DefaultModelRequest, request: Request):
         "openclaw_restarted": code3 in (200, 201),
         "webui_error": data2.get("detail") if code2 >= 400 else None,
     }
+
+
+# --- Claude Code (host) — ANTHROPIC_* local gateway overwrite ---
+
+
+class ClaudeCodeEnvOverwriteRequest(BaseModel):
+    enabled: bool
+
+
+@app.get("/api/claude-code/env-overwrite")
+async def get_claude_code_env_overwrite():
+    """Persisted preference for scripts/ensure_dirs: set ANTHROPIC_* so Claude Code uses the local Model Gateway."""
+    return {"enabled": _load_claude_code_env_overwrite_enabled()}
+
+
+@app.put("/api/claude-code/env-overwrite")
+async def put_claude_code_env_overwrite(req: ClaudeCodeEnvOverwriteRequest):
+    """Enable or disable automated ANTHROPIC_API_KEY / ANTHROPIC_BASE_URL setup for Claude Code on the host."""
+    _save_claude_code_env_overwrite_enabled(req.enabled)
+    return {"ok": True, "enabled": bool(req.enabled)}
 
 
 # --- OpenClaw model management ---

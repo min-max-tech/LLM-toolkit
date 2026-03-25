@@ -26,7 +26,7 @@ MCP is designed for **tool calls** (search, run workflow, click browser, n8n too
 ### Layer A — MCP gateway (`http://mcp-gateway:8811/mcp`)
 
 - **One URL** in OpenClaw: **`plugins.entries["openclaw-mcp-bridge"].config.servers.gateway`**.
-- Covers **catalog** behavior: DuckDuckGo, n8n, Playwright, ComfyUI MCP tools (`list_workflows`, `run_workflow`, …), etc.
+- Covers **catalog** behavior: DuckDuckGo, n8n, Tavily, ComfyUI MCP tools (`list_workflows`, `run_workflow`, …), etc.
 - Use **`gateway__call`** with the **exact** inner `tool` name + `args`, or flat **`gateway__…`** tools when the bridge registers them.
 
 ### Layer B — Dashboard + ops-controller (privileged)
@@ -60,7 +60,7 @@ Details and pitfalls: [comfyui-openclaw.md](comfyui-openclaw.md), [docs/runbooks
 
 ---
 
-## 4. Other MCP services (n8n, Playwright, GitHub, …)
+## 4. Other MCP services (n8n, Tavily, GitHub, …)
 
 Same pattern:
 

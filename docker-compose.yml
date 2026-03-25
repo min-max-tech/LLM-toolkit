@@ -109,11 +109,15 @@ services:
   dashboard:
     build: ./dashboard
     restart: unless-stopped
-    user: "1000:1000"
+    # Image entrypoint runs as root briefly to chmod bind-mounted /models, then gosu appuser.
+    # Do not set user: here or ComfyUI pulls fail with Permission denied on /models.
+    # gosu needs SETUID/SETGID; no-new-privileges breaks user switching (EPERM).
     tmpfs:
       - /tmp
     cap_drop: [ALL]
-    security_opt: [no-new-privileges:true]
+    cap_add:
+      - SETUID
+      - SETGID
     depends_on:
       ollama:
         condition: service_healthy
@@ -138,7 +142,7 @@ services:
       - MCP_CONFIG_PATH=/mcp-config/servers.txt
       - MCP_GATEWAY_URL=http://mcp-gateway:8811
       # Must include comfyui so mcp-gateway loads ComfyUI tools (registry-custom.yaml). Matches data/mcp/servers.txt default.
-      - MCP_GATEWAY_SERVERS=${MCP_GATEWAY_SERVERS:-duckduckgo,n8n,playwright,comfyui}
+      - MCP_GATEWAY_SERVERS=${MCP_GATEWAY_SERVERS:-duckduckgo,n8n,tavily,comfyui}
       - OPS_CONTROLLER_URL=http://ops-controller:9000
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
       - DASHBOARD_AUTH_TOKEN=${DASHBOARD_AUTH_TOKEN:-}
@@ -269,6 +273,8 @@ services:
       - PYTORCH_CUDA_ALLOC_CONF=
       # Hugging Face downloads (gated models) from Manager or built-in fetchers
       - HF_TOKEN=${HF_TOKEN:-}
+      # ComfyUI-Manager: GitHub API rate limits for custom node installs (optional; same token as GitHub MCP)
+      - GITHUB_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN:-}
     volumes:
       - ${BASE_PATH:-.}/data/comfyui-storage:/root
       - ${BASE_PATH:-.}/models/comfyui:/root/ComfyUI/models
@@ -370,6 +376,7 @@ services:
       - MCP_CONFIG_FILE=/mcp-config/servers.txt
       - MCP_GATEWAY_PORT=8811
       # MCP server API keys — set these in the root .env file
+      - TAVILY_API_KEY=${TAVILY_API_KEY:-}
       - GITHUB_PERSONAL_ACCESS_TOKEN=${GITHUB_PERSONAL_ACCESS_TOKEN:-}
       # n8n MCP server (mcp/n8n) — for workflow tools when n8n API key is set
       - N8N_API_URL=${N8N_API_URL:-http://n8n:5678}

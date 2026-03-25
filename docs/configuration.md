@@ -24,8 +24,8 @@ Copy `.env.example` to `.env` and configure the following:
 | `TELEGRAM_BOT_TOKEN` | *(empty)* | Telegram bot token |
 | `OPS_CONTROLLER_TOKEN` | *(empty)* | Ops controller Bearer token (generate: `openssl rand -hex 32`) |
 | `DASHBOARD_AUTH_TOKEN` | *(empty)* | Dashboard API Bearer token |
-| `HF_TOKEN` | *(empty)* | Hugging Face token for gated model downloads |
-| `GITHUB_PERSONAL_ACCESS_TOKEN` | *(empty)* | GitHub personal access token for GitHub MCP server |
+| `HF_TOKEN` | *(empty)* | Hugging Face token for gated model downloads (ComfyUI Manager and ops-controller pulls) |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | *(empty)* | GitHub personal access token for GitHub MCP server; also passed to the **`comfyui`** container as **`GITHUB_TOKEN`** for Manager API rate limits |
 | `N8N_API_KEY` | *(empty)* | n8n MCP server API key (Settings → API in n8n UI) |
 | `EMBED_MODEL` | `nomic-embed-text` | RAG embedding model (must exist in Ollama) |
 | `OPENCLAW_SKIP_TOOLS_MD_UPGRADE` | `0` | Set to `1` to skip auto-upgrade of `TOOLS.md` in workspace |
@@ -106,7 +106,7 @@ Repo templates live under **`mcp/gateway/`** and **`mcp/docs/`**; runtime files 
 
 MCP servers are configured in `data/mcp/servers.txt` (one server per line) and `data/mcp/registry.json` (metadata, allow_clients, rate limits).
 
-Default MCP servers: `n8n`, `playwright`, `comfyui`
+Default MCP servers: `duckduckgo`, `n8n`, `tavily`, `comfyui` (set `TAVILY_API_KEY` for Tavily)
 
 Override with `MCP_GATEWAY_SERVERS` in `.env`:
 ```
