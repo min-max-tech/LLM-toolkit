@@ -68,17 +68,30 @@ def register_workflow_tools(
     """Register workflow tools with the MCP server"""
 
     @mcp.tool()
-    def list_workflows() -> dict:
-        """List all available workflows in the workflow directory.
+    def list_workflows(details: bool = False) -> dict:
+        """List workflows under the ComfyUI user workflows directory.
 
-        Returns a catalog of workflows with their IDs, names, descriptions,
-        available inputs, and optional metadata.
+        Default (details=false) returns every workflow_id in a compact list so large trees
+        are not truncated by MCP/LLM context limits. Use details=true for full per-workflow
+        metadata and available_inputs (heavy).
+
+        Many entries are ComfyUI UI/editor JSON; run_workflow requires API-format graphs
+        (or sidecar .wfmeta for overrides). Prefer mcp-api/* for stack-tested API graphs.
         """
+        wf_dir = str(workflow_manager.workflows_dir)
+        ids = workflow_manager.list_workflow_ids()
+        if not details:
+            return {
+                "workflow_ids": ids,
+                "count": len(ids),
+                "workflow_dir": wf_dir,
+                "note": "Compact list. Pass details=true for full catalog. UI-format JSON cannot run via run_workflow.",
+            }
         catalog = workflow_manager.get_workflow_catalog()
         return {
             "workflows": catalog,
             "count": len(catalog),
-            "workflow_dir": str(workflow_manager.workflows_dir),
+            "workflow_dir": wf_dir,
         }
 
     @mcp.tool()

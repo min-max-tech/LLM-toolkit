@@ -123,7 +123,19 @@ class WorkflowManager:
                         e,
                     )
         return {}
-    
+
+    def list_workflow_ids(self) -> list[str]:
+        """Every workflow id (relative POSIX path, no .json) under workflows_dir — no JSON parsing."""
+        if not self.workflows_dir.exists():
+            return []
+        out: list[str] = []
+        for workflow_path in sorted(self.workflows_dir.rglob("*.json")):
+            if workflow_path.name.endswith(".meta.json"):
+                continue
+            rel = workflow_path.relative_to(self.workflows_dir)
+            out.append(str(rel.with_suffix("")).replace("\\", "/"))
+        return out
+
     def get_workflow_catalog(self) -> list[Dict[str, Any]]:
         """Get catalog of all available workflows"""
         catalog = []
