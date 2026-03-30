@@ -14,7 +14,10 @@ Which tools exist here and how to invoke them.
 
 **Browser:** Built-in **`browser`** denied; no Playwright MCP by default. Use **Tavily** + **`web_fetch`**.
 
-**ComfyUI:** **`gateway__call`** with **`tool`**: **`comfyui__list_workflows`**, **`args`**: **`{ "details": false }`** for all **`workflow_ids`** + **`count`** (or flat **`gateway__comfyui__list_workflows`**). User text like **`list_workflows(...)`** does not run the tool — you must invoke MCP. **`run_workflow`** needs API-format JSON (often **`mcp-api/`**). **Never** look in **`ComfyUI/output`** for workflow names — that is **media output**, not **`.json`** graphs.
+**ComfyUI:** **`gateway__call`** with **`tool`**: **`comfyui__list_workflows`**, **`args`**: **`{ "details": false }`** for all **`workflow_ids`** + **`count`** (or flat **`gateway__comfyui__list_workflows`**). User text like **`list_workflows(...)`** does not run the tool — you must invoke MCP. **`run_workflow`** needs API-format JSON (often **`mcp-api/`**). **Never** look in **`ComfyUI/output`** for workflow names — that is **media output**, not **`.json`** graphs. Direct filesystem access to ComfyUI data (all read-only):
+- **`comfyui-workflows/`** — user workflows (host: `data/comfyui-storage/ComfyUI/user/default/workflows`). API-format JSON under `mcp-api/`.
+- **`comfyui-output/`** — generated images, audio, and other outputs (host: `data/comfyui-output`).
+- **`comfyui-models/`** — model files (host: `models/comfyui`).
 
 **Files and shell:** **`read`** / **`edit`** / **`exec`** per runtime for paths allowed in this workspace.
 
