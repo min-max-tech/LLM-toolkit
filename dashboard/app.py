@@ -5,6 +5,7 @@ import asyncio
 import json
 import logging
 import os
+import re
 import subprocess
 import threading
 import time
@@ -225,7 +226,7 @@ async def ollama_delete(req: PullRequest):
             if r.status_code == 404:
                 raise HTTPException(status_code=404, detail=f"Model '{name}' not found")
             r.raise_for_status()
-            return {"ok": True, "message": f"Model '{name}' deleted"}
+            return {"ok": True, "message": f"Unload acknowledged for '{name}' (GGUF files on disk unchanged)."}
         except HTTPException:
             raise
         except Exception as e:
@@ -233,57 +234,97 @@ async def ollama_delete(req: PullRequest):
 
 
 def _run_ollama_pull(model: str):
-    """Pull an Ollama model in background, tracking progress in _ollama_pull_status."""
+    """Download GGUFs via ops-controller gguf-puller (docker compose --profile models)."""
     global _ollama_pull_status
-    import json as _json
     with _state_lock:
         _ollama_pull_status = {"running": True, "model": model, "output": "", "pct": 0, "done": False, "success": None}
+
+    repos = _normalize_gguf_pull_repos(model)
+    if repos is None:
+        repos = _normalize_gguf_pull_repos(_hf_url_to_ollama(model))
+    if repos is None:
+        msg = (
+            "This stack uses GGUF files (llama.cpp), not the Ollama registry.\n\n"
+            "Enter a Hugging Face repo id (e.g. bartowski/Llama-3.2-3B-Instruct-GGUF), "
+            "a huggingface.co/… page or .gguf URL, hf.co/owner/repo, or type .env to pull all "
+            "repos listed in GGUF_MODELS in your .env.\n\n"
+            "Names like llama3.2:8b only work with a real Ollama daemon, not this gateway."
+        )
+        with _state_lock:
+            _ollama_pull_status["output"] = msg
+            _ollama_pull_status["success"] = False
+            _ollama_pull_status["running"] = False
+            _ollama_pull_status["done"] = True
+        return
+
+    ops_url = os.environ.get("OPS_CONTROLLER_URL", "http://ops-controller:9000").rstrip("/")
+    token = os.environ.get("OPS_CONTROLLER_TOKEN", "").strip()
+    if not token:
+        with _state_lock:
+            _ollama_pull_status["output"] = "OPS_CONTROLLER_TOKEN is not set; cannot run gguf-puller from the dashboard."
+            _ollama_pull_status["success"] = False
+            _ollama_pull_status["running"] = False
+            _ollama_pull_status["done"] = True
+        return
+
     try:
         import httpx as _httpx
-        out_lines = []
-        with _httpx.Client(timeout=3600.0) as client:
-            with client.stream(
-                "POST",
-                f"{MODEL_GATEWAY_URL}/api/pull",
-                json={"model": model, "stream": True},
-            ) as response:
-                buf = ""
-                for chunk in response.iter_text():
-                    buf += chunk
-                    lines = buf.split("\n")
-                    buf = lines.pop()
-                    for line in lines:
-                        line = line.strip()
-                        if not line:
-                            continue
-                        try:
-                            j = _json.loads(line)
-                            if j.get("status"):
-                                out_lines.append(j["status"])
-                            pct = 0
-                            if j.get("total") and j.get("completed") is not None:
-                                pct = int((j["completed"] / j["total"]) * 100)
-                            with _state_lock:
-                                _ollama_pull_status["output"] = "\n".join(out_lines[-200:])
-                                _ollama_pull_status["pct"] = pct
-                        except Exception:
-                            pass
-        with _state_lock:
-            _ollama_pull_status["success"] = True
+        with _httpx.Client(timeout=120.0) as client:
+            r = client.post(
+                f"{ops_url}/models/gguf-pull",
+                headers={"Authorization": f"Bearer {token}"},
+                json={"repos": repos, "confirm": True},
+            )
+            if r.status_code == 409:
+                with _state_lock:
+                    _ollama_pull_status["output"] = "Another model or GGUF pull is already in progress."
+                    _ollama_pull_status["success"] = False
+                    _ollama_pull_status["running"] = False
+                    _ollama_pull_status["done"] = True
+                return
+            if r.status_code >= 400:
+                try:
+                    det = r.json().get("detail", r.text)
+                except Exception:
+                    det = r.text
+                with _state_lock:
+                    _ollama_pull_status["output"] = f"Failed to start gguf-puller: {det}"
+                    _ollama_pull_status["success"] = False
+                    _ollama_pull_status["running"] = False
+                    _ollama_pull_status["done"] = True
+                return
+
+        with _httpx.Client(timeout=60.0) as poll_client:
+            while True:
+                time.sleep(1.5)
+                sr = poll_client.get(
+                    f"{ops_url}/models/gguf-pull/status",
+                    headers={"Authorization": f"Bearer {token}"},
+                )
+                if sr.status_code != 200:
+                    continue
+                st = sr.json()
+                with _state_lock:
+                    _ollama_pull_status["output"] = st.get("output", "")
+                    _ollama_pull_status["pct"] = 50 if st.get("running") else 100
+                if st.get("done"):
+                    with _state_lock:
+                        _ollama_pull_status["success"] = bool(st.get("success"))
+                        _ollama_pull_status["running"] = False
+                        _ollama_pull_status["done"] = True
+                    break
     except Exception as e:
-        logger.error("Ollama pull failed: %s", e)
+        logger.error("GGUF pull failed: %s", e)
         with _state_lock:
-            _ollama_pull_status["output"] += f"\nError: {e}"
+            _ollama_pull_status["output"] = (_ollama_pull_status.get("output") or "") + f"\nError: {e}"
             _ollama_pull_status["success"] = False
-    finally:
-        with _state_lock:
             _ollama_pull_status["running"] = False
             _ollama_pull_status["done"] = True
 
 
 @app.post("/api/ollama/pull")
 async def ollama_pull(req: PullRequest):
-    """Start Ollama model pull in background. Poll /api/ollama/pull/status for progress."""
+    """Start GGUF download (gguf-puller via ops-controller) in background. Poll /api/ollama/pull/status."""
     global _ollama_pull_status
     with _state_lock:
         if _ollama_pull_status.get("running"):
@@ -640,6 +681,34 @@ class ModelPullRequest(BaseModel):
     confirm: bool = False
 
 
+def _normalize_gguf_pull_repos(model: str) -> str | None:
+    """Return comma-separated Hugging Face repo ids for gguf-puller, or '' to use .env GGUF_MODELS.
+
+    None means the string is not suitable (e.g. Ollama-style ``llama3.2:8b``).
+    """
+    s = (model or "").strip()
+    if not s:
+        return None
+    if s.upper() in (".ENV", "GGUF_MODELS", "@ENV", "ENV"):
+        return ""
+    if "," in s:
+        parts = [p.strip() for p in s.split(",") if p.strip()]
+        for p in parts:
+            if not re.fullmatch(r"[\w.-]+/[\w.-]+", p):
+                return None
+        return ",".join(parts)
+    if "huggingface.co/" in s:
+        m = re.search(r"huggingface\.co/([^/\s]+/[^/\s]+)", s)
+        if m and re.fullmatch(r"[\w.-]+/[\w.-]+", m.group(1)):
+            return m.group(1)
+    rest = s[6:].strip() if s.startswith("hf.co/") else ""
+    if rest and re.fullmatch(r"[\w.-]+/[\w.-]+", rest):
+        return rest
+    if re.fullmatch(r"[\w.-]+/[\w.-]+", s):
+        return s
+    return None
+
+
 def _hf_url_to_ollama(raw: str) -> str:
     """Convert a HuggingFace GGUF URL to Ollama's hf.co/owner/repo format.
     Non-HF strings (model names, hf.co/ refs) are returned as-is.
@@ -657,9 +726,8 @@ def _hf_url_to_ollama(raw: str) -> str:
 @app.post("/api/models/download")
 async def models_download(req: ModelDownloadRequest, request: Request):
     """Unified model download.
-    - GGUF / Ollama model names → streams Ollama pull (via model-gateway).
+    - GGUF / HF repo → background gguf-puller via ops (same as ``/api/ollama/pull``); poll ``/api/ollama/pull/status``.
     - safetensors / ckpt / pt / bin → proxied to ops-controller for file download.
-    HuggingFace GGUF URLs are automatically converted to hf.co/owner/repo Ollama format.
     """
     raw = req.url.strip()
     filename = req.filename.strip() or raw.split("/")[-1].split("?")[0]
@@ -680,24 +748,16 @@ async def models_download(req: ModelDownloadRequest, request: Request):
             raise HTTPException(status_code=code, detail=data.get("detail", data))
         return {**data, "target": "comfyui"}
     else:
-        # Ollama: convert HF URL to hf.co/ format, then stream pull
-        model = _hf_url_to_ollama(raw)
-
-        async def _stream():
-            async with AsyncClient(timeout=3600.0) as client:
-                async with client.stream(
-                    "POST",
-                    f"{MODEL_GATEWAY_URL}/api/pull",
-                    json={"model": model, "stream": True},
-                ) as response:
-                    async for chunk in response.aiter_bytes():
-                        yield chunk
-
-        return StreamingResponse(
-            _stream(),
-            media_type="application/x-ndjson",
-            headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"},
-        )
+        with _state_lock:
+            if _ollama_pull_status.get("running"):
+                raise HTTPException(status_code=409, detail="Pull already in progress")
+        thread = threading.Thread(target=_run_ollama_pull, args=(raw,), daemon=True)
+        thread.start()
+        return {
+            "status": "started",
+            "target": "gguf",
+            "message": "Poll /api/ollama/pull/status for progress.",
+        }
 
 
 @app.get("/api/models/download/status")
@@ -1172,7 +1232,7 @@ def _is_embedding_model(name: str) -> bool:
 
 @app.post("/api/throughput/benchmark")
 async def throughput_benchmark(req: ThroughputBenchmarkRequest):
-    """Run a quick benchmark against Ollama. Returns tokens/sec and related metrics."""
+    """Run a quick benchmark via model-gateway /api/generate (llama.cpp). Returns tokens/sec and related metrics."""
     model = req.model.strip() or "llama3.2"
     if _is_embedding_model(model):
         raise HTTPException(

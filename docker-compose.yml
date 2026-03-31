@@ -12,14 +12,16 @@ services:
       --ctx-size ${LLAMACPP_CTX_SIZE:-131072}
       --n-gpu-layers ${LLAMACPP_GPU_LAYERS:--1}
       --flash-attn auto
+      --jinja
     volumes:
       - ${BASE_PATH:-.}/models/gguf:/models:ro
+    # Large GGUFs can take many minutes before /health returns 200; 503 during load fails curl -f.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/health"]
-      start_period: 120s
+      start_period: 1800s
       interval: 15s
       timeout: 10s
-      retries: 5
+      retries: 40
     # GPU config: overridden by overrides/compute.yml (run scripts/detect_hardware.py)
     logging:
       driver: json-file
@@ -286,12 +288,13 @@ services:
     # ComfyUI: run scripts/detect_hardware.py to auto-configure GPU (NVIDIA/AMD/Intel) or CPU
     ports:
       - "8188:8188"
+    # Custom nodes + ComfyRegistry can take several minutes before :8188 serves; short grace marks healthy deps as failed.
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8188/"]
-      start_period: 120s
-      interval: 30s
-      timeout: 10s
-      retries: 3
+      start_period: 420s
+      interval: 20s
+      timeout: 15s
+      retries: 12
     logging:
       driver: json-file
       options:

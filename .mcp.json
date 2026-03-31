@@ -1,8 +1,13 @@
 {
   "mcpServers": {
     "ordo-mcp-gateway": {
-      "type": "http",
-      "url": "http://localhost:8811/mcp"
+      "type": "stdio",
+      "command": "npx",
+      "args": ["-y", "@pyroprompts/mcp-stdio-to-streamable-http-adapter@0.1.0"],
+      "env": {
+        "URI": "http://localhost:8811/mcp",
+        "MCP_NAME": "ordo-mcp-gateway"
+      }
     }
   }
 }

@@ -9,7 +9,7 @@ import uuid
 from typing import Any
 
 from fastapi import FastAPI, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse, Response, StreamingResponse
 from httpx import AsyncClient
 from pydantic import BaseModel
 
@@ -243,11 +243,13 @@ async def ollama_ps():
 
 @app.delete("/api/delete")
 async def ollama_delete(request: Request):
-    """GGUF files are managed on disk / dashboard — Ollama delete not supported."""
-    return JSONResponse(
-        status_code=501,
-        content={"error": "use dashboard GGUF management or delete files under models/gguf/"},
-    )
+    """No-op success: Ollama returns 200 with empty body. GGUF files are not removed from disk."""
+    # Clients (OpenClaw, Ollama SDK) call this to unload a model; llama-server uses a fixed GGUF on disk.
+    try:
+        await request.body()
+    except Exception:
+        pass
+    return Response(status_code=200)
 
 
 @app.post("/api/pull")
@@ -261,23 +263,69 @@ async def ollama_pull(request: Request):
 
 @app.post("/api/generate")
 async def ollama_generate(request: Request):
-    """Map legacy generate to OpenAI /v1/completions on llama-server."""
+    """Map legacy generate to OpenAI /v1/completions on llama-server.
+
+    Non-stream responses are shaped like Ollama /api/generate so the dashboard
+    throughput benchmark (eval_count, eval_duration ns, etc.) keeps working.
+    """
     body = await request.json()
     prompt = body.get("prompt", "")
     if isinstance(prompt, list):
         prompt = "\n".join(str(p) for p in prompt)
+    stream = bool(body.get("stream", False))
     fwd = {
         "model": body.get("model", ""),
         "prompt": prompt,
-        "stream": bool(body.get("stream", False)),
+        "stream": stream,
     }
     for k in ("max_tokens", "temperature", "top_p", "stop"):
         if k in body and body[k] is not None:
             fwd[k] = body[k]
+    if stream:
+        async def _stream_completions():
+            async with AsyncClient(timeout=600.0) as client:
+                async with client.stream(
+                    "POST",
+                    f"{LLAMACPP_URL}/v1/completions",
+                    json=fwd,
+                    headers={"Content-Type": "application/json"},
+                ) as resp:
+                    resp.raise_for_status()
+                    async for chunk in resp.aiter_bytes():
+                        yield chunk
+
+        return StreamingResponse(_stream_completions(), media_type="text/event-stream")
+
+    t0 = time.perf_counter()
     async with AsyncClient(timeout=600.0) as client:
         r = await client.post(f"{LLAMACPP_URL}/v1/completions", json=fwd, headers={"Content-Type": "application/json"})
         r.raise_for_status()
-        return r.json()
+        data = r.json()
+    elapsed_ns = max(int((time.perf_counter() - t0) * 1e9), 1)
+    choice0 = (data.get("choices") or [{}])[0]
+    text = choice0.get("text", "") or ""
+    usage = data.get("usage") or {}
+    comp = int(usage.get("completion_tokens") or 0)
+    pr = int(usage.get("prompt_tokens") or 0)
+    # Split wall time: weight toward completion tokens for sensible tok/s when usage is present
+    if comp > 0 and pr >= 0:
+        tot_tok = comp + pr
+        eval_ns = max(int(elapsed_ns * comp / tot_tok), 1) if tot_tok else elapsed_ns
+        prompt_ns = max(elapsed_ns - eval_ns, 1)
+    else:
+        eval_ns = elapsed_ns
+        prompt_ns = max(elapsed_ns // 4, 1)
+    return {
+        "model": body.get("model", ""),
+        "response": text,
+        "done": True,
+        "eval_count": comp,
+        "eval_duration": eval_ns,
+        "prompt_eval_count": pr,
+        "prompt_eval_duration": prompt_ns,
+        "load_duration": 0,
+        "total_duration": elapsed_ns,
+    }
 
 
 @app.post("/api/chat")

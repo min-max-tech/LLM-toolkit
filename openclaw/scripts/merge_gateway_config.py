@@ -87,10 +87,11 @@ def _set_elevated_allow_from_all(allow_from: dict, key: str) -> bool:
 
 
 # Default models when model-gateway is unreachable. First entry is the default.
-# Use bare IDs (no ollama/ prefix) — the gateway resolves provider from the ID.
+# Use bare GGUF filenames — the gateway resolves provider from the ID.
 DEFAULT_GATEWAY_MODELS = [
-    {"id": "qwen3:8b", "name": "Qwen3 8B", "reasoning": True, "input": ["text"],
-     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": LLAMACPP_CTX, "maxTokens": 8192},
+    {"id": "Qwen3.5-35B-A3B-Uncensored-HauhauCS-Aggressive-Q4_K_M.gguf", "name": "Qwen3.5 35B A3B Uncensored Q4",
+     "reasoning": True, "input": ["text"],
+     "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": LLAMACPP_CTX, "maxTokens": 16384},
     {"id": "deepseek-r1:7b", "name": "DeepSeek R1 7B", "reasoning": True, "input": ["text"],
      "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0}, "contextWindow": LLAMACPP_CTX, "maxTokens": 8192},
     {"id": "qwen3:14b", "name": "Qwen3 14B", "reasoning": True, "input": ["text"],

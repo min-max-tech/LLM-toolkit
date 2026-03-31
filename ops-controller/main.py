@@ -54,6 +54,11 @@ _pull_status: dict = {
     "running": False, "output": "", "done": True, "success": None,
     "pack": "",
 }
+_gguf_pull_lock = threading.Lock()
+_gguf_pull_status: dict = {
+    "running": False, "output": "", "done": True, "success": None,
+    "repos": "",
+}
 
 
 def _docker_client():
@@ -780,3 +785,105 @@ async def models_pull_status(_: None = Depends(verify_token)):
     """Poll pack pull progress. Auth required."""
     with _pull_lock:
         return dict(_pull_status)
+
+
+def _run_gguf_pull(repos_csv: str, correlation_id: str = "") -> None:
+    """Run gguf-puller (docker compose --profile models). Empty repos_csv uses GGUF_MODELS from project .env."""
+    label = repos_csv.strip() or "(GGUF_MODELS from .env)"
+    with _gguf_pull_lock:
+        _gguf_pull_status.update(
+            {
+                "running": True,
+                "output": f"Starting gguf-puller for {label}…\n",
+                "done": False,
+                "success": None,
+                "repos": label,
+            }
+        )
+    compose_files = [f.strip() for f in COMPOSE_FILE_ENV.split(";") if f.strip()]
+    cmd = ["docker-compose"]
+    for cf in compose_files:
+        cmd += ["-f", f"/workspace/{cf}"]
+    cmd += ["--profile", "models", "run", "--rm"]
+    if repos_csv.strip():
+        cmd += ["-e", f"GGUF_MODELS={repos_csv.strip()}"]
+    cmd += ["gguf-puller"]
+    env = {
+        **os.environ,
+        "BASE_PATH": BASE_PATH,
+        "DATA_PATH": os.environ.get("DATA_PATH", BASE_PATH + "/data"),
+    }
+    if HF_TOKEN:
+        env["HF_TOKEN"] = HF_TOKEN
+    try:
+        proc = subprocess.Popen(
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.STDOUT,
+            text=True,
+            cwd="/workspace",
+            env=env,
+        )
+        output_lines: list[str] = []
+        for line in proc.stdout:
+            output_lines.append(line.rstrip())
+            with _gguf_pull_lock:
+                _gguf_pull_status["output"] = "\n".join(output_lines[-40:])
+        proc.wait()
+        ok = proc.returncode == 0
+        _audit("gguf_pull", label, "ok" if ok else "error", f"exit={proc.returncode}", correlation_id=correlation_id)
+        with _gguf_pull_lock:
+            _gguf_pull_status["success"] = ok
+            _gguf_pull_status["output"] = "\n".join(output_lines[-50:])
+            if not ok:
+                _gguf_pull_status["output"] += f"\nExit code: {proc.returncode}"
+    except Exception as e:
+        logger.error("GGUF pull failed: %s", e)
+        _audit("gguf_pull", label, "error", str(e)[:200], correlation_id=correlation_id)
+        with _gguf_pull_lock:
+            _gguf_pull_status["success"] = False
+            _gguf_pull_status["output"] += f"\nError: {e}"
+    finally:
+        with _gguf_pull_lock:
+            _gguf_pull_status["running"] = False
+            _gguf_pull_status["done"] = True
+
+
+class GgufPullRequest(BaseModel):
+    """Comma-separated Hugging Face repo ids (e.g. org/model-GGUF). Empty uses .env GGUF_MODELS."""
+
+    repos: str = ""
+    confirm: bool = False
+
+
+@app.post("/models/gguf-pull")
+async def models_gguf_pull(body: GgufPullRequest, request: Request, _: None = Depends(verify_token)):
+    """Run gguf-puller container. Auth required."""
+    if not body.confirm:
+        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+    raw = (body.repos or "").strip()
+    if raw:
+        for part in raw.split(","):
+            p = part.strip()
+            if not p or ".." in p or "/" not in p:
+                raise HTTPException(status_code=400, detail=f"Invalid repo segment: {part!r}")
+            a, b = p.split("/", 1)
+            if not a or not b or "/" in b:
+                raise HTTPException(status_code=400, detail=f"Invalid Hugging Face repo id: {p!r}")
+    with _gguf_pull_lock:
+        if _gguf_pull_status.get("running"):
+            raise HTTPException(status_code=409, detail="A GGUF pull is already in progress")
+    thread = threading.Thread(
+        target=_run_gguf_pull,
+        args=(raw, _correlation_id(request)),
+        daemon=True,
+    )
+    thread.start()
+    return {"status": "started", "repos": raw or "(from .env)"}
+
+
+@app.get("/models/gguf-pull/status")
+async def models_gguf_pull_status(_: None = Depends(verify_token)):
+    """Poll GGUF pull progress. Auth required."""
+    with _gguf_pull_lock:
+        return dict(_gguf_pull_status)
