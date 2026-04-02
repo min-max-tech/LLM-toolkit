@@ -1,40 +1,74 @@
-<!-- Copy to TOOLS.md — stack contract; keep short -->
-
 # TOOLS.md
 
 Which tools exist here and how to invoke them.
 
-**MCP (primary):** Configure **one** URL: the Docker **MCP gateway** (`servers.gateway` → `http://mcp-gateway:8811/mcp`). The plugin names that server **`gateway`**, so each flat tool id is **`gateway__`** + the aggregate MCP tool name (e.g. **`gateway__duckduckgo__search`**). **Never** stack another **`gateway__`** in front of that — it is not a registered tool. This stack uses a forked `openclaw-mcp-bridge` that exposes **`gateway__call`** and **flat** tools matching whatever the gateway loads (e.g. **`gateway__tavily__tavily_search`**, **`gateway__comfyui__run_workflow`**). Use **`gateway__call`** with **`tool`** + **`args`**, or flat tools when listed. **Invalid** top-level names include **`gateway__run_workflow`** / **`comfyui__call`** — see **TROUBLESHOOTING** if tools are missing.
+## MCP Gateway
 
-**Do not guess ComfyUI inner names:** use **`list_workflows`** / **`comfyui__list_workflows`**, not `list_comfyui_workflows`. **Ports:** **`6680`** = OpenClaw gateway; **`11435`** = model-gateway **`/v1`**; **`11434`** = Ollama — do not conflate them. Details: **`mcp/docs/openclaw-bridge-deep-dive.md`**.
+Single URL: `http://mcp-gateway:8811/mcp` via `openclaw-mcp-bridge` plugin (server name: `gateway`).
 
-**Search:** **`TAVILY_API_KEY`** in **`.env`** → **Tavily** tools (**`tavily_search`**, **`tavily_extract`**, …). Also **`gateway__duckduckgo__search`**. Do not use native **`web_search`**.
+Use `gateway__call` with `{"tool": "<inner_name>", "args": {...}}` or flat tools when they appear in context. Flat tool names follow the pattern `gateway__<server>__<tool>`.
 
-**Other MCP servers (catalog):** n8n, ComfyUI, etc. — **`gateway__call`** with the live tool id and args, or flat **`gateway__…`** tools when present.
+## Search & Web
 
-**Browser:** Built-in **`browser`** denied; no Playwright MCP by default. Use **Tavily** + **`web_fetch`**.
+| Tool | When |
+|------|------|
+| `gateway__tavily__tavily_search` | General web search (primary) |
+| `gateway__tavily__tavily_extract` | Extract content from a URL |
+| `gateway__tavily__tavily_research` | Deep multi-query research |
+| `gateway__duckduckgo__search` | Simple web search (backup) |
+| `web_fetch` | Fetch raw HTML from a URL |
 
-**ComfyUI:** **`gateway__call`** with **`tool`**: **`comfyui__list_workflows`**, **`args`**: **`{ "details": false }`** for all **`workflow_ids`** + **`count`** (or flat **`gateway__comfyui__list_workflows`**). User text like **`list_workflows(...)`** does not run the tool — you must invoke MCP. **`run_workflow`** needs API-format JSON (often **`mcp-api/`**). **Never** look in **`ComfyUI/output`** for workflow names — that is **media output**, not **`.json`** graphs. Direct filesystem access to ComfyUI data (all read-only):
-- **`comfyui-workflows/`** — user workflows (host: `data/comfyui-storage/ComfyUI/user/default/workflows`). API-format JSON under `mcp-api/`.
-- **`comfyui-output/`** — generated images, audio, and other outputs (host: `data/comfyui-output`).
-- **`comfyui-models/`** — model files (host: `models/comfyui`).
+Built-in `browser` is denied. Built-in `web_search` is disabled. Use the tools above.
 
-**Files and shell:** **`read`** / **`edit`** / **`exec`** per runtime for paths allowed in this workspace.
+## ComfyUI
 
-**Core services (inside the stack — use hostnames, not `localhost`):**
+| Tool | Purpose |
+|------|---------|
+| `gateway__comfyui__list_workflows` | List available workflows |
+| `gateway__comfyui__run_workflow` | Execute a workflow |
+| `gateway__comfyui__list_comfyui_model_packs` | List downloadable model packs |
+| `gateway__comfyui__pull_comfyui_models` | Download model packs |
+| `gateway__comfyui__get_comfyui_model_pull_status` | Check pull progress |
+| `gateway__comfyui__restart_comfyui` | Restart ComfyUI service |
 
-| Service | Base |
-|--------|------|
-| Model Gateway | `http://model-gateway:11435/v1` |
-| MCP Gateway | `http://mcp-gateway:8811/mcp` |
-| Dashboard | `http://dashboard:8080` |
-| Ollama | `http://ollama:11434` |
-| ComfyUI | `http://comfyui:8188` |
-| n8n | `http://n8n:5678` |
-| OpenClaw UI | `http://openclaw-gateway:6680` |
+Outputs: `GET http://dashboard:8080/api/orchestration/outputs` or MCP `list_outputs`.
 
-**Discord:** **`message`** with **`to: "channel:<id>"`**, respect per-message size limits.
+Do **not** drive ComfyUI via `exec` + `curl` to `/prompt` - use MCP tools.
 
-**Privileged stack ops:** **`DASHBOARD_AUTH_TOKEN`** + **`http://dashboard:8080`** API routes. See **mcp/docs/openclaw-hardening-and-operations.md**.
+## n8n
 
-**Compose / host repairs:** **`agents/docker-ops.md`** (if present).
+| Tool | Purpose |
+|------|---------|
+| `gateway__n8n__list_workflows` | List n8n workflows |
+| `gateway__n8n__execute_workflow` | Run a workflow |
+
+Never create or modify n8n workflows from within OpenClaw.
+
+## Orchestration
+
+| Tool | Purpose |
+|------|---------|
+| `list_jobs` / `list_outputs` | Read job queue and results |
+| `run_workflow` / `cancel_run` | Queue or cancel a job |
+| `save_workflow` / `list_workflow_versions` | Workflow versioning |
+| `create_schedule` / `update_schedule` / `delete_schedule` | Cron management |
+
+## Core Services
+
+| Service | URL | Auth |
+|---------|-----|------|
+| Model Gateway | `http://model-gateway:11435/v1` | Header: `X-Service-Name: openclaw` |
+| MCP Gateway | `http://mcp-gateway:8811/mcp` | MCP protocol |
+| Dashboard | `http://dashboard:8080` | Bearer: `DASHBOARD_AUTH_TOKEN` |
+| ComfyUI | `http://comfyui:8188` | None (prefer MCP) |
+| n8n | `http://n8n:5678` | MCP only |
+| OpenClaw UI | `http://openclaw-gateway:6680` | Bearer token |
+
+## Discord
+
+`message` tool with `to: "channel:<snowflake>"`. Respect per-message size limits.
+
+## Stack Ops
+
+Service lifecycle, model pulls, self-healing: **`agents/stack-ops.md`**.
+Compose, model downloads, MCP troubleshooting: **`agents/docker-ops.md`**.

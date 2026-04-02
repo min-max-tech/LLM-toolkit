@@ -686,6 +686,28 @@ def _normalize_gguf_pull_repos(model: str) -> str | None:
 
     None means the string is not suitable (e.g. Ollama-style ``llama3.2:8b``).
     """
+    def _normalize_repo_ref(raw: str) -> str | None:
+        candidate = raw.strip()
+        if not candidate:
+            return None
+
+        if "huggingface.co/" in candidate:
+            match = re.search(r"huggingface\.co/([^/\s]+/[^/\s:#?]+)", candidate)
+            if not match:
+                return None
+            candidate = match.group(1)
+        elif candidate.startswith("hf.co/"):
+            candidate = candidate[6:].strip()
+
+        if ":" in candidate:
+            repo, suffix = candidate.rsplit(":", 1)
+            if re.fullmatch(r"[\w.-]+/[\w.-]+", repo) and re.fullmatch(r"[\w.-]+", suffix):
+                candidate = repo
+
+        if re.fullmatch(r"[\w.-]+/[\w.-]+", candidate):
+            return candidate
+        return None
+
     s = (model or "").strip()
     if not s:
         return None
@@ -693,20 +715,14 @@ def _normalize_gguf_pull_repos(model: str) -> str | None:
         return ""
     if "," in s:
         parts = [p.strip() for p in s.split(",") if p.strip()]
+        normalized_parts: list[str] = []
         for p in parts:
-            if not re.fullmatch(r"[\w.-]+/[\w.-]+", p):
+            normalized = _normalize_repo_ref(p)
+            if normalized is None:
                 return None
-        return ",".join(parts)
-    if "huggingface.co/" in s:
-        m = re.search(r"huggingface\.co/([^/\s]+/[^/\s]+)", s)
-        if m and re.fullmatch(r"[\w.-]+/[\w.-]+", m.group(1)):
-            return m.group(1)
-    rest = s[6:].strip() if s.startswith("hf.co/") else ""
-    if rest and re.fullmatch(r"[\w.-]+/[\w.-]+", rest):
-        return rest
-    if re.fullmatch(r"[\w.-]+/[\w.-]+", s):
-        return s
-    return None
+            normalized_parts.append(normalized)
+        return ",".join(normalized_parts)
+    return _normalize_repo_ref(s)
 
 
 def _hf_url_to_ollama(raw: str) -> str:

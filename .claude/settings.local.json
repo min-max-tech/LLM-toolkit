@@ -44,7 +44,11 @@
       "Bash(curl:*)",
       "Bash(find /c/dev/AI-toolkit -type f -name docker-compose*.yml)",
       "Bash(find /c/dev/AI-toolkit -type f -name *mcp* -o -name *registry*)",
-      "Bash(find /c/dev/AI-toolkit -type f \\\\\\(-name *registry*.yaml -o -name *registry*.yml \\\\\\))"
+      "Bash(find /c/dev/AI-toolkit -type f \\\\\\(-name *registry*.yaml -o -name *registry*.yml \\\\\\))",
+      "Bash(find /c/dev/AI-toolkit/data/openclaw -name \"*.json\" ! -path \"*/sessions/*\" ! -path \"*/__pycache__/*\" -exec wc -l {} +)",
+      "Bash(wc -c \"C:\\\\dev\\\\AI-toolkit\\\\data\\\\openclaw\\\\agents\\\\main\\\\sessions/\"*.jsonl*)",
+      "Bash(du -sh \"C:\\\\dev\\\\AI-toolkit\\\\data\\\\openclaw\\\\workspace/\"*/)",
+      "Bash(python3:*)"
     ]
   }
 }

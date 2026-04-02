@@ -33,7 +33,8 @@ Edit `.env` and set:
 - `OPENCLAW_GATEWAY_TOKEN` — generate with `openssl rand -hex 32`
 - **Ollama** — enabled by default when using the main compose; models from `ollama` are auto-discovered
 - Optional cloud APIs: `OPENAI_API_KEY`, `ANTHROPIC_API_KEY`, `GEMINI_API_KEY`, or `OPENROUTER_API_KEY`
-- **Discord / Telegram (optional):** set `DISCORD_TOKEN` and/or `TELEGRAM_BOT_TOKEN` in the **project root** `.env` (same file the main compose uses). On startup, `openclaw-config-sync` runs `openclaw/scripts/merge_gateway_config.py`, which rewrites channel entries in `data/openclaw/openclaw.json` to OpenClaw **SecretRef** form (`source`, **`provider: default`**, `id` — required on OpenClaw 2026.3.x) so bot tokens are not stored as plaintext in the JSON. See [OPENCLAW_SECURE.md](OPENCLAW_SECURE.md) §4 and [TROUBLESHOOTING — OpenClaw](../docs/runbooks/TROUBLESHOOTING.md#openclaw) if the gateway reports invalid channel token.
+- **Discord / Telegram (optional):** set `DISCORD_TOKEN` and/or `TELEGRAM_BOT_TOKEN` in the **project root** `.env` (same file the main compose uses). On startup, `openclaw-config-sync` runs `openclaw/scripts/merge_gateway_config.py`, which rewrites channel entries in `data/openclaw/openclaw.json` to OpenClaw **SecretRef** form (`source`, **`provider: default`**, `id` — required on OpenClaw 2026.3.x) so bot tokens are not stored as plaintext in the JSON. The same sync step now also normalizes `data/openclaw/cron/jobs.json` so Discord announce jobs use `delivery.to: "channel:<id>"` instead of a brittle bare snowflake. See [OPENCLAW_SECURE.md](OPENCLAW_SECURE.md) §4 and [TROUBLESHOOTING — OpenClaw](../docs/runbooks/TROUBLESHOOTING.md#openclaw) if the gateway reports invalid channel token.
+- **Plugin trust:** `openclaw-config-sync` also pins `plugins.allow` to include `openclaw-mcp-bridge`, so the MCP bridge is treated as an explicit trusted stack component instead of an opportunistic local plugin.
 
 ### 3. Start OpenClaw
 

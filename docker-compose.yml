@@ -538,7 +538,9 @@ services:
         sh /upgrade-tools.sh
         cp -f /templates/health_check.sh /workspace/ 2>/dev/null || true
         mkdir -p /workspace/agents && cp -rf /templates/agents/. /workspace/agents/ 2>/dev/null || true
-        # Gateway runs as uid 1000 (node); workspace + agents/ + canvas/ must be writable (e.g. agents/main/agent/models.json)
+        # Gateway runs as uid 1000 (node); both mounts must be writable.
+        chown -R 1000:1000 /workspace 2>/dev/null || true
+        # Config tree also needs write access for agents/, canvas/, auth-profiles, etc.
         chown -R 1000:1000 /openclaw-config 2>/dev/null || true
     networks:
       - frontend
@@ -562,7 +564,12 @@ services:
     volumes:
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/config
       - ${BASE_PATH:-.}/openclaw/scripts:/scripts:ro
-    entrypoint: ["python3", "/scripts/merge_gateway_config.py"]
+    entrypoint:
+      - /bin/sh
+      - -c
+      - |
+        set -eu
+        python3 /scripts/merge_gateway_config.py
     networks:
       - frontend
 
@@ -623,7 +630,9 @@ services:
           mkdir -p "$$PLUGIN_DIR"
           cp -a /fork-openclaw-mcp-bridge/. "$$PLUGIN_DIR/"
           cd "$$PLUGIN_DIR"
-          npm install --omit=dev --ignore-scripts 2>&1
+          if [ ! -d "$$PLUGIN_DIR/node_modules/@sinclair/typebox" ]; then
+            npm install --omit=dev --ignore-scripts 2>&1
+          fi
           echo "Forked plugin installed."
         elif [ ! -f "$$PLUGIN_DIR/dist/index.js" ]; then
           echo "Installing openclaw-mcp-bridge npm package..."
@@ -634,7 +643,9 @@ services:
           mkdir -p "$$PLUGIN_DIR"
           cp -r package/* "$$PLUGIN_DIR/"
           cd "$$PLUGIN_DIR"
-          npm install --omit=dev --ignore-scripts 2>&1
+          if [ ! -d "$$PLUGIN_DIR/node_modules/@sinclair/typebox" ]; then
+            npm install --omit=dev --ignore-scripts 2>&1
+          fi
           echo "Plugin package installed."
         fi
 
@@ -887,4 +898,3 @@ networks:
     # internal: false required for llama.cpp and HuggingFace model downloads.
     # Set internal: true for air-gapped security (model pulls will fail).
     internal: false
-

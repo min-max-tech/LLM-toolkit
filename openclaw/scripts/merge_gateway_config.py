@@ -220,6 +220,23 @@ def _merge_deny_builtin_browser_unless_opt_in(data: dict) -> bool:
     return modified
 
 
+def _merge_plugin_allowlist(data: dict) -> bool:
+    """Pin trusted local plugins explicitly so OpenClaw does not treat them as opportunistic discoveries."""
+    plugins = data.setdefault("plugins", {})
+    if not isinstance(plugins, dict):
+        return False
+    allow = plugins.get("allow")
+    modified = False
+    if not isinstance(allow, list):
+        allow = []
+        plugins["allow"] = allow
+        modified = True
+    if "openclaw-mcp-bridge" not in allow:
+        allow.append("openclaw-mcp-bridge")
+        modified = True
+    return modified
+
+
 def _merge_elevated_allow_webchat(data: dict) -> bool:
     """If OPENCLAW_ELEVATED_ALLOW_WEBCHAT=1, enable tools.elevated for webchat sessions."""
     if os.environ.get("OPENCLAW_ELEVATED_ALLOW_WEBCHAT", "").strip() != "1":
@@ -514,6 +531,8 @@ def main() -> int:
 
     # Built-in `browser` requires Chrome in the gateway — unavailable in default Docker. Use Tavily MCP + web_fetch instead.
     if _merge_deny_builtin_browser_unless_opt_in(data):
+        modified = True
+    if _merge_plugin_allowlist(data):
         modified = True
 
     # Opt-in: full exec + elevated in gateway container (security-sensitive). Supersedes webchat-only.

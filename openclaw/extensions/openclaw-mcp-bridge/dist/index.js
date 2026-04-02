@@ -26,6 +26,48 @@ function toManagerConfig(config) {
         debug: config.debug,
     };
 }
+function resolveProxyToolName(mcpManager, prefix, rawToolName) {
+    const toolName = typeof rawToolName === "string" ? rawToolName.trim() : "";
+    const candidates = [];
+    const addCandidate = (candidate) => {
+        if (typeof candidate !== "string" || candidate.length === 0) {
+            return;
+        }
+        if (!candidates.includes(candidate)) {
+            candidates.push(candidate);
+        }
+    };
+    if (toolName.startsWith(`${prefix}__`)) {
+        addCandidate(toolName);
+    }
+    addCandidate(`${prefix}__${toolName}`);
+    if (toolName.includes("__")) {
+        addCandidate(`${prefix}__${toolName.replace(/__/g, "_")}`);
+        const parts = toolName.split("__").filter((part) => part.length > 0);
+        if (parts.length > 1) {
+            const withoutFirst = parts.slice(1).join("__");
+            addCandidate(`${prefix}__${withoutFirst}`);
+            addCandidate(`${prefix}__${withoutFirst.replace(/__/g, "_")}`);
+            addCandidate(`${prefix}__${parts[parts.length - 1]}`);
+        }
+    }
+    const registered = new Set(mcpManager.getRegisteredTools().map((tool) => tool.namespacedName));
+    for (const candidate of candidates) {
+        if (registered.has(candidate)) {
+            return candidate;
+        }
+    }
+    return candidates[0] ?? `${prefix}__${toolName}`;
+}
+function toFlatToolParametersSchema(rt) {
+    const schema = rt?.inputSchema;
+    if (schema && typeof schema === "object" && !Array.isArray(schema)) {
+        return schema;
+    }
+    return Type.Record(Type.String(), Type.Unknown(), {
+        description: "Arguments for this MCP tool (see injected MCP tool list).",
+    });
+}
 // ---------------------------------------------------------------------------
 // Plugin registration
 // ---------------------------------------------------------------------------
@@ -81,11 +123,15 @@ function register(api) {
                 const toolName = params.tool;
                 const args = params.args ?? {};
                 try {
-                    const result = await mcpManager.callTool(`${prefix}__${toolName}`, args);
+                    const resolvedToolName = resolveProxyToolName(mcpManager, prefix, toolName);
+                    if (resolvedToolName !== `${prefix}__${toolName}`) {
+                        api.logger.info(`mcp-client: normalized proxy tool "${toolName}" -> "${resolvedToolName}"`);
+                    }
+                    const result = await mcpManager.callTool(resolvedToolName, args);
                     const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
                     return {
                         content: [{ type: "text", text }],
-                        details: { server: serverName, tool: toolName, result },
+                        details: { server: serverName, tool: toolName, resolvedTool: resolvedToolName, result },
                     };
                 }
                 catch (err) {
@@ -147,9 +193,7 @@ function register(api) {
                     name: rt.namespacedName,
                     label: `MCP ${rt.serverName}: ${rt.originalName}`,
                     description: `${rt.description ?? ""}\n\nSame as \`${pfx}__call\` with tool "${rt.originalName}" and args for parameters.`,
-                    parameters: Type.Record(Type.String(), Type.Unknown(), {
-                        description: "Arguments for this MCP tool (see injected MCP tool list).",
-                    }),
+                    parameters: toFlatToolParametersSchema(rt),
                     async execute(_toolCallId, params) {
                         await ensureConnected();
                         try {
@@ -234,7 +278,7 @@ function register(api) {
                     const firstConfig = config.servers[firstServerName];
                     const prefix = firstConfig?.toolPrefix ?? firstServerName;
                     return {
-                        appendSystemContext: `\n\n## MCP Tools Available\n\nThe following tools are available via MCP servers. Use the \`${prefix}__call\` tool with the tool name and arguments.\n\n${allSchemas.join("\n\n")}`,
+                        appendSystemContext: `\n\n## MCP Tools Available\n\nThe following tools are available via MCP servers. Use the flat \`gateway__...\` tools when available. If you use \`${prefix}__call\`, the inner \`tool\` value must be the raw tool name without a \`gateway__\` prefix.\n\nFor unattended or cron runs: do not emit progress chatter such as "Let me check..." or "Fetching more...". Keep assistant text empty while calling tools, then emit exactly one final non-empty assistant message.\n\n${allSchemas.join("\n\n")}`,
                     };
                 }
             }
