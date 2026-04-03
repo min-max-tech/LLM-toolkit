@@ -77,4 +77,4 @@ After a fix is applied, verify it resolves the issue:
 | 401 errors | Token env vars set? `env \| grep TOKEN` |
 | Connection refused | Service healthy? `wget $DASHBOARD_URL/api/health` |
 | Python traceback | Read the file at the line number; check imports and env var reads |
-| Slow inference | `wget http://comfyui:8188/system_stats` or `wget http://ollama:11434/api/ps` |
+| Slow inference | `wget http://comfyui:8188/system_stats` or check llamacpp logs via `GET /services/llamacpp/logs` |

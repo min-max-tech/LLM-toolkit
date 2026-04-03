@@ -232,7 +232,29 @@ async def ollama_models():
 
 @app.post("/api/ollama/delete")
 async def ollama_delete(req: PullRequest):
-    """Delete an Ollama model. model can include tag (e.g. llama3.2 or hf.co/unsloth/Qwen3.5-9B-GGUF:latest)."""
+    """Delete a GGUF model file from disk."""
+    name = (req.model or "").strip()
+    if not name or ".." in name or "/" in name:
+        raise HTTPException(status_code=400, detail="Invalid model name")
+    if not name.lower().endswith(".gguf"):
+        raise HTTPException(status_code=400, detail="Model must be a .gguf filename")
+    path = (_GGUF_MODELS_DIR / name).resolve()
+    try:
+        path.relative_to(_GGUF_MODELS_DIR.resolve())
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail="Invalid model path") from e
+    if not path.exists() or not path.is_file():
+        raise HTTPException(status_code=404, detail=f"Model '{name}' not found on disk")
+    try:
+        path.unlink()
+    except OSError as e:
+        raise HTTPException(status_code=500, detail=f"Cannot delete model: {e}") from e
+    return {"ok": True, "message": f"Deleted '{name}' from disk."}
+
+
+@app.post("/api/ollama/unload")
+async def ollama_unload(req: PullRequest):
+    """Unload the currently active model from the gateway without deleting GGUF files."""
     name = (req.model or "").strip()
     if not name or ".." in name:
         raise HTTPException(status_code=400, detail="Invalid model name")
@@ -246,11 +268,11 @@ async def ollama_delete(req: PullRequest):
             if r.status_code == 404:
                 raise HTTPException(status_code=404, detail=f"Model '{name}' not found")
             r.raise_for_status()
-            return {"ok": True, "message": f"Unload acknowledged for '{name}' (GGUF files on disk unchanged)."}
+            return {"ok": True, "message": f"Unloaded '{name}' from the gateway."}
         except HTTPException:
             raise
         except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}")
+            raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}") from e
 
 
 @app.post("/api/llamacpp/switch")
@@ -277,6 +299,62 @@ async def llamacpp_switch_model(req: PullRequest, request: Request):
     )
     started = code2 in (200, 201, 202)
     return {"ok": True, "model": model, "llamacpp_restarting": started}
+
+
+@app.post("/api/active-model")
+async def set_active_model(req: PullRequest, request: Request):
+    """Unified: switch llamacpp model and keep Open WebUI + OpenClaw defaults in parity."""
+    model = (req.model or "").strip()
+    if not model or ".." in model or "/" in model:
+        raise HTTPException(status_code=400, detail="Invalid model filename")
+    if not model.lower().endswith(".gguf"):
+        raise HTTPException(status_code=400, detail="Model must be a .gguf filename")
+
+    bare_name = model[:-5]  # strip .gguf → gateway model id
+    results: dict = {}
+
+    # 1. Switch LLAMACPP_MODEL + recreate llamacpp
+    code, data = await _ops_request(
+        "POST", "/env/set", request=request,
+        json={"key": "LLAMACPP_MODEL", "value": model, "confirm": True},
+    )
+    if code not in (200, 201):
+        raise HTTPException(status_code=502, detail=f"Failed to update LLAMACPP_MODEL: {data}")
+    code2, _ = await _ops_request(
+        "POST", "/services/llamacpp/recreate", request=request, json={"confirm": True}
+    )
+    results["llamacpp_restarting"] = code2 in (200, 201, 202)
+
+    # 2. Update DEFAULT_MODEL + OPEN_WEBUI_DEFAULT_MODEL + recreate open-webui
+    open_webui_model = _open_webui_default_model(bare_name)
+    await _ops_request("POST", "/env/set", request=request,
+                       json={"key": "DEFAULT_MODEL", "value": bare_name, "confirm": True})
+    await _ops_request("POST", "/env/set", request=request,
+                       json={"key": "OPEN_WEBUI_DEFAULT_MODEL", "value": open_webui_model, "confirm": True})
+    code3, _ = await _ops_request(
+        "POST", "/services/open-webui/recreate", request=request, json={"confirm": True}
+    )
+    results["open_webui_restarting"] = code3 in (200, 201, 202)
+
+    # 3. Update OpenClaw agents.defaults.model.primary + restart openclaw-gateway
+    openclaw_model = f"gateway/{bare_name}"
+    if OPENCLAW_CONFIG_PATH.exists():
+        try:
+            cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+            model_cfg = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("model", {})
+            model_cfg["primary"] = openclaw_model
+            model_cfg.setdefault("fallbacks", [])
+            OPENCLAW_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+            code4, _ = await _ops_request(
+                "POST", "/services/openclaw-gateway/restart", request=request, json={"confirm": True}
+            )
+            results["openclaw_restarting"] = code4 in (200, 201)
+        except Exception:
+            results["openclaw_restarting"] = False
+    else:
+        results["openclaw_restarting"] = False
+
+    return {"ok": True, "model": model, **results}
 
 
 def _run_ollama_pull(model: str):
@@ -746,9 +824,10 @@ def _normalize_gguf_pull_repos(model: str) -> str | None:
             candidate = candidate[6:].strip()
 
         if ":" in candidate:
-            repo, suffix = candidate.rsplit(":", 1)
-            if re.fullmatch(r"[\w.-]+/[\w.-]+", repo) and re.fullmatch(r"[\w.-]+", suffix):
-                candidate = repo
+            repo, quant = candidate.rsplit(":", 1)
+            if re.fullmatch(r"[\w.-]+/[\w.-]+", repo) and re.fullmatch(r"[\w.-]+", quant):
+                return f"{repo}:{quant}"  # preserve quant filter for gguf-puller
+            return None
 
         if re.fullmatch(r"[\w.-]+/[\w.-]+", candidate):
             return candidate

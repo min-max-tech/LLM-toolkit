@@ -122,7 +122,7 @@ It emphasizes **implementable** patterns: tool use, memory, exception logic, res
 ### Chapter 16 — Resource-aware optimization
 
 - **Insight:** **Tokens**, **CPU**, **GPU**, **rate limits**, **cost** — schedule and batch work accordingly.
-- **Stack:** **`OLLAMA_NUM_CTX`**, model-gateway **context**, **Tavily** rate limits; **ComfyUI** / **n8n** for heavy jobs off the gateway.
+- **Stack:** **`LLAMACPP_CTX_SIZE`** / **`OPENCLAW_CONTEXT_WINDOW`**, model-gateway **context**, **Tavily** rate limits; **ComfyUI** / **n8n** for heavy jobs off the gateway.
 
 ### Chapter 17 — Reasoning techniques
 

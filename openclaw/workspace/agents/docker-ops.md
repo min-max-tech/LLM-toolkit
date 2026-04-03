@@ -4,11 +4,11 @@
 
 Use this when **`AGENTS.md`** / **`TOOLS.md`** point here for **compose**, **model pulls**, and **ops-controller** — not from guessed OpenClaw CLI names.
 
-## Ollama / chat models (OpenClaw `gateway/…`)
+## GGUF / chat models (via model-gateway)
 
-- **Dashboard:** `http://dashboard:8080` (from host, map port if needed) — pull Ollama models and sync **`openclaw.json`** when offered.
-- **Compose profile `models`:** `docker compose --profile models run --rm model-puller` — set **`MODELS`** in **`.env`** (comma-separated tags).
-- **API:** **`model-gateway`** proxies to Ollama; **`ollama pull`** on the host only affects models if **`ollama`** is the same volume as compose.
+- **Dashboard:** `http://dashboard:8080` — use the GGUF pull UI or `POST /models/gguf-pull` on the ops-controller with `{"repos": "<hf-repo-id>", "quantizations": ["Q4_K_M"]}` + Bearer auth.
+- **Compose profile `models`:** `docker compose --profile models run --rm model-puller` — set **`MODELS`** in **`.env`** (comma-separated HuggingFace repo ids or GGUF filenames).
+- **API:** **`model-gateway`** proxies to **llamacpp**; loaded model is set via **`LLAMACPP_MODEL`** in **`.env`**; use `POST /env/set` (ops-controller) or restart llamacpp after placing a GGUF under the models volume.
 
 ## ComfyUI weights (large HF downloads)
 

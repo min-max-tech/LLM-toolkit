@@ -718,6 +718,27 @@ def main() -> int:
 
     _ensure_openclaw_state_dirs(config_path.parent)
 
+    # Drift detection: warn if unrestricted settings are present but the flag is not set.
+    # These settings are only written by _merge_unrestricted_gateway_container(), but they
+    # persist in openclaw.json after the env var is removed (the function only escalates).
+    if os.environ.get("OPENCLAW_UNRESTRICTED_GATEWAY_CONTAINER", "").strip() != "1":
+        drifted: list[str] = []
+        _tools = data.get("tools") or {}
+        if isinstance(_tools, dict) and (_tools.get("exec") or {}).get("ask") == "off":
+            drifted.append("tools.exec.ask=off")
+        _agents = data.get("agents") or {}
+        _defaults = (_agents.get("defaults") or {}) if isinstance(_agents, dict) else {}
+        if isinstance(_defaults, dict) and _defaults.get("elevatedDefault") == "full":
+            drifted.append("agents.defaults.elevatedDefault=full")
+        if drifted:
+            print(
+                f"merge_gateway_config: WARNING: unrestricted settings detected in openclaw.json"
+                f" ({', '.join(drifted)}) but OPENCLAW_UNRESTRICTED_GATEWAY_CONTAINER is not set."
+                " These settings persist from a prior run. To restore safe defaults, set the flag,"
+                " run config-sync, then clear the flag and manually revert those keys in openclaw.json.",
+                file=sys.stderr,
+            )
+
     if not modified:
         return 0
     try:

@@ -5,7 +5,6 @@ from __future__ import annotations
 import json
 from pathlib import Path
 
-
 CONFIG_ROOT = Path("/config")
 JOBS_PATH = CONFIG_ROOT / "cron" / "jobs.json"
 
@@ -57,9 +56,19 @@ def main() -> int:
     changed = False
     normalized = 0
     for job in jobs:
-        if isinstance(job, dict) and _normalize_delivery(job):
+        if not isinstance(job, dict):
+            continue
+        if _normalize_delivery(job):
             changed = True
             normalized += 1
+        job_id = job.get("id", "<unknown>")
+        payload = job.get("payload") or {}
+        model = payload.get("model") if isinstance(payload, dict) else None
+        if not model or not str(model).startswith("gateway/"):
+            print(
+                f"normalize_cron_jobs: WARNING: job '{job_id}' has payload.model={model!r}"
+                " — must be a gateway/… id (e.g. gateway/my-model.gguf); cron will fail at runtime"
+            )
 
     if changed:
         JOBS_PATH.write_text(json.dumps(data, indent=2) + "\n", encoding="utf-8")

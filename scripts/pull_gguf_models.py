@@ -55,8 +55,12 @@ def main() -> int:
             print(f"    -> {path}")
             continue
 
-        # Repo id: download all .gguf at root (common layout) or first Q4_K_M if many
+        # Repo id: bare (owner/repo) or with quant filter (owner/repo:UD-Q2_K_XL)
+        quant_filter = None
         repo_id = entry
+        if ":" in entry:
+            repo_id, quant_filter = entry.rsplit(":", 1)
+
         try:
             files = list_repo_files(repo_id, token=token)
         except Exception as e:
@@ -66,14 +70,25 @@ def main() -> int:
         if not ggufs:
             print(f"    No root-level .gguf in {repo_id}; add a direct file URL or adjust repo.")
             continue
-        pick = ggufs[0]
-        for pref in ("Q4_K_M", "Q5_K_M", "Q8_0", "q4_k_m"):
-            for g in ggufs:
-                if pref.lower() in g.lower():
-                    pick = g
+
+        if quant_filter:
+            matches = [g for g in ggufs if quant_filter.lower() in g.lower()]
+            if not matches:
+                print(f"    No .gguf matching '{quant_filter}' in {repo_id}.")
+                print(f"    Available: {', '.join(ggufs)}")
+                return 1
+            pick = matches[0]
+            print(f"    Filter '{quant_filter}' matched: {pick}")
+        else:
+            pick = ggufs[0]
+            for pref in ("Q4_K_M", "Q5_K_M", "Q8_0", "q4_k_m"):
+                for g in ggufs:
+                    if pref.lower() in g.lower():
+                        pick = g
+                        break
+                if pick != ggufs[0]:
                     break
-            if pick != ggufs[0]:
-                break
+
         path = hf_hub_download(repo_id=repo_id, filename=pick, local_dir=str(dest), local_dir_use_symlinks=False, token=token)
         print(f"    -> {path}")
 

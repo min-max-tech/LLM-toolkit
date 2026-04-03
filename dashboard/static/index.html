@@ -584,7 +584,7 @@
       background:var(--accent); box-shadow:0 0 6px var(--accent); border-radius:1px;
     }
     .perf-subsection-desc { font-size:var(--text-xs); color:var(--muted); margin-bottom:var(--space-3); }
-    .models-grid { display: grid; grid-template-columns: 1fr 1fr; gap: var(--space-5); }
+    .models-grid { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); gap: var(--space-5); align-items: start; }
     @media (max-width: 900px) { .models-grid { grid-template-columns: 1fr; gap: var(--space-4); } }
     .claude-env-toggle {
       display: inline-flex; align-items: center; gap: var(--space-3);
@@ -608,10 +608,11 @@
     .claude-env-toggle:focus-within .track { outline: 1.5px solid var(--accent); outline-offset: 2px; }
     .model-panel {
       background: var(--bg-elevated); border-radius: var(--radius);
-      border: 1px solid var(--border-subtle); overflow: visible; transition: border-color .2s;
+      border: 1px solid var(--border-subtle); overflow: hidden; transition: border-color .2s;
     }
     .model-panel:hover { border-color: rgba(0,201,255,.14); }
-    .models-grid .model-panel:first-child { position: relative; z-index: 2; }
+    .models-grid > .model-panel { min-width: 0; }
+    .models-grid .llm-model-panel { position: relative; z-index: 2; overflow: visible; }
     .model-panel h3 {
       font-size: .62rem; font-weight: 700;
       padding: var(--space-3) var(--space-4);
@@ -626,50 +627,87 @@
       border-radius: 1px; box-shadow: 0 0 5px var(--accent);
     }
     .model-list {
-      min-height: 80px; max-height: 240px; overflow-y: auto;
+      min-height: 80px; min-width: 0; max-height: 240px; overflow-y: auto; overflow-x: hidden;
       font-family: var(--font-mono); font-size: var(--text-sm);
     }
     .model-list::-webkit-scrollbar { width: 3px; }
     .model-list::-webkit-scrollbar-track { background: transparent; }
     .model-list::-webkit-scrollbar-thumb { background: var(--border); border-radius: 2px; }
     .model-item {
-      display: grid; grid-template-columns: 1fr auto auto auto;
-      align-items: center; gap: 8px;
+      display: flex; align-items: center; gap: 8px;
       padding: 7px var(--space-4);
       border-bottom: 1px solid var(--border-subtle); transition: background .15s;
     }
     .model-item:last-child { border-bottom: none; }
     .model-item:hover { background: var(--surface-hover); }
     .model-item .name {
-      color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      flex: 1; color: var(--fg); overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
       font-size: .82rem;
     }
     .model-item .meta { color: var(--muted); font-size: .72rem; white-space: nowrap; }
-    .model-badge-active {
-      font-size: .58rem !important; padding: 2px 7px !important;
-      letter-spacing: .06em; white-space: nowrap;
+    .badge-active {
+      font-size: .58rem; padding: 2px 7px; border-radius: 3px;
+      background: color-mix(in srgb, var(--accent) 16%, transparent);
+      border: 1px solid color-mix(in srgb, var(--accent) 35%, transparent);
+      color: var(--accent); font-weight: 700; letter-spacing: .08em;
+      text-transform: uppercase; white-space: nowrap; flex-shrink: 0;
     }
-    .btn-model-switch {
-      font-size: .62rem; padding: 2px 9px;
-      background: transparent; border: 1px solid var(--accent);
-      color: var(--accent); border-radius: 3px; cursor: pointer;
-      white-space: nowrap; font-family: var(--font-mono);
-      letter-spacing: .04em; line-height: 1.6;
-      transition: background .15s, color .15s, box-shadow .15s;
-    }
-    .btn-model-switch:hover:not(:disabled) {
-      background: var(--accent); color: #000;
-      box-shadow: 0 0 8px var(--accent-glow); transform: none;
-    }
-    .btn-model-switch:disabled { opacity: .35; cursor: not-allowed; }
     .btn-model-delete {
       flex-shrink: 0; width: 22px; height: 22px; padding: 0; border: none;
       background: transparent; color: var(--muted); font-size: 16px; line-height: 1;
       cursor: pointer; border-radius: var(--radius-sm); transition: color .2s, background .2s;
     }
     .btn-model-delete:hover { color: var(--danger); background: var(--danger-dim); }
-    .model-category { font-size: var(--text-xs); text-transform: uppercase; letter-spacing: .05em; color: var(--muted); margin-top: 2px; }
-    .pull-area { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-subtle); }
+    .llm-active-area {
+      padding: var(--space-3) var(--space-4);
+      background: color-mix(in srgb, var(--accent) 5%, transparent);
+      border-bottom: 1px solid color-mix(in srgb, var(--accent) 14%, transparent);
+    }
+    .llm-active-label {
+      font-size: .62rem; text-transform: uppercase; letter-spacing: .1em;
+      color: var(--accent); margin-bottom: var(--space-2); font-weight: 700;
+    }
+    .llm-active-row { display: flex; gap: var(--space-2); align-items: center; }
+    .llm-active-row select {
+      flex: 1; min-width: 0; padding: var(--space-2) var(--space-3);
+      background: var(--bg); border: 1px solid var(--border);
+      border-radius: var(--radius-sm); color: var(--fg);
+      font-size: var(--text-sm); font-family: var(--font-mono);
+    }
+    .llm-active-status {
+      font-size: .75rem; color: var(--fg-muted); margin-top: var(--space-1); min-height: 1em;
+    }
+    .comfy-cat-row {
+      display: flex; align-items: center; gap: 8px; min-width: 0;
+      padding: 8px var(--space-4); cursor: pointer;
+      border-bottom: 1px solid var(--border-subtle);
+      transition: background .15s; user-select: none;
+    }
+    .comfy-cat-row:hover { background: var(--surface-hover); }
+    .comfy-cat-chevron { font-size: .6rem; color: var(--muted); transition: transform .18s; flex-shrink: 0; }
+    .comfy-cat-row.open .comfy-cat-chevron { transform: rotate(90deg); }
+    .comfy-cat-label { flex: 1; min-width: 0; font-size: .82rem; color: var(--fg); font-family: var(--font-mono); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .comfy-cat-count {
+      font-size: .65rem; padding: 1px 6px; border-radius: 3px;
+      background: var(--surface); border: 1px solid var(--border-subtle);
+      color: var(--muted); white-space: nowrap; flex-shrink: 0;
+    }
+    .comfy-cat-size { font-size: .72rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .comfy-file-list { background: var(--bg); min-width: 0; }
+    .comfy-file-list:not([style*="none"]) { border-bottom: 1px solid var(--border-subtle); }
+    .comfy-file-item {
+      display: flex; align-items: center; gap: 8px; min-width: 0;
+      padding: 5px var(--space-4) 5px calc(var(--space-4) + 14px);
+      border-bottom: 1px solid var(--border-subtle);
+    }
+    .comfy-file-item:last-child { border-bottom: none; }
+    .comfy-file-item .name {
+      flex: 1; min-width: 0; font-size: .75rem; color: var(--fg-muted);
+      overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+      font-family: var(--font-mono);
+    }
+    .comfy-file-item .meta { font-size: .68rem; color: var(--muted); white-space: nowrap; flex-shrink: 0; }
+    .pull-area { padding: var(--space-3) var(--space-4); border-top: 1px solid var(--border-subtle); min-width: 0; }
     .model-hub-dl-panel {
       margin-bottom: var(--space-5);
     }
@@ -684,22 +722,6 @@
       font-size: .75rem; color: var(--muted); margin-top: var(--space-2); line-height: 1.5;
     }
     .model-hub-dl-hint code { font-family: var(--font-mono); color: var(--fg-muted); }
-    .default-model-row {
-      display: flex; flex-wrap: wrap; gap: var(--space-2); align-items: center;
-    }
-    .default-model-row select {
-      flex: 1; min-width: 160px;
-      padding: var(--space-2) var(--space-3); background: var(--bg);
-      border: 1px solid var(--border); border-radius: var(--radius-sm);
-      color: var(--fg); font-size: var(--text-sm);
-    }
-    .default-model-label {
-      font-size: .72rem; color: var(--muted); margin-bottom: var(--space-2);
-      text-transform: uppercase; letter-spacing: .06em;
-    }
-    .default-model-status {
-      font-size: .75rem; color: var(--fg-muted); margin-top: var(--space-1); min-height: 1.2em;
-    }
     .openclaw-sync-status {
       font-size: .75rem; color: var(--fg-muted); margin-top: var(--space-2); min-height: 1.2em;
     }
@@ -1181,14 +1203,14 @@
 
     <section id="models-section">
       <h2>Model Hub</h2>
-      <p class="section-desc">Download from Hugging Face or any URL — auto-routes to GGUF pull (LLMs) or ComfyUI (diffusion). Sync models to OpenClaw.</p>
+      <p class="section-desc">Download from Hugging Face or any URL. GGUF pulls go to llama.cpp, diffusion files go to ComfyUI, and OpenClaw stays in sync.</p>
 
       <!-- Unified download row -->
       <div class="model-panel model-hub-dl-panel">
         <h3>Download Model</h3>
         <div class="pull-area">
           <div class="model-hub-dl-row">
-            <input type="text" id="hub-dl-input" placeholder="HF repo (org/name), hf.co/… URL, or https://… direct link"
+            <input type="text" id="hub-dl-input" placeholder="HF repo (org/name), hf.co/... URL, or https://... direct link"
               aria-label="Model name or URL">
             <select id="hub-dl-category" style="padding:var(--space-2) var(--space-3);background:var(--bg);border:1px solid var(--border);border-radius:var(--radius-sm);color:var(--fg);font-size:var(--text-sm);" aria-label="ComfyUI category (for diffusion files only)">
               <option value="">Category: auto-detect</option>
@@ -1200,7 +1222,7 @@
             <div id="hub-dl-target-badge" style="font-size:0.75rem;padding:2px 8px;border-radius:4px;background:var(--surface);color:var(--fg-muted);border:1px solid var(--border);white-space:nowrap;">auto</div>
             <button id="hub-dl-btn">Pull</button>
           </div>
-          <p class="model-hub-dl-hint">GGUF: HF repo id or <code>hf.co/owner/repo</code> URL → downloaded to <code>/gguf-models</code>.&ensp;Diffusion: direct <code>.safetensors</code> / <code>.ckpt</code> URL → ComfyUI model dir.&ensp;Or type <code>.env</code> to pull all <code>GGUF_MODELS</code>.</p>
+          <p class="model-hub-dl-hint">GGUF: HF repo id or <code>hf.co/owner/repo</code> URL goes to <code>/gguf-models</code>. Diffusion: direct <code>.safetensors</code> or <code>.ckpt</code> URL goes to the ComfyUI model directory. Or type <code>.env</code> to pull all <code>GGUF_MODELS</code>.</p>
           <div id="hub-dl-progress" class="progress-area" style="display:none;" role="region" aria-label="Download progress">
             <div class="progress-bar"><div class="fill" id="hub-dl-bar" style="width:0%" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
             <div class="log" id="hub-dl-log" role="log" aria-live="polite"></div>
@@ -1210,7 +1232,15 @@
 
       <div class="models-grid">
         <div class="model-panel">
-          <h3>LLM (GGUF) — chat &amp; embed</h3>
+          <h3>LLM — llama.cpp</h3>
+          <div class="llm-active-area" id="llm-active-area" style="display:none;">
+            <div class="llm-active-label">Active Model</div>
+            <div class="llm-active-row">
+              <select id="llm-active-select" aria-label="Active model — all services will use this"></select>
+              <button id="llm-active-btn" title="Switch llama.cpp, Open WebUI, and OpenClaw to this model">Set Active</button>
+            </div>
+            <div id="llm-active-status" class="llm-active-status"></div>
+          </div>
           <div class="model-list" id="ollama-models">
             <div class="skeleton skeleton-line"></div>
             <div class="skeleton skeleton-line short"></div>
@@ -1221,13 +1251,13 @@
               <div class="model-select-wrap">
                 <div class="model-select-trigger" id="ollama-select-trigger" role="combobox" aria-expanded="false" aria-haspopup="listbox" aria-controls="ollama-select-dropdown" aria-labelledby="ollama-select-label" tabindex="0">
                   <span id="ollama-select-label">Select model to pull...</span>
-                  <span class="chevron" aria-hidden="true">▼</span>
+                  <span class="chevron" aria-hidden="true">&#9662;</span>
                 </div>
                 <div class="model-select-dropdown" id="ollama-select-dropdown" role="listbox" aria-labelledby="ollama-select-label" style="display:none;">
                   <div class="model-select-search">
-                    <input type="text" id="ollama-library-search" placeholder="Search catalog…" autocomplete="off" aria-label="Search model catalog">
+                    <input type="text" id="ollama-library-search" placeholder="Search catalog..." autocomplete="off" aria-label="Search model catalog">
                   </div>
-                  <div class="section-label">Registry (pull uses HF repo ids — see custom field)</div>
+                  <div class="section-label">Registry (pull uses HF repo ids; see custom field)</div>
                   <div id="ollama-select-options"></div>
                   <div class="model-select-custom">
                     <input type="text" id="ollama-model-custom" placeholder="HF repo (org/name), .env, or huggingface.co URL" aria-label="Hugging Face repo or URL">
@@ -1243,15 +1273,11 @@
               <div class="log" id="ollama-log" role="log" aria-live="polite"></div>
             </div>
           </div>
-          <div class="pull-area" id="default-model-area" style="display:none;">
-            <div class="default-model-label">Open WebUI default model</div>
-            <div class="default-model-row">
-              <select id="default-model-select" aria-label="Select default model">
-                <option value="">— not set —</option>
-              </select>
-              <button id="default-model-btn" class="secondary" title="Write to .env and restart Open WebUI">Set Default</button>
+          <div class="pull-area">
+            <div class="pull-row">
+              <button id="openclaw-sync-btn" class="secondary">Sync to OpenClaw</button>
             </div>
-            <div id="default-model-status" class="default-model-status"></div>
+            <div id="openclaw-sync-status" class="openclaw-sync-status" aria-live="polite"></div>
           </div>
         </div>
         <div class="model-panel">
@@ -1273,33 +1299,10 @@
             </div>
           </div>
         </div>
-        <div class="model-panel">
-          <h3>OpenClaw — active models</h3>
-          <div class="model-list" id="openclaw-models">
-            <div class="skeleton skeleton-line"></div>
-            <div class="skeleton skeleton-line short"></div>
-          </div>
-          <div class="pull-area">
-            <div class="pull-row">
-              <button id="openclaw-sync-btn">Sync to OpenClaw</button>
-            </div>
-            <div id="openclaw-sync-status" class="openclaw-sync-status" aria-live="polite"></div>
-          </div>
-          <div class="pull-area" id="openclaw-default-area">
-            <div class="default-model-label">Agent default model</div>
-            <div class="default-model-row">
-              <select id="openclaw-default-select" aria-label="Select OpenClaw default model">
-                <option value="">— not set —</option>
-              </select>
-              <button id="openclaw-default-btn" class="secondary" title="Set as OpenClaw agent default">Set Default</button>
-            </div>
-            <div id="openclaw-default-status" class="default-model-status"></div>
-          </div>
-        </div>
         <div class="model-panel claude-env-panel" style="grid-column: 1 / -1;">
-          <h3>Claude Code — host CLI</h3>
+          <h3>Claude Code - host CLI</h3>
           <div class="pull-area">
-            <p class="section-desc" style="margin:0 0 var(--space-3);">Controls whether setup scripts set <code>ANTHROPIC_API_KEY</code> and <code>ANTHROPIC_BASE_URL</code> so the Claude Code CLI talks to your local Model Gateway. Turn off to stop overriding and use Anthropic’s API with your own credentials.</p>
+            <p class="section-desc" style="margin:0 0 var(--space-3);">Controls whether setup scripts set <code>ANTHROPIC_API_KEY</code> and <code>ANTHROPIC_BASE_URL</code> so the Claude Code CLI talks to your local Model Gateway. Turn off to stop overriding and use Anthropic's API with your own credentials.</p>
             <label class="claude-env-toggle">
               <input type="checkbox" id="claude-env-overwrite" checked aria-describedby="claude-env-hint" />
               <span class="track" aria-hidden="true"></span>
@@ -1395,6 +1398,7 @@
     let mcpEnabled = [];
     let mcpCatalog = [];
     let mcpDynamic = false;
+    const comfyuiOpenCategories = new Set();
 
     function escapeHtml(s) {
       const div = document.createElement('div');
@@ -1788,45 +1792,41 @@
           const ps = await api('/api/ollama/ps');
           if (ps.ok) {
             const psData = await ps.json();
-            activeModel = (psData.models?.[0]?.name || '').split(':')[0];
+            activeModel = (psData.models?.[0]?.name || '').replace(/\.gguf$/i, '').split(':')[0];
           }
         } catch (_) {}
         el.innerHTML = ollamaModels.map(m => {
-          const isActive = activeModel && (m.name === activeModel || m.name.split(':')[0] === activeModel);
+          const bareName = m.name.replace(/\.gguf$/i, '');
+          const isActive = activeModel && (bareName === activeModel || bareName.split(':')[0] === activeModel);
           return `
           <div class="model-item">
             <span class="name">${escapeHtml(m.name)}</span>
+            ${isActive ? '<span class="badge-active">active</span>' : ''}
             <span class="meta">${formatSize(m.size || 0)}</span>
-            ${isActive
-              ? '<span class="badge badge-ok model-badge-active">ACTIVE</span>'
-              : `<button type="button" class="btn-model-switch" data-model="${escapeHtml(m.name)}" title="Switch llamacpp to this model (restarts inference server)">Switch</button>`
-            }
             <button type="button" class="btn-model-delete" data-model="${escapeHtml(m.name)}" title="Delete model" aria-label="Delete ${escapeHtml(m.name)}">×</button>
           </div>`;
         }).join('');
+        // Populate single active-model selector
+        const activeArea = document.getElementById('llm-active-area');
+        const activeSel = document.getElementById('llm-active-select');
+        if (activeSel) {
+          const llms = ollamaModels.filter(m => !isEmbeddingModel(m.name));
+          if (llms.length) {
+            activeSel.innerHTML = llms.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('');
+            const active = llms.find(m => {
+              const b = m.name.replace(/\.gguf$/i, '');
+              return activeModel && (b === activeModel || b.split(':')[0] === activeModel);
+            });
+            if (active) activeSel.value = active.name;
+            if (activeArea) activeArea.style.display = '';
+          } else {
+            if (activeArea) activeArea.style.display = 'none';
+          }
+        }
         populateThroughputModelSelect();
-        populateDefaultModelSelect();
       } catch (e) {
         el.innerHTML = '<div class="empty">Failed to load models.</div>';
       }
-    }
-
-    async function populateDefaultModelSelect() {
-      const area = document.getElementById('default-model-area');
-      const sel = document.getElementById('default-model-select');
-      if (!sel || !area) return;
-      if (!opsAvailable) { area.style.display = 'none'; return; }
-      area.style.display = '';
-      const llms = ollamaModels.filter(m => !isEmbeddingModel(m.name));
-      const current = sel.value;
-      sel.innerHTML = '<option value="">— not set —</option>' +
-        llms.map(m => `<option value="${escapeHtml(m.name)}">${escapeHtml(m.name)}</option>`).join('');
-      // Fetch and show current default
-      try {
-        const d = await api('/api/config/default-model').then(r => r.json());
-        if (d.default_model) sel.value = d.default_model;
-        else if (current) sel.value = current;
-      } catch (e) { /* ignore */ }
     }
 
     function apiErrorDetail(d) {
@@ -1837,44 +1837,6 @@
       if (det != null) return JSON.stringify(det);
       return 'Unknown error';
     }
-
-    document.getElementById('default-model-btn')?.addEventListener('click', async () => {
-      const sel = document.getElementById('default-model-select');
-      const statusEl = document.getElementById('default-model-status');
-      const btn = document.getElementById('default-model-btn');
-      const model = sel?.value;
-      if (!model) { statusEl.textContent = 'Select a model first.'; return; }
-      btn.disabled = true;
-      statusEl.textContent = 'Saving and restarting Open WebUI…';
-      try {
-        const r = await api('/api/config/default-model', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model }),
-        });
-        let d = {};
-        try { d = await r.json(); } catch (e) { /* empty body */ }
-        if (!r.ok) {
-          const msg = apiErrorDetail(d);
-          statusEl.textContent = 'Error: ' + msg;
-          toast('Failed to set default model — ' + msg, 'error');
-          return;
-        }
-        if (d.ok) {
-          statusEl.textContent = `✓ Default set to ${model}. Open WebUI restarting…`;
-          toast('Default model updated: ' + model, 'success');
-        } else {
-          const err = d.webui_error || d.detail || 'Unknown error';
-          statusEl.textContent = 'Error: ' + (typeof err === 'string' ? err : JSON.stringify(err));
-          toast('Failed to set default model — ' + (typeof err === 'string' ? err : 'see status'), 'error');
-        }
-      } catch (e) {
-        statusEl.textContent = 'Error: ' + (e.message || e);
-        toast('Failed to set default model', 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
 
     function isEmbeddingModel(name) {
       const n = (name || '').toLowerCase();
@@ -2123,18 +2085,42 @@
           if (!byCat[m.category]) byCat[m.category] = [];
           byCat[m.category].push(m);
         });
-        el.innerHTML = Object.entries(byCat).map(([cat, models]) => `
-          ${models.map(m => `
-            <div class="model-item">
-              <div>
-                <span class="name">${escapeHtml(m.name)}</span>
-                <div class="model-category">${escapeHtml(cat.replace(/_/g, ' '))}</div>
+        const entries = Object.entries(byCat)
+          .map(([cat, models]) => {
+            const totalBytes = models.reduce((sum, model) => sum + Number(model.size_bytes || 0), 0);
+            return [cat, [...models].sort((a, b) => (a.name || '').localeCompare(b.name || '')), totalBytes];
+          })
+          .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]));
+        const visibleCategories = new Set(entries.map(([cat]) => cat));
+        [...comfyuiOpenCategories].forEach(cat => {
+          if (!visibleCategories.has(cat)) comfyuiOpenCategories.delete(cat);
+        });
+        if (entries.length && !entries.some(([cat]) => comfyuiOpenCategories.has(cat))) {
+          comfyuiOpenCategories.add(entries[0][0]);
+        }
+        el.innerHTML = entries.map(([cat, models, totalBytes]) => {
+          const isOpen = comfyuiOpenCategories.has(cat);
+          const bodyStyle = isOpen ? '' : 'display:none;';
+          return `
+            <div class="comfy-cat-group" data-category="${escapeHtml(cat)}">
+              <div class="comfy-cat-row${isOpen ? ' open' : ''}" data-category="${escapeHtml(cat)}" role="button" tabindex="0" aria-expanded="${isOpen ? 'true' : 'false'}">
+                <span class="comfy-cat-chevron">&#9656;</span>
+                <span class="comfy-cat-label">${escapeHtml(cat.replace(/_/g, ' '))}</span>
+                <span class="comfy-cat-count">${models.length} file${models.length === 1 ? '' : 's'}</span>
+                <span class="comfy-cat-size">${formatSize(totalBytes)}</span>
               </div>
-              <span class="meta">${m.size_mb} MB</span>
-              <button type="button" class="btn-model-delete" data-category="${escapeHtml(cat)}" data-filename="${escapeHtml(m.name)}" title="Delete model" aria-label="Delete ${escapeHtml(m.name)}">×</button>
+              <div class="comfy-file-list" style="${bodyStyle}">
+                ${models.map(m => `
+                  <div class="comfy-file-item">
+                    <span class="name" title="${escapeHtml(m.name)}">${escapeHtml(m.name)}</span>
+                    <span class="meta">${formatSize(Number(m.size_bytes || (m.size_mb || 0) * 1e6))}</span>
+                    <button type="button" class="btn-model-delete" data-category="${escapeHtml(cat)}" data-filename="${escapeHtml(m.name)}" title="Delete model" aria-label="Delete ${escapeHtml(m.name)}">&times;</button>
+                  </div>
+                `).join('')}
+              </div>
             </div>
-          `).join('')}
-        `).join('');
+          `;
+        }).join('');
       } catch (e) {
         el.innerHTML = '<div class="empty">Failed to load models.</div>';
       }
@@ -2464,87 +2450,6 @@
       });
     }());
 
-    // --- OpenClaw model management ---
-    async function loadOpenclawModels() {
-      const el = document.getElementById('openclaw-models');
-      if (!el) return;
-      try {
-        const d = await api('/api/openclaw/models').then(r => r.json());
-        if (!d.config_found) {
-          el.innerHTML = '<span style="color:var(--muted);font-size:var(--text-sm)">openclaw.json not found — OpenClaw not configured.</span>';
-          populateOpenclawDefaultSelect([]);
-          return;
-        }
-        if (!d.models || !d.models.length) {
-          el.innerHTML = '<span style="color:var(--muted);font-size:var(--text-sm)">No models configured. Click Sync to pull the list from the model gateway.</span>';
-          populateOpenclawDefaultSelect([]);
-          return;
-        }
-        el.innerHTML = d.models.map(m => `
-          <div class="model-item">
-            <span class="model-name">${m.name || m.id}</span>
-            <span class="model-meta">${m.id}${m.reasoning ? ' · reasoning' : ''}${(m.input||[]).includes('image') ? ' · vision' : ''}</span>
-          </div>`).join('');
-        populateOpenclawDefaultSelect(d.models);
-      } catch (e) {
-        el.innerHTML = '<span style="color:var(--danger);font-size:var(--text-sm)">Failed to load</span>';
-        populateOpenclawDefaultSelect([]);
-      }
-    }
-
-    async function populateOpenclawDefaultSelect(models) {
-      const area = document.getElementById('openclaw-default-area');
-      const sel = document.getElementById('openclaw-default-select');
-      if (!sel || !area) return;
-      const llms = (models || []).filter(m => m.id && !/embed|bge|mxbai|arctic-embed|nomic-embed/.test((m.id || '').toLowerCase()));
-      if (!llms.length) {
-        area.style.display = 'none';
-        return;
-      }
-      area.style.display = '';
-      const current = sel.value;
-      sel.innerHTML = '<option value="">— not set —</option>' +
-        llms.map(m => {
-          const gatewayId = 'gateway/' + m.id;
-          return `<option value="${escapeHtml(gatewayId)}">${escapeHtml(m.name || m.id)}</option>`;
-        }).join('');
-      try {
-        const d = await api('/api/openclaw/default-model').then(r => r.json());
-        if (d.default_model) sel.value = d.default_model;
-        else if (current) sel.value = current;
-      } catch (e) { /* ignore */ }
-    }
-
-    document.getElementById('openclaw-default-btn')?.addEventListener('click', async () => {
-      const sel = document.getElementById('openclaw-default-select');
-      const statusEl = document.getElementById('openclaw-default-status');
-      const btn = document.getElementById('openclaw-default-btn');
-      const model = sel?.value;
-      if (!model) { statusEl.textContent = 'Select a model first.'; return; }
-      btn.disabled = true;
-      statusEl.textContent = 'Saving and restarting OpenClaw…';
-      try {
-        const r = await api('/api/openclaw/default-model', {
-          method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ model }),
-        });
-        const d = await r.json();
-        if (d.ok) {
-          statusEl.textContent = `✓ Default set. OpenClaw restarting…`;
-          toast('OpenClaw default model updated', 'success');
-        } else {
-          statusEl.textContent = 'Error: ' + (d.detail || 'Unknown error');
-          toast('Failed to set OpenClaw default', 'error');
-        }
-      } catch (e) {
-        statusEl.textContent = 'Error: ' + (e.message || e);
-        toast('Failed to set OpenClaw default', 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
     document.getElementById('openclaw-sync-btn')?.addEventListener('click', async () => {
       const btn = document.getElementById('openclaw-sync-btn');
       const status = document.getElementById('openclaw-sync-status');
@@ -2559,7 +2464,6 @@
         } else {
           status.textContent = `✓ Synced ${d.synced_count} model${d.synced_count !== 1 ? 's' : ''}${d.openclaw_restarted ? ' — OpenClaw restarting' : ''}.`;
           toast(`OpenClaw synced: ${d.synced_count} models`, 'success');
-          loadOpenclawModels();
         }
       } catch (e) {
         status.textContent = '✗ Error: ' + e.message;
@@ -2612,7 +2516,7 @@
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
       if (!ollamaLibrary.length) await loadOllamaLibrary();
-      await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers(), loadOpenclawModels(), loadClaudeCodeEnvOverwrite()]);
+      await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers(), loadClaudeCodeEnvOverwrite()]);
       loadThroughputStats();
       loadThroughputServiceUsage();
       loadPerfKPIs();
@@ -2698,39 +2602,42 @@
     document.getElementById('refresh-btn').onclick = refresh;
     document.getElementById('throughput-run-btn').onclick = runThroughputBenchmark;
 
-    document.getElementById('ollama-models')?.addEventListener('click', async (e) => {
-      // Switch handler
-      const switchBtn = e.target.closest('.btn-model-switch[data-model]');
-      if (switchBtn) {
-        e.preventDefault();
-        const model = switchBtn.dataset.model;
-        if (!model || !confirm(`Switch llamacpp to "${model}"?\n\nThe inference server will restart — requests will fail for ~30–60 seconds while the model loads.`)) return;
-        switchBtn.disabled = true;
-        switchBtn.textContent = 'Switching…';
-        try {
-          const r = await api('/api/llamacpp/switch', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
-          const d = await r.json();
-          if (r.ok && d.ok) {
-            toast(`Switching to ${model} — llamacpp restarting…`);
-            setTimeout(() => loadOllamaModels(), 8000);
-          } else {
-            toast((d.detail || 'Switch failed') + '', 'error');
-            switchBtn.disabled = false;
-            switchBtn.textContent = 'Switch';
-          }
-        } catch (err) {
-          toast('Switch failed: ' + (err.message || err), 'error');
-          switchBtn.disabled = false;
-          switchBtn.textContent = 'Switch';
+    document.getElementById('llm-active-btn')?.addEventListener('click', async () => {
+      const sel = document.getElementById('llm-active-select');
+      const statusEl = document.getElementById('llm-active-status');
+      const btn = document.getElementById('llm-active-btn');
+      const model = sel?.value;
+      if (!model) { statusEl.textContent = 'Select a model first.'; return; }
+      if (!confirm(`Set "${model}" as the active model?\n\nllama.cpp, Open WebUI, and OpenClaw will all be updated. The inference server will restart (~30–60 seconds).`)) return;
+      btn.disabled = true;
+      btn.textContent = 'Switching…';
+      statusEl.textContent = 'Services restarting…';
+      try {
+        const r = await api('/api/active-model', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
+        const d = await r.json();
+        if (r.ok && d.ok) {
+          statusEl.textContent = `✓ Activating — services restarting…`;
+          toast(`Activating ${model} — services restarting…`);
+          setTimeout(() => loadOllamaModels(), 8000);
+        } else {
+          statusEl.textContent = 'Error: ' + (d.detail || 'Switch failed');
+          toast((d.detail || 'Switch failed') + '', 'error');
         }
-        return;
+      } catch (err) {
+        statusEl.textContent = 'Error: ' + (err.message || err);
+        toast('Switch failed: ' + (err.message || err), 'error');
+      } finally {
+        btn.disabled = false;
+        btn.textContent = 'Set Active';
       }
+    });
 
+    document.getElementById('ollama-models')?.addEventListener('click', async (e) => {
       const btn = e.target.closest('.btn-model-delete[data-model]');
       if (!btn) return;
       e.preventDefault();
       const model = btn.dataset.model;
-      if (!model || !confirm(`Unload "${model}" from the gateway? GGUF files on disk are not deleted.`)) return;
+      if (!model || !confirm(`Delete "${model}" from disk?\n\nThis removes the GGUF file and cannot be undone.`)) return;
       btn.disabled = true;
       try {
         const r = await api('/api/ollama/delete', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ model }) });
@@ -2750,6 +2657,21 @@
     });
 
     document.getElementById('comfyui-models')?.addEventListener('click', async (e) => {
+      const row = e.target.closest('.comfy-cat-row[data-category]');
+      if (row && !e.target.closest('.btn-model-delete[data-category]')) {
+        e.preventDefault();
+        const cat = row.dataset.category;
+        const list = row.nextElementSibling;
+        const willOpen = list?.style.display === 'none';
+        if (!cat || !list) return;
+        list.style.display = willOpen ? '' : 'none';
+        row.classList.toggle('open', willOpen);
+        row.setAttribute('aria-expanded', willOpen ? 'true' : 'false');
+        if (willOpen) comfyuiOpenCategories.add(cat);
+        else comfyuiOpenCategories.delete(cat);
+        return;
+      }
+
       const btn = e.target.closest('.btn-model-delete[data-category]');
       if (!btn) return;
       e.preventDefault();
@@ -2771,6 +2693,12 @@
       } finally {
         btn.disabled = false;
       }
+    });
+
+    document.getElementById('comfyui-models')?.addEventListener('keydown', (e) => {
+      if ((e.key !== 'Enter' && e.key !== ' ') || !e.target.matches('.comfy-cat-row[data-category]')) return;
+      e.preventDefault();
+      e.target.click();
     });
 
     document.getElementById('rebuild-hint').onclick = () => {

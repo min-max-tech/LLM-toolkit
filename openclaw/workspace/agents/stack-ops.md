@@ -49,6 +49,19 @@ Before any Tier 1+ action, walk this tree:
 5. Verify: call `gateway__comfyui__list_workflows` to confirm MCP tools respond
 6. Report outcome
 
+## Cron Job Failure Recovery
+
+Run this when a cron job shows `lastRunStatus: error` on 2 or more consecutive runs.
+
+1. **Inspect `payload.model`** — must start with `gateway/`; must match a model id in `openclaw.json`. A value of `"default"` or a bare model name will fail silently.
+2. **Inspect `delivery.to`** — must be `"channel:<snowflake>"` (with prefix). A bare numeric id (`"1483464800464797697"`) produces `deliveryStatus: not-delivered` with `status: ok`.
+3. **Check MCP gateway health** — `GET /services` → `mcp-gateway.status == "running"`. If unhealthy, restart mcp-gateway (Tier 2) and re-verify with `gateway__call` before re-enabling the cron job.
+4. **Check `sessionTarget` / `payload.kind` pairing** — `sessionTarget: "main"` requires `payload.kind: "systemEvent"`; isolated/current/session require `"agentTurn"`. Mismatch causes silent failure.
+5. **If root cause is structural** — state the specific fix to the user and wait for acknowledgement before re-enabling the job. Do not speculatively edit job config.
+6. **If root cause is transient** (MCP restart, model reload) — re-enable after verifying the condition is resolved; report the fix to the operator.
+
+Do not create a replacement cron job to work around a broken one — diagnose and fix the original.
+
 ## GGUF Model Pull Workflow
 
 1. Confirm model repo id with user (e.g. `bartowski/Qwen3.5-14B-Instruct-GGUF`)
