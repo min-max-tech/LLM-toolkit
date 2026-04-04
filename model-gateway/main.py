@@ -847,6 +847,41 @@ def _record_usage_throughput(
     _record_throughput(model_id, ct, dur, service, ttft_ms=ttft_ms)
 
 
+def _parse_qwen_xml_tool_calls(text: str) -> list[dict]:
+    """Parse Qwen3 XML-format tool calls from llamacpp error response text.
+
+    Qwen3 emits tool calls as:
+        <tool_call>
+        <function=name>
+        <parameter=key>value</parameter>
+        </function>
+        </tool_call>
+
+    Llamacpp's grammar validator rejects this (expects JSON format) and returns
+    a 500 error whose body contains the model's raw output. We recover the tool
+    calls from there and return them in OpenAI function-call format so that
+    OpenClaw can execute them normally.
+    """
+    calls: list[dict] = []
+    for block in re.finditer(r'<tool_call>(.*?)(?:</tool_call>|$)', text, re.DOTALL):
+        body = block.group(1)
+        fn_match = re.search(r'<function=([^\n>]+)>(.*?)(?:</function>|$)', body, re.DOTALL)
+        if not fn_match:
+            continue
+        fn_name = fn_match.group(1).strip()
+        fn_body = fn_match.group(2)
+        params: dict = {}
+        for pm in re.finditer(r'<parameter=([^\n>]+)>(.*?)</parameter>', fn_body, re.DOTALL):
+            params[pm.group(1).strip()] = pm.group(2).strip()
+        calls.append({
+            "index": len(calls),
+            "id": f"call_{uuid.uuid4().hex[:12]}",
+            "type": "function",
+            "function": {"name": fn_name, "arguments": json.dumps(params)},
+        })
+    return calls
+
+
 async def _restream_llamacpp_chat_from_nonstream(
     model_id: str,
     service: str,
@@ -867,9 +902,32 @@ async def _restream_llamacpp_chat_from_nonstream(
             headers={"Content-Type": "application/json"},
         )
         if r.status_code >= 400:
-            err = r.text[:500]
-            logger.error("llama-server chat non-stream error status=%s body=%s", r.status_code, err)
-            yield _stream_chunk_bytes({"error": {"message": err}})
+            err_full = r.text
+            logger.error("llama-server chat non-stream error status=%s body=%s", r.status_code, err_full[:500])
+            # Qwen3 grammar failure recovery: llamacpp rejects the model's XML tool calls
+            # via grammar validation. The model output is embedded in the error body — extract it.
+            xml_calls = _parse_qwen_xml_tool_calls(err_full)
+            if xml_calls:
+                chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+                created = int(time.time())
+                yield _stream_chunk_bytes({
+                    "id": chunk_id, "object": "chat.completion.chunk", "created": created,
+                    "model": model_id,
+                    "choices": [{"index": 0, "delta": {"role": "assistant"}, "finish_reason": None}],
+                })
+                yield _stream_chunk_bytes({
+                    "id": chunk_id, "object": "chat.completion.chunk", "created": created,
+                    "model": model_id,
+                    "choices": [{"index": 0, "delta": {"tool_calls": xml_calls}, "finish_reason": None}],
+                })
+                yield _stream_chunk_bytes({
+                    "id": chunk_id, "object": "chat.completion.chunk", "created": created,
+                    "model": model_id,
+                    "choices": [{"index": 0, "delta": {}, "finish_reason": "tool_calls"}],
+                })
+                yield b"data: [DONE]\n\n"
+                return
+            yield _stream_chunk_bytes({"error": {"message": err_full[:500]}})
             yield b"data: [DONE]\n\n"
             return
         data = _sanitize_openai_chat_response(
@@ -1080,7 +1138,25 @@ async def _chat_completions_impl(request: Request, body: dict[str, Any]):
             json=fwd,
             headers={"Content-Type": "application/json"},
         )
-        r.raise_for_status()
+        if r.status_code >= 400:
+            err_full = r.text
+            logger.error("llama-server chat error status=%s body=%s", r.status_code, err_full[:500])
+            # Qwen3 grammar failure recovery: extract XML tool calls from llamacpp error body.
+            xml_calls = _parse_qwen_xml_tool_calls(err_full)
+            if xml_calls:
+                chunk_id = f"chatcmpl-{uuid.uuid4().hex[:12]}"
+                data = {
+                    "id": chunk_id, "object": "chat.completion", "created": int(time.time()),
+                    "model": model_id,
+                    "choices": [{"index": 0, "message": {
+                        "role": "assistant", "content": None,
+                        "tool_calls": [{k: v for k, v in tc.items() if k != "index"} for tc in xml_calls],
+                    }, "finish_reason": "tool_calls"}],
+                    "usage": {"prompt_tokens": 0, "completion_tokens": 0, "total_tokens": 0},
+                }
+                data["_request_id"] = req_id
+                return data
+            r.raise_for_status()
         data = r.json()
     data = _sanitize_openai_chat_response(
         data,
@@ -1247,28 +1323,19 @@ async def responses_api(request: Request, body: ResponsesRequest):
                 "sequence_number": seq,
             })
             seq += 1
-            yield _stream_chunk_openai({
-                "type": "response.output_item.added",
-                "item": {"type": "message", "id": msg_item_id, "role": "assistant", "content": []},
-                "output_index": 0,
-                "sequence_number": seq,
-            })
-            seq += 1
-            yield _stream_chunk_openai({
-                "type": "response.content_part.added",
-                "content_index": 0,
-                "item_id": msg_item_id,
-                "output_index": 0,
-                "part": {"type": "output_text", "text": ""},
-                "sequence_number": seq,
-            })
-            seq += 1
 
             buf = ""
             full_text = ""
+            msg_item_opened = False
             # tool_calls_acc: index → {id, name, arguments}
             tool_calls_acc: dict[int, dict] = {}
             tool_call_item_ids: dict[int, str] = {}
+
+            def _ensure_msg_item_open() -> None:
+                nonlocal msg_item_opened, seq
+                if not msg_item_opened:
+                    msg_item_opened = True
+                    # msg_item_id already defined in outer scope
 
             try:
                 async for chunk in chat_response.body_iterator:
@@ -1283,9 +1350,27 @@ async def responses_api(request: Request, body: ResponsesRequest):
                                 data = json.loads(line[6:])
                                 delta = (data.get("choices") or [{}])[0].get("delta", {})
 
-                                # Text content
+                                # Text content — open message item on first text token
                                 content = delta.get("content", "")
                                 if content:
+                                    if not msg_item_opened:
+                                        msg_item_opened = True
+                                        yield _stream_chunk_openai({
+                                            "type": "response.output_item.added",
+                                            "item": {"type": "message", "id": msg_item_id, "role": "assistant", "content": []},
+                                            "output_index": 0,
+                                            "sequence_number": seq,
+                                        })
+                                        seq += 1
+                                        yield _stream_chunk_openai({
+                                            "type": "response.content_part.added",
+                                            "content_index": 0,
+                                            "item_id": msg_item_id,
+                                            "output_index": 0,
+                                            "part": {"type": "output_text", "text": ""},
+                                            "sequence_number": seq,
+                                        })
+                                        seq += 1
                                     full_text += content
                                     yield _stream_chunk_openai({
                                         "type": "response.output_text.delta",
@@ -1315,7 +1400,7 @@ async def responses_api(request: Request, body: ResponsesRequest):
                                                 "name": func_name,
                                                 "arguments": "",
                                             },
-                                            "output_index": 1 + tc_idx,
+                                            "output_index": tc_idx,
                                             "sequence_number": seq,
                                         })
                                         seq += 1
@@ -1330,7 +1415,7 @@ async def responses_api(request: Request, body: ResponsesRequest):
                                         yield _stream_chunk_openai({
                                             "type": "response.function_call_arguments.delta",
                                             "item_id": tool_call_item_ids[tc_idx],
-                                            "output_index": 1 + tc_idx,
+                                            "output_index": tc_idx,
                                             "delta": args_delta,
                                             "sequence_number": seq,
                                         })
@@ -1340,61 +1425,81 @@ async def responses_api(request: Request, body: ResponsesRequest):
             except Exception as exc:
                 logger.error("Response stream error: %s", exc)
 
-            # Finalize tool calls
+            # Build final output items list for response.done
+            final_output: list[dict] = []
+
+            # Finalize tool calls (emitted at their natural index, 0-based)
             for tc_idx, tc in sorted(tool_calls_acc.items()):
                 fc_item_id = tool_call_item_ids[tc_idx]
+                fc_item = {
+                    "type": "function_call",
+                    "id": fc_item_id,
+                    "call_id": tc["id"],
+                    "name": tc["name"],
+                    "arguments": tc["arguments"],
+                }
+                final_output.append(fc_item)
                 yield _stream_chunk_openai({
                     "type": "response.function_call_arguments.done",
                     "item_id": fc_item_id,
-                    "output_index": 1 + tc_idx,
+                    "output_index": tc_idx,
                     "arguments": tc["arguments"],
                     "sequence_number": seq,
                 })
                 seq += 1
                 yield _stream_chunk_openai({
                     "type": "response.output_item.done",
-                    "item": {
-                        "type": "function_call",
-                        "id": fc_item_id,
-                        "call_id": tc["id"],
-                        "name": tc["name"],
-                        "arguments": tc["arguments"],
-                    },
-                    "output_index": 1 + tc_idx,
+                    "item": fc_item,
+                    "output_index": tc_idx,
                     "sequence_number": seq,
                 })
                 seq += 1
 
-            # Finalize text message item
-            yield _stream_chunk_openai({
-                "type": "response.output_text.done",
-                "item_id": msg_item_id,
-                "output_index": 0,
-                "content_index": 0,
-                "text": full_text,
-                "sequence_number": seq,
-            })
-            seq += 1
-            yield _stream_chunk_openai({
-                "type": "response.content_part.done",
-                "content_index": 0,
-                "item_id": msg_item_id,
-                "output_index": 0,
-                "part": {"type": "output_text", "text": full_text},
-                "sequence_number": seq,
-            })
-            seq += 1
-            yield _stream_chunk_openai({
-                "type": "response.output_item.done",
-                "item": {"type": "message", "id": msg_item_id, "role": "assistant",
-                         "content": [{"type": "output_text", "text": full_text}]},
-                "output_index": 0,
-                "sequence_number": seq,
-            })
-            seq += 1
+            # Finalize text message item only if it was opened (model produced text)
+            if msg_item_opened:
+                msg_item = {"type": "message", "id": msg_item_id, "role": "assistant",
+                            "content": [{"type": "output_text", "text": full_text}]}
+                final_output.append(msg_item)
+                yield _stream_chunk_openai({
+                    "type": "response.output_text.done",
+                    "item_id": msg_item_id,
+                    "output_index": len(tool_calls_acc),
+                    "content_index": 0,
+                    "text": full_text,
+                    "sequence_number": seq,
+                })
+                seq += 1
+                yield _stream_chunk_openai({
+                    "type": "response.content_part.done",
+                    "content_index": 0,
+                    "item_id": msg_item_id,
+                    "output_index": len(tool_calls_acc),
+                    "part": {"type": "output_text", "text": full_text},
+                    "sequence_number": seq,
+                })
+                seq += 1
+                yield _stream_chunk_openai({
+                    "type": "response.output_item.done",
+                    "item": msg_item,
+                    "output_index": len(tool_calls_acc),
+                    "sequence_number": seq,
+                })
+                seq += 1
+            elif not tool_calls_acc:
+                # No text and no tool calls — emit minimal empty message item
+                msg_item = {"type": "message", "id": msg_item_id, "role": "assistant",
+                            "content": [{"type": "output_text", "text": ""}]}
+                final_output.append(msg_item)
+
             yield _stream_chunk_openai({
                 "type": "response.done",
-                "response": {"id": resp_id, "created_at": int(time.time()), "model": model, "status": "completed"},
+                "response": {
+                    "id": resp_id,
+                    "created_at": int(time.time()),
+                    "model": model,
+                    "status": "completed",
+                    "output": final_output,
+                },
                 "sequence_number": seq,
             })
 

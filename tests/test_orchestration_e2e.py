@@ -46,6 +46,7 @@ def client(db_dir: Path, mock_comfyui_url: str, monkeypatch, tmp_path):
 
         # Re-import app after env setup
         import importlib
+
         import dashboard.routes_orchestration as ro
         importlib.reload(ro)
 
@@ -72,10 +73,13 @@ def test_full_pipeline_compile_run_artifact_publish_callback(
     client: TestClient, db_dir: Path, mock_comfyui_url: str, tmp_path: Path
 ):
     """Full pipeline: template compile → run (via worker thread) → artifact → publish callback → published."""
+
     from dashboard.orchestration_db import (
-        claim_next_job, get_job, load_store, recover_stale_running_jobs,
+        claim_next_job,
+        get_job,
+        load_store,
+        recover_stale_running_jobs,
     )
-    from tests.fixtures.mock_comfyui import start_mock_comfyui
 
     # Step 1: create a minimal workflow file for this test
     wf_dir = tmp_path / "workflows"
@@ -104,8 +108,9 @@ def test_full_pipeline_compile_run_artifact_publish_callback(
         assert job is not None
         assert job.job_id == job_id
 
-        from worker.worker import execute_job as _execute_job
         import os
+
+        from worker.worker import execute_job as _execute_job
         os.environ["COMFYUI_URL"] = mock_comfyui_url
         os.environ["COMFYUI_WORKFLOWS_DIR"] = str(wf_dir)
 
@@ -170,7 +175,12 @@ def test_cancel_queued_job(client: TestClient, db_dir: Path):
 def test_stale_running_job_recovery(db_dir: Path):
     """Jobs stuck in 'running' at startup must be re-queued."""
     from dashboard.orchestration_db import (
-        JobState, create_job, get_job, init_db, recover_stale_running_jobs, update_job,
+        JobState,
+        create_job,
+        get_job,
+        init_db,
+        recover_stale_running_jobs,
+        update_job,
     )
     init_db(db_dir)
     job = create_job(db_dir, workflow_id="test", params={})

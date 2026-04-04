@@ -436,7 +436,6 @@ def mark_outbox_delivered(data_dir: Path, idempotency_key: str) -> None:
 
 
 def record_outbox_attempt(data_dir: Path, row_id: int, error: str | None = None) -> None:
-    import math
     with _connect(data_dir) as conn:
         attempts = conn.execute(
             "SELECT attempts FROM publish_outbox WHERE id=?", (row_id,)

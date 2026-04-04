@@ -6,11 +6,15 @@ import logging
 import random
 from collections import OrderedDict
 from pathlib import Path
-from typing import Any, Dict, Optional, Sequence
+from typing import Any, Protocol
 
 from models.workflow import WorkflowParameter, WorkflowToolDefinition
 
 logger = logging.getLogger("MCP_Server")
+
+
+class DefaultsProvider(Protocol):
+    def get_default(self, namespace: str, key: str, fallback: Any) -> Any: ...
 
 PLACEHOLDER_PREFIX = "PARAM_"
 PLACEHOLDER_TYPE_HINTS = {
@@ -49,12 +53,12 @@ class WorkflowManager:
     def __init__(self, workflows_dir: Path):
         self.workflows_dir = Path(workflows_dir).resolve()
         self._tool_names: set[str] = set()
-        self._workflow_cache: Dict[str, Dict[str, Any]] = {}
-        self._workflow_mtime: Dict[str, float] = {}  # Track file modification times for cache invalidation
+        self._workflow_cache: dict[str, dict[str, Any]] = {}
+        self._workflow_mtime: dict[str, float] = {}  # Track file modification times for cache invalidation
         self.tool_definitions = self._load_workflows()
 
     @staticmethod
-    def is_ui_workflow_export(workflow: Dict[str, Any]) -> bool:
+    def is_ui_workflow_export(workflow: dict[str, Any]) -> bool:
         """True if JSON is ComfyUI's visual editor format (not /prompt API format)."""
         nodes = workflow.get("nodes")
         if not isinstance(nodes, list) or not nodes:
@@ -62,7 +66,7 @@ class WorkflowManager:
         n0 = nodes[0]
         return isinstance(n0, dict) and "type" in n0 and "class_type" not in n0
 
-    def _safe_workflow_path_under_root(self, workflow_id: str, root: Path) -> Optional[Path]:
+    def _safe_workflow_path_under_root(self, workflow_id: str, root: Path) -> Path | None:
         """Resolve workflow ID under a single root (path traversal safe)."""
         root = root.resolve()
         raw = workflow_id.strip().replace("\\", "/")
@@ -91,7 +95,7 @@ class WorkflowManager:
 
         return workflow_path if workflow_path.is_file() else None
 
-    def _safe_workflow_path(self, workflow_id: str) -> Optional[Path]:
+    def _safe_workflow_path(self, workflow_id: str) -> Path | None:
         """Resolve workflow ID to file path with path traversal protection.
 
         Supports:
@@ -100,7 +104,7 @@ class WorkflowManager:
         """
         return self._safe_workflow_path_under_root(workflow_id, self.workflows_dir)
     
-    def _load_workflow_metadata(self, workflow_path: Path) -> Dict[str, Any]:
+    def _load_workflow_metadata(self, workflow_path: Path) -> dict[str, Any]:
         """Load sidecar metadata if present.
 
         Prefer ``.wfmeta`` — it is not a ``*.json`` file, so ComfyUI's workflow
@@ -113,9 +117,9 @@ class WorkflowManager:
         ):
             if metadata_path.exists():
                 try:
-                    with open(metadata_path, "r", encoding="utf-8") as f:
+                    with open(metadata_path, encoding="utf-8") as f:
                         return json.load(f)
-                except (json.JSONDecodeError, IOError) as e:
+                except (OSError, json.JSONDecodeError) as e:
                     logger.warning(
                         "Failed to load metadata for %s from %s: %s",
                         workflow_path.name,
@@ -136,7 +140,7 @@ class WorkflowManager:
             out.append(str(rel.with_suffix("")).replace("\\", "/"))
         return out
 
-    def get_workflow_catalog(self) -> list[Dict[str, Any]]:
+    def get_workflow_catalog(self) -> list[dict[str, Any]]:
         """Get catalog of all available workflows"""
         catalog = []
         if not self.workflows_dir.exists():
@@ -150,9 +154,9 @@ class WorkflowManager:
             rel = workflow_path.relative_to(self.workflows_dir)
             workflow_id = str(rel.with_suffix("")).replace("\\", "/")
             try:
-                with open(workflow_path, "r", encoding="utf-8") as f:
+                with open(workflow_path, encoding="utf-8") as f:
                     workflow = json.load(f)
-            except (json.JSONDecodeError, IOError) as e:
+            except (OSError, json.JSONDecodeError) as e:
                 logger.warning(f"Skipping {workflow_path.name}: {e}")
                 continue
             
@@ -189,7 +193,7 @@ class WorkflowManager:
         
         return catalog
     
-    def load_workflow(self, workflow_id: str) -> Optional[Dict[str, Any]]:
+    def load_workflow(self, workflow_id: str) -> dict[str, Any] | None:
         """Load workflow by ID with mtime-based cache invalidation.
 
         Checks file modification time on each call. If the file has been
@@ -214,24 +218,29 @@ class WorkflowManager:
                 logger.info("Workflow '%s' changed on disk (mtime %s -> %s), reloading", workflow_id, cached_mtime, current_mtime)
 
         try:
-            with open(workflow_path, "r", encoding="utf-8") as f:
+            with open(workflow_path, encoding="utf-8") as f:
                 workflow = json.load(f)
             self._workflow_cache[workflow_id] = workflow
             if current_mtime is not None:
                 self._workflow_mtime[workflow_id] = current_mtime
             return copy.deepcopy(workflow)
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             logger.error(f"Failed to load workflow {workflow_id}: {e}")
             return None
     
-    def apply_workflow_overrides(self, workflow: Dict[str, Any], workflow_id: str, overrides: Dict[str, Any], defaults_manager: Optional["DefaultsManager"] = None) -> Dict[str, Any]:
+    def apply_workflow_overrides(
+        self,
+        workflow: dict[str, Any],
+        workflow_id: str,
+        overrides: dict[str, Any],
+        defaults_manager: DefaultsProvider | None = None,
+    ) -> dict[str, Any]:
         """Apply constrained overrides to workflow based on metadata.
 
         The returned workflow dict contains an ``__override_report__`` key
         with 'overrides_applied' and 'overrides_dropped' dicts.  Callers
         should pop this key before submitting the workflow to ComfyUI.
         """
-        from managers.defaults_manager import DefaultsManager
 
         workflow_path = self._safe_workflow_path(workflow_id)
         if not workflow_path:
@@ -324,14 +333,14 @@ class WorkflowManager:
 
         logger.info("Refreshing tool definition '%s' from disk (mtime changed)", definition.workflow_id)
         try:
-            with open(workflow_path, "r", encoding="utf-8") as f:
+            with open(workflow_path, encoding="utf-8") as f:
                 workflow = json.load(f)
             definition.template = workflow
             definition.parameters = self._extract_parameters(workflow)
             definition.output_preferences = self._guess_output_preferences(workflow)
             self._workflow_cache[definition.workflow_id] = workflow
             self._workflow_mtime[definition.workflow_id] = current_mtime
-        except (json.JSONDecodeError, IOError) as e:
+        except (OSError, json.JSONDecodeError) as e:
             logger.error("Failed to refresh workflow %s: %s", definition.workflow_id, e)
 
     def _load_workflows(self):
@@ -344,7 +353,7 @@ class WorkflowManager:
             if workflow_path.name.endswith(".meta.json"):
                 continue
             try:
-                with open(workflow_path, "r", encoding="utf-8") as handle:
+                with open(workflow_path, encoding="utf-8") as handle:
                     workflow = json.load(handle)
             except json.JSONDecodeError as exc:
                 logger.error("Skipping workflow %s due to JSON error: %s", workflow_path.name, exc)
@@ -394,8 +403,12 @@ class WorkflowManager:
 
         return definitions
 
-    def render_workflow(self, definition: WorkflowToolDefinition, provided_params: Dict[str, Any], defaults_manager: Optional["DefaultsManager"] = None):
-        from managers.defaults_manager import DefaultsManager
+    def render_workflow(
+        self,
+        definition: WorkflowToolDefinition,
+        provided_params: dict[str, Any],
+        defaults_manager: DefaultsProvider | None = None,
+    ):
 
         # Check if the workflow file has changed on disk and refresh the template
         self._refresh_definition_if_stale(definition)
@@ -434,8 +447,8 @@ class WorkflowManager:
         
         return workflow
 
-    def _extract_parameters(self, workflow: Dict[str, Any]):
-        parameters: "OrderedDict[str, WorkflowParameter]" = OrderedDict()
+    def _extract_parameters(self, workflow: dict[str, Any]):
+        parameters: OrderedDict[str, WorkflowParameter] = OrderedDict()
         for node_id, node in workflow.items():
             if not isinstance(node, dict):
                 continue
@@ -525,7 +538,7 @@ class WorkflowManager:
             return "video"
         return "image"  # default fallback
     
-    def _guess_output_preferences(self, workflow: Dict[str, Any]):
+    def _guess_output_preferences(self, workflow: dict[str, Any]):
         for node in workflow.values():
             if not isinstance(node, dict):
                 continue
@@ -536,7 +549,7 @@ class WorkflowManager:
                 return VIDEO_OUTPUT_KEYS
         return DEFAULT_OUTPUT_KEYS
 
-    def _coerce_override_from_metadata(self, param_name: str, value: Any, metadata: Dict[str, Any]) -> Any:
+    def _coerce_override_from_metadata(self, param_name: str, value: Any, metadata: dict[str, Any]) -> Any:
         """When workflow JSON has no PARAM_ placeholders, use .wfmeta / .meta.json available_inputs types."""
         spec = (metadata.get("available_inputs") or {}).get(param_name) or {}
         t = spec.get("type", "str")

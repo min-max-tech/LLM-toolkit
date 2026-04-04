@@ -48,7 +48,7 @@ def main() -> int:
         if entry.startswith("http://") or entry.startswith("https://"):
             m = re.search(r"huggingface\.co/([^/]+/[^/]+)/(?:blob/main|resolve/main)/(.+\.gguf)", entry)
             if not m:
-                print(f"    Skip: unsupported URL (need huggingface.co …/resolve/main/file.gguf)")
+                print("    Skip: unsupported URL (need huggingface.co …/resolve/main/file.gguf)")
                 continue
             repo_id, filename = m.group(1), m.group(2)
             path = hf_hub_download(repo_id=repo_id, filename=filename, local_dir=str(dest), local_dir_use_symlinks=False, token=token)

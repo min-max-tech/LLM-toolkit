@@ -439,7 +439,9 @@ def _gguf_model_entry(filename: str, context_window: int = LLAMACPP_CTX) -> dict
     name = filename.replace("-", " ").replace("_", " ").replace(".", " ")
     name = " ".join(w.capitalize() for w in name.split())
     return {
-        "id": filename,
+        # Strip .gguf so the provider model ID matches agents.defaults.model.primary (which uses bare name).
+        # Mismatch causes isolated sessions (cron jobs) to abort immediately without calling the LLM.
+        "id": filename.removesuffix(".gguf"),
         "name": name,
         "reasoning": is_reasoning and not is_embed,
         "input": ["text", "image"] if has_vision else ["text"],
@@ -656,24 +658,24 @@ def main() -> int:
         gateway["bind"] = "lan"
         modified = True
 
-    # Use "default" compaction mode — "disabled" is not accepted by OpenClaw.
-    # "default" compacts only when needed; "safeguard" compacts proactively.
-    # Keeping "default" avoids the persistent-summary issue while staying valid.
+    # Use "safeguard" compaction — proactively summarizes context before it grows too large.
+    # "default" only compacts when needed; for cron jobs running in "current" session the context
+    # accumulates over days, causing slow prefill. "safeguard" keeps the prefill cost bounded.
     agents_defaults = data.setdefault("agents", {}).setdefault("defaults", {})
     compaction = agents_defaults.setdefault("compaction", {})
-    if compaction.get("mode") != "default":
-        compaction["mode"] = "default"
+    if compaction.get("mode") != "safeguard":
+        compaction["mode"] = "safeguard"
         modified = True
     # Ensure cron/isolated sessions have enough runway for Tavily + LLM generation.
     if agents_defaults.get("timeoutSeconds") != 300:
         agents_defaults["timeoutSeconds"] = 300
         modified = True
-    # Disable idle-token timeout — large MoE/reasoning models can pause many seconds during
-    # prompt prefill before the first token streams. Default 60 s kills valid generations.
-    # Set to 0 to rely on timeoutSeconds only.
+    # Raise idle-token timeout — large MoE/reasoning models can pause during prompt prefill
+    # before the first token streams. Default 60 s is too tight; 120 s gives headroom.
+    # Do NOT set to 0 — OpenClaw interprets 0 as instant abort, not "disabled".
     llm_defaults = agents_defaults.setdefault("llm", {})
-    if llm_defaults.get("idleTimeoutSeconds") != 0:
-        llm_defaults["idleTimeoutSeconds"] = 0
+    if llm_defaults.get("idleTimeoutSeconds") != 120:
+        llm_defaults["idleTimeoutSeconds"] = 120
         modified = True
 
     # Native web_search (Brave, etc.): keep disabled — use MCP gateway__call + duckduckgo__search.

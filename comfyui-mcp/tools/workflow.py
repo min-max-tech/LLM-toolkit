@@ -10,7 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 from mcp.server.fastmcp import FastMCP
 from tools.helpers import register_and_build_response
@@ -23,14 +23,14 @@ _RESERVED_RUN_KEYS = frozenset(
 
 
 def _merge_run_workflow_args(
-    workflow_id: Optional[str],
-    overrides: Optional[Dict[str, Any]],
-    options: Optional[Dict[str, Any]],
+    workflow_id: str | None,
+    overrides: dict[str, Any] | None,
+    options: dict[str, Any] | None,
     return_inline_preview: bool,
     **extra: Any,
-) -> tuple[str, Dict[str, Any], Optional[Dict[str, Any]], bool]:
+) -> tuple[str, dict[str, Any], dict[str, Any] | None, bool]:
     """Merge flat kwargs into overrides; apply default workflow_id when configured."""
-    merged: Dict[str, Any] = dict(overrides or {})
+    merged: dict[str, Any] = dict(overrides or {})
     for k, v in extra.items():
         if k in _RESERVED_RUN_KEYS:
             continue
@@ -96,21 +96,21 @@ def register_workflow_tools(
 
     @mcp.tool()
     def run_workflow(
-        workflow_id: Optional[str] = None,
-        overrides: Optional[Dict[str, Any]] = None,
-        options: Optional[Dict[str, Any]] = None,
+        workflow_id: str | None = None,
+        overrides: dict[str, Any] | None = None,
+        options: dict[str, Any] | None = None,
         return_inline_preview: bool = False,
-        prompt: Optional[str] = None,
-        width: Optional[int] = None,
-        height: Optional[int] = None,
-        seed: Optional[int] = None,
-        steps: Optional[int] = None,
-        cfg: Optional[float] = None,
-        sampler_name: Optional[str] = None,
-        scheduler: Optional[str] = None,
-        denoise: Optional[float] = None,
-        model: Optional[str] = None,
-        negative_prompt: Optional[str] = None,
+        prompt: str | None = None,
+        width: int | None = None,
+        height: int | None = None,
+        seed: int | None = None,
+        steps: int | None = None,
+        cfg: float | None = None,
+        sampler_name: str | None = None,
+        scheduler: str | None = None,
+        denoise: float | None = None,
+        model: str | None = None,
+        negative_prompt: str | None = None,
     ) -> dict:
         """Run a saved ComfyUI workflow with constrained parameter overrides.
 

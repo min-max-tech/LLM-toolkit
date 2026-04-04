@@ -8,7 +8,7 @@ from __future__ import annotations
 
 import logging
 import os
-from typing import Any, Dict
+from typing import Any
 
 import requests
 from mcp.server.fastmcp import FastMCP
@@ -47,7 +47,7 @@ def _ops_get(path: str, timeout: int = 60) -> dict:
         return {"ok": False, "error": str(e)}
 
 
-def _ops_post(path: str, body: Dict[str, Any], timeout: int = 600) -> dict:
+def _ops_post(path: str, body: dict[str, Any], timeout: int = 600) -> dict:
     if not OPS_CONTROLLER_TOKEN:
         return {
             "ok": False,

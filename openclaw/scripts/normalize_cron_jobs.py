@@ -61,6 +61,9 @@ def main() -> int:
         if _normalize_delivery(job):
             changed = True
             normalized += 1
+        # Do NOT enforce sessionTarget — isolated sessions are single-turn only (no tool execution).
+        # Cron jobs that use MCP tools (Tavily, Discord) require "current" (multi-turn agent loop).
+        # Context growth is managed via agents.defaults.compaction.mode = "safeguard".
         job_id = job.get("id", "<unknown>")
         payload = job.get("payload") if isinstance(job.get("payload"), dict) else None
         if payload is None:

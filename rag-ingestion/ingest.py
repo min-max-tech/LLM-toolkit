@@ -11,9 +11,9 @@ import threading
 import time
 import uuid
 from pathlib import Path
-from typing import Any
 
 import httpx
+
 try:
     from pypdf import PdfReader
 except Exception:  # pragma: no cover - optional for non-PDF ingestion/test environments

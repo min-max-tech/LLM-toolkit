@@ -21,17 +21,17 @@ import psutil
 logger = logging.getLogger(__name__)
 
 from fastapi import FastAPI, HTTPException, Request
-from fastapi.responses import JSONResponse, StreamingResponse
+from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from httpx import AsyncClient
 from pydantic import BaseModel
 
+from dashboard.orchestration_db import get_job_counts, get_outbox_stats
 from dashboard.routes_hub import router as hub_router
 from dashboard.routes_orchestration import router as orchestration_router
 from dashboard.services_catalog import OPS_SERVICE_MAP
 from dashboard.settings import AUTH_REQUIRED as _AUTH_REQUIRED
 from dashboard.settings import DASHBOARD_AUTH_TOKEN, OPENCLAW_CONFIG_PATH
-from dashboard.orchestration_db import get_job_counts, get_outbox_stats, load_store
 
 # Default OpenClaw model metadata to the server cap unless a lower compaction target is set explicitly.
 _ctx_raw = os.environ.get("OPENCLAW_CONTEXT_WINDOW", os.environ.get("LLAMACPP_CTX_SIZE", "262144")).strip()
@@ -345,7 +345,9 @@ async def set_active_model(req: PullRequest, request: Request):
             model_cfg["primary"] = openclaw_model
             model_cfg.setdefault("fallbacks", [])
             # Keep gateway model list to only the active model — llamacpp is single-model
-            active_entry = _make_openclaw_model({"id": model, "context_window": OPENCLAW_CONTEXT_WINDOW})
+            # Use bare_name (no .gguf) so the provider model ID matches agents.defaults.model.primary.
+            # Mismatch causes isolated cron sessions to abort immediately (model not found in provider list).
+            active_entry = _make_openclaw_model({"id": bare_name, "context_window": OPENCLAW_CONTEXT_WINDOW})
             providers = cfg.setdefault("models", {}).setdefault("providers", {})
             if "gateway" not in providers:
                 providers["gateway"] = {**_OPENCLAW_GATEWAY_BASE, "models": [active_entry]}
@@ -1410,7 +1412,7 @@ async def performance_summary():
     top_models.sort(key=lambda item: item["sample_count"], reverse=True)
     try:
         rag = await asyncio.wait_for(rag_status(), timeout=2.0)
-    except asyncio.TimeoutError:
+    except TimeoutError:
         rag = {"ok": False, "error": "timeout"}
     return {
         "ok": True,
