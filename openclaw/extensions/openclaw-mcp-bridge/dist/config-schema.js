@@ -74,8 +74,16 @@ export const configSchema = Type.Object({
     debug: Type.Optional(Type.Boolean({ default: false })),
     /** Automatically inject MCP tool schemas into agent context. */
     injectSchemas: Type.Optional(Type.Boolean({
-        default: true,
-        description: "Automatically inject MCP tool schemas into agent context",
+        default: false,
+        description: "Automatically inject full MCP tool schemas into agent context. Keep off by default and use discovery instead.",
+    })),
+    /** Register each MCP tool as its own flat OpenClaw tool (e.g. gateway__tavily_search).
+     *  When false (default), only `gateway__call` is registered — the model uses it to invoke
+     *  any MCP tool by name. This avoids the heavy eager tool discovery that blocks session
+     *  startup and embedded helpers like slug-gen. */
+    flatTools: Type.Optional(Type.Boolean({
+        default: false,
+        description: "Register individual flat tools per MCP tool (eager discovery). When false, only gateway__call is available.",
     })),
 });
 //# sourceMappingURL=config-schema.js.map

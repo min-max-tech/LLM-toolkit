@@ -28,6 +28,8 @@ MCP_PLUGIN_CONFIG = {
             },
         },
         "debug": False,
+        "flatTools": True,
+        "injectSchemas": False,
     },
 }
 
@@ -37,7 +39,6 @@ PLUGIN_MANIFEST = {
     "description": "Bridges MCP servers as native OpenClaw tools via streamable-http.",
     "configSchema": {
         "type": "object",
-        "additionalProperties": False,
         "properties": {
             "servers": {
                 "type": "object",
@@ -52,6 +53,8 @@ PLUGIN_MANIFEST = {
                 },
             },
             "debug": {"type": "boolean"},
+            "flatTools": {"type": "boolean"},
+            "injectSchemas": {"type": "boolean"},
         },
     },
 }
@@ -96,18 +99,31 @@ def normalize_mcp_bridge_servers(data: dict) -> bool:
         if gateway.get("requestTimeoutMs") != _request_timeout_ms:
             gateway["requestTimeoutMs"] = _request_timeout_ms
             modified = True
+    # Prefer direct flat tools so agents can call workflow operations without proxy JSON wrapping.
+    if cfg.get("flatTools") is not True:
+        cfg["flatTools"] = True
+        modified = True
+    # Keep prompt context compact by discovering tools on demand instead of injecting full schemas.
+    if cfg.get("injectSchemas") is not False:
+        cfg["injectSchemas"] = False
+        modified = True
     return modified
 
 
 def _ensure_plugin_manifest() -> None:
-    """Write openclaw.plugin.json if missing. Creates the extensions dir if needed."""
+    """Write or refresh openclaw.plugin.json so stale installs pick up schema changes."""
     manifest_path = EXTENSIONS_DIR / "openclaw.plugin.json"
-    if manifest_path.exists():
-        return
     try:
         EXTENSIONS_DIR.mkdir(parents=True, exist_ok=True)
-        manifest_path.write_text(json.dumps(PLUGIN_MANIFEST, indent=2), encoding="utf-8")
-        print(f"add_mcp_plugin_config: created missing {manifest_path}")
+        rendered = json.dumps(PLUGIN_MANIFEST, indent=2)
+        existing = None
+        if manifest_path.exists():
+            existing = manifest_path.read_text(encoding="utf-8")
+        if existing == rendered:
+            return
+        manifest_path.write_text(rendered, encoding="utf-8")
+        action = "updated" if existing is not None else "created"
+        print(f"add_mcp_plugin_config: {action} {manifest_path}")
     except OSError as e:
         print(f"add_mcp_plugin_config: manifest write failed: {e}", file=sys.stderr)
 

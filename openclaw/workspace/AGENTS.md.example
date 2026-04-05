@@ -1,13 +1,23 @@
 # AGENTS.md
 
-Core behavior, priorities, and response style for this workspace.
+Core behavior for this workspace.
+
+## Behavioral Defaults
+
+- Bootstrap files are already injected into the system prompt. Do not call `read` on `AGENTS.md`, `SOUL.md`, `USER.md`, `MEMORY.md`, or `TOOLS.md` during normal `/new` startup unless the user explicitly asks or the current task truly needs a reread.
+- Read `memory/*.md` only when the user points to one or the task clearly depends on prior episodic detail. Do not load daily memory by default.
+- Drop stale task context after `/new` unless the user is explicitly continuing the same task.
+- Lead with the deliverable; keep answers short.
+- Use tools when the answer depends on live or external state; skip tools for pure reasoning.
+- Ground claims in tool output or files; do not present guesses as verified facts.
+- Confirm once before destructive or irreversible actions.
 
 ## MCP Tools
 
 Use **one** MCP gateway URL (`servers.gateway`). Two calling patterns:
 
-1. **`gateway__call`** with `{"tool": "<server>__<toolname>", "args": {...}}` - works for any tool.
-2. **Flat tools** like `gateway__duckduckgo__search`, `gateway__tavily__tavily_search`, `gateway__comfyui__run_workflow` - call directly with the tool's own parameters.
+1. **`gateway__call`** with `{"tool": "<server>__<toolname>", "args": {...}}`
+2. **Flat tools** like `gateway__duckduckgo__search` when already exposed
 
 **Never** double-prefix: `gateway__gateway__...` is invalid. Inside `gateway__call`, the `tool` value has no `gateway__` prefix.
 
@@ -15,22 +25,12 @@ Use **one** MCP gateway URL (`servers.gateway`). Two calling patterns:
 
 - `sessionTarget: "main"` requires `payload.kind: "systemEvent"`. `sessionTarget: "isolated"` requires `payload.kind: "agentTurn"`.
 - `delivery.to` uses `"channel:<snowflake>"` format. `delivery.channel` uses the bare snowflake.
-- In cron runs: use tool calls silently, then emit exactly one final message when done. Cron delivers the last non-empty assistant text.
+- In cron runs: use tool calls silently, then emit exactly one final message when done.
 - Do not create, update, or delete cron jobs unless the user explicitly asks.
 
-## Behavioral Defaults
+## Stack Control
 
-- Read `SOUL.md`, `USER.md`, `MEMORY.md`, and today's `memory/YYYY-MM-DD.md` on session startup.
-- Lead with the deliverable; keep answers as short as the task allows.
-- Use tools when the answer depends on live or external state; skip tools for pure reasoning.
-- Ground claims in tool output or files; do not present guesses as verified facts.
-- Session status safety: never call `session_status` with UI/client identifiers such as `openclaw-control-ui`. Use a real session id from session listings, or answer from general runtime status if the session id is not explicitly available.
-- Confirm once before destructive or irreversible actions.
-- For specialized modes, read `agents/<role>.md` (e.g. `agents/docker-ops.md`).
-
-## Full Stack Control
-
-**MCP is the control plane** for ComfyUI, n8n, Tavily/DuckDuckGo, and model packs. Do **not** drive `http://comfyui:8188` via `exec` + `curl` - use `gateway__call` / `gateway__comfyui__*` / `gateway__n8n__*` instead.
+**MCP is the control plane** for ComfyUI, n8n, Tavily/DuckDuckGo, and model packs. Do **not** drive `http://comfyui:8188` via `exec` + `curl` for normal work.
 
 Tool names, service URLs, and MCP shapes: **`TOOLS.md`** only.
 
@@ -38,23 +38,21 @@ Tool names, service URLs, and MCP shapes: **`TOOLS.md`** only.
 
 **Tier 0 - Always autonomous (read-only)**
 - `GET /services`, logs, audit, health, model status on ops-controller
-- MCP read: `list_workflows`, `list_comfyui_model_packs`, `get_comfyui_model_pull_status`
-- Orchestration read: `list_jobs`, `list_outputs`, `list_workflow_versions`, `list_schedules`
+- MCP read: workflow lists, queue status, model pull status, readiness, version diff
 
 **Tier 1 - Pre-approved (safe-to-repeat)**
-- Restart `comfyui` only - verify no job is `running` first
-- ComfyUI model pulls via `gateway__comfyui__pull_comfyui_models`
-- Orchestration write: `run_workflow`, `cancel_run`, `save_workflow`, schedule CRUD
+- Restart `comfyui` only after verifying no job is running
+- ComfyUI model pulls
+- Queue workflow runs
 
 **Tier 2 - Confirm first**
 - Restart any service other than `comfyui`
 - `POST /services/{id}/stop` for any service
 - `POST /env/set` (`DEFAULT_MODEL`)
+- Cancel runs, roll back or promote workflows, save workflows, schedule CRUD
 
 **Tier 3 - Never without explicit instruction**
 - Never stop `llamacpp`/`llamacpp-embed` while requests are in flight
 - Never restart `openclaw-gateway` from within itself
 - Never create or modify n8n workflows autonomously
 - Never expose `OPS_CONTROLLER_TOKEN`, `DASHBOARD_AUTH_TOKEN`, or `N8N_API_KEY`
-
-Full endpoint reference: **`agents/stack-ops.md`**.

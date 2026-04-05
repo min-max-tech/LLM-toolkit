@@ -4,9 +4,12 @@ Which tools exist here and how to invoke them.
 
 ## MCP Gateway
 
-Single URL: `http://mcp-gateway:8811/mcp` via `openclaw-mcp-bridge` plugin (server name: `gateway`).
+Single URL: `http://mcp-gateway:8811/mcp` via `openclaw-mcp-bridge` (server name: `gateway`).
 
-Use `gateway__call` with `{"tool": "<inner_name>", "args": {...}}` or flat tools when they appear in context. Flat tool names follow the pattern `gateway__<server>__<tool>`.
+Preferred flow:
+- Use direct flat tools first, such as `gateway__list_workflows`, `gateway__search_nodes`, `gateway__validate_workflow`, `gateway__save_workflow`, `gateway__run_workflow`, `gateway__await_run`, and `gateway__list_outputs`.
+- Use `gateway__call` only as a compatibility fallback when a flat tool is missing.
+- Invalid patterns: `gateway__gateway__...`, `comfyui__call`.
 
 ## Search & Web
 
@@ -18,22 +21,40 @@ Use `gateway__call` with `{"tool": "<inner_name>", "args": {...}}` or flat tools
 | `gateway__duckduckgo__search` | Simple web search (backup) |
 | `web_fetch` | Fetch raw HTML from a URL |
 
-Built-in `browser` is denied. Built-in `web_search` is disabled. Use the tools above.
+Built-in `browser` is denied. Built-in `web_search` is disabled.
 
 ## ComfyUI
 
+ComfyUI is a general media engine. It can generate images, audio/music, and video. Do not assume a prebuilt workflow like `generate_song` already exists.
+
 | Tool | Purpose |
 |------|---------|
-| `gateway__comfyui__list_workflows` | List available workflows |
-| `gateway__comfyui__run_workflow` | Execute a workflow |
-| `gateway__comfyui__list_comfyui_model_packs` | List downloadable model packs |
-| `gateway__comfyui__pull_comfyui_models` | Download model packs |
-| `gateway__comfyui__get_comfyui_model_pull_status` | Check pull progress |
-| `gateway__comfyui__restart_comfyui` | Restart ComfyUI service |
+| `gateway__list_workflows` | List available API-format workflows |
+| `gateway__search_nodes` | Find candidate nodes for a workflow |
+| `gateway__get_node_info` | Inspect node inputs and outputs |
+| `gateway__get_node_documentation` | Inspect node behavior and examples |
+| `gateway__validate_workflow` | Validate a workflow before execution |
+| `gateway__save_workflow` | Save a reusable API-format workflow |
+| `gateway__run_workflow` | Execute a workflow |
+| `gateway__await_run` | Poll for completion |
+| `gateway__list_outputs` | Retrieve generated outputs |
 
-Outputs: `GET http://dashboard:8080/api/orchestration/outputs` or MCP `list_outputs`.
+Recommended authoring flow:
+1. Reuse an existing API-format workflow when it is a clear fit.
+2. Otherwise inspect nodes and compose or adapt a workflow.
+3. Validate before execution.
+4. Save only if the workflow is worth reusing.
+5. Run and fetch outputs through MCP.
 
-Do **not** drive ComfyUI via `exec` + `curl` to `/prompt` - use MCP tools.
+Outputs: MCP `list_outputs`.
+
+Do not drive ComfyUI via `exec` + `curl` to `/prompt`.
+
+Fallback `gateway__call` example:
+
+```json
+{ "tool": "list_workflows", "args": { "details": false } }
+```
 
 ## n8n
 
@@ -42,16 +63,7 @@ Do **not** drive ComfyUI via `exec` + `curl` to `/prompt` - use MCP tools.
 | `gateway__n8n__list_workflows` | List n8n workflows |
 | `gateway__n8n__execute_workflow` | Run a workflow |
 
-Never create or modify n8n workflows from within OpenClaw.
-
-## Orchestration
-
-| Tool | Purpose |
-|------|---------|
-| `list_jobs` / `list_outputs` | Read job queue and results |
-| `run_workflow` / `cancel_run` | Queue or cancel a job |
-| `save_workflow` / `list_workflow_versions` | Workflow versioning |
-| `create_schedule` / `update_schedule` / `delete_schedule` | Cron management |
+Never create or modify n8n workflows from within OpenClaw unless the user explicitly asks.
 
 ## Core Services
 
@@ -70,5 +82,5 @@ Never create or modify n8n workflows from within OpenClaw.
 
 ## Stack Ops
 
-Service lifecycle, model pulls, self-healing: **`agents/stack-ops.md`**.
-Compose, model downloads, MCP troubleshooting: **`agents/docker-ops.md`**.
+Service lifecycle, model pulls, self-healing: `agents/stack-ops.md`.
+Compose, model downloads, MCP troubleshooting: `agents/docker-ops.md`.

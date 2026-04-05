@@ -54,7 +54,9 @@ CLAUDE_CODE_ADVERTISE_ALIASES = os.environ.get("CLAUDE_CODE_ADVERTISE_ALIASES", 
 DEFAULT_CONTEXT_WINDOW = int(os.environ.get("LLAMACPP_CTX_SIZE", "262144") or 262144)
 # Hard input-token budget for OpenClaw requests. Prevents slow decode by trimming prompts before
 # they reach llama.cpp, regardless of the model's full context window.
-OPENCLAW_MAX_INPUT_TOKENS = int(os.environ.get("OPENCLAW_MAX_INPUT_TOKENS", "30720") or 30720)
+# Note: _estimate_text_tokens uses len/4 which underestimates by ~1.5x for structured/JSON content.
+# A budget of 16384 estimated tokens ≈ 24-26k actual tokens after tokenization.
+OPENCLAW_MAX_INPUT_TOKENS = int(os.environ.get("OPENCLAW_MAX_INPUT_TOKENS", "16384") or 16384)
 
 # TTL model list cache: avoids hitting llama-server on every /v1/models call.
 _model_cache: list = []
@@ -169,6 +171,43 @@ def _truncate_message_to_budget(message: dict[str, Any], token_budget: int) -> d
     return trimmed
 
 
+def _message_group_cost(messages: list[dict[str, Any]]) -> int:
+    return sum(_message_token_cost(message) for message in messages)
+
+
+def _message_group_has_tool_state(messages: list[dict[str, Any]]) -> bool:
+    return any(message.get("tool_calls") or message.get("role") == "tool" for message in messages)
+
+
+def _group_trim_candidate_messages(messages: list[dict[str, Any]]) -> list[list[dict[str, Any]]]:
+    groups: list[list[dict[str, Any]]] = []
+    idx = 0
+    while idx < len(messages):
+        msg = dict(messages[idx])
+        if msg.get("tool_calls"):
+            tool_call_ids = {
+                str(tool_call.get("id"))
+                for tool_call in msg.get("tool_calls") or []
+                if isinstance(tool_call, dict) and tool_call.get("id")
+            }
+            group = [msg]
+            idx += 1
+            while idx < len(messages):
+                tool_msg = dict(messages[idx])
+                if tool_msg.get("role") != "tool":
+                    break
+                tool_call_id = tool_msg.get("tool_call_id")
+                if tool_call_ids and tool_call_id and str(tool_call_id) not in tool_call_ids:
+                    break
+                group.append(tool_msg)
+                idx += 1
+            groups.append(group)
+            continue
+        groups.append([msg])
+        idx += 1
+    return groups
+
+
 def _trim_messages_to_budget(messages: list[dict[str, Any]], budget: int) -> tuple[list[dict[str, Any]], dict[str, int]]:
     if not messages:
         return (messages, {"before": 0, "after": 0, "dropped": 0})
@@ -195,20 +234,25 @@ def _trim_messages_to_budget(messages: list[dict[str, Any]], budget: int) -> tup
         used += msg_cost
 
     remaining_budget = max(256, budget - used)
-    kept_other_rev: list[dict[str, Any]] = []
-    for msg in reversed(other_messages):
-        msg_cost = _message_token_cost(msg)
-        if msg_cost <= remaining_budget:
-            kept_other_rev.append(msg)
-            remaining_budget -= msg_cost
+    kept_other_groups_rev: list[list[dict[str, Any]]] = []
+    for group in reversed(_group_trim_candidate_messages(other_messages)):
+        group_cost = _message_group_cost(group)
+        if group_cost <= remaining_budget:
+            kept_other_groups_rev.append(group)
+            remaining_budget -= group_cost
             continue
-        trimmed = _truncate_message_to_budget(msg, remaining_budget)
-        if trimmed:
-            kept_other_rev.append(trimmed)
-            remaining_budget = 0
+        if len(group) == 1 and not _message_group_has_tool_state(group):
+            trimmed = _truncate_message_to_budget(group[0], remaining_budget)
+            if trimmed:
+                kept_other_groups_rev.append([trimmed])
+                remaining_budget = 0
         break
 
-    trimmed_messages = kept_system + list(reversed(kept_other_rev))
+    trimmed_messages = kept_system + [
+        message
+        for group in reversed(kept_other_groups_rev)
+        for message in group
+    ]
     after = sum(_message_token_cost(m) for m in trimmed_messages)
     dropped = max(0, len(messages) - len(trimmed_messages))
     return (trimmed_messages, {"before": before, "after": after, "dropped": dropped})

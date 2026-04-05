@@ -67,6 +67,8 @@ def _env_positive_int(name: str, default: int) -> int:
 
 OPENCLAW_AGENT_TIMEOUT_SECONDS = _env_positive_int("OPENCLAW_AGENT_TIMEOUT_SECONDS", 3600)
 OPENCLAW_LLM_IDLE_TIMEOUT_SECONDS = _env_positive_int("OPENCLAW_LLM_IDLE_TIMEOUT_SECONDS", 900)
+OPENCLAW_BOOTSTRAP_MAX_CHARS = _env_positive_int("OPENCLAW_BOOTSTRAP_MAX_CHARS", 3000)
+OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS = _env_positive_int("OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS", 8000)
 if OPENCLAW_COMPACTION_MODE not in _ALLOWED_COMPACTION_MODES:
     OPENCLAW_COMPACTION_MODE = "safeguard"
 
@@ -703,6 +705,12 @@ def main() -> int:
     llm_defaults = agents_defaults.setdefault("llm", {})
     if llm_defaults.get("idleTimeoutSeconds") != OPENCLAW_LLM_IDLE_TIMEOUT_SECONDS:
         llm_defaults["idleTimeoutSeconds"] = OPENCLAW_LLM_IDLE_TIMEOUT_SECONDS
+        modified = True
+    if agents_defaults.get("bootstrapMaxChars") != OPENCLAW_BOOTSTRAP_MAX_CHARS:
+        agents_defaults["bootstrapMaxChars"] = OPENCLAW_BOOTSTRAP_MAX_CHARS
+        modified = True
+    if agents_defaults.get("bootstrapTotalMaxChars") != OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS:
+        agents_defaults["bootstrapTotalMaxChars"] = OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS
         modified = True
 
     # Native web_search (Brave, etc.): keep disabled — use MCP gateway__call + duckduckgo__search.

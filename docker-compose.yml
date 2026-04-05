@@ -89,7 +89,7 @@ services:
       - THROUGHPUT_RECORD_TOKEN=${THROUGHPUT_RECORD_TOKEN:-}
       - MODEL_CACHE_TTL_SEC=${MODEL_CACHE_TTL_SEC:-60}
       - LLAMACPP_CTX_SIZE=${LLAMACPP_CTX_SIZE:-262144}
-      - OPENCLAW_MAX_INPUT_TOKENS=${OPENCLAW_MAX_INPUT_TOKENS:-30720}
+      - OPENCLAW_MAX_INPUT_TOKENS=${OPENCLAW_MAX_INPUT_TOKENS:-16384}
       # Local model used when Claude Code sends a "claude-*" model name
       - CLAUDE_CODE_LOCAL_MODEL=${CLAUDE_CODE_LOCAL_MODEL:-}
       # Set to 1 only if a client requires claude-* ids in GET /v1/models (pollutes OpenClaw sync if on)
@@ -715,7 +715,6 @@ services:
           "skills": ["./skills"],
           "configSchema": {
             "type": "object",
-            "additionalProperties": false,
             "properties": {
               "servers": {
                 "type": "object",
@@ -732,7 +731,9 @@ services:
                   "required": ["url"]
                 }
               },
-              "debug": { "type": "boolean" }
+              "debug": { "type": "boolean" },
+              "flatTools": { "type": "boolean", "default": false },
+              "injectSchemas": { "type": "boolean", "default": false }
             }
           }
         }
@@ -759,7 +760,9 @@ services:
                     requestTimeoutMs:Number('$$MCP_REQUEST_TIMEOUT_MS')
                   }
                 },
-                debug:false
+                debug:false,
+                flatTools:false,
+                injectSchemas:false
               }
             };
             p.enabled = true;

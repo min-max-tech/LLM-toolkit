@@ -211,3 +211,14 @@ def test_merge_unrestricted_gateway_container_on(monkeypatch: pytest.MonkeyPatch
     assert data["tools"]["elevated"]["allowFrom"]["webchat"] == ["*"]
     assert data["tools"]["elevated"]["allowFrom"]["discord"] == ["*"]
     assert data["agents"]["defaults"]["elevatedDefault"] == "full"
+
+
+def test_bootstrap_caps_read_from_env(monkeypatch: pytest.MonkeyPatch) -> None:
+    monkeypatch.setenv("OPENCLAW_BOOTSTRAP_MAX_CHARS", "2500")
+    monkeypatch.setenv("OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS", "7000")
+    spec = importlib.util.spec_from_file_location("merge_gateway_config_reloaded", _SCRIPT)
+    assert spec and spec.loader
+    module = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(module)
+    assert module.OPENCLAW_BOOTSTRAP_MAX_CHARS == 2500
+    assert module.OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS == 7000

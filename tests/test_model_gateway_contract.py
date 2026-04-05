@@ -69,6 +69,34 @@ def test_openclaw_trim_messages_to_budget():
     assert stats["before"] > 512
 
 
+def test_openclaw_trim_preserves_tool_call_pairs():
+    """Trimming should keep tool result pairs intact when they survive budgeting."""
+    gateway = _load_gateway()
+    messages = [
+        {"role": "system", "content": "You are helpful."},
+        {"role": "user", "content": "x " * 7000},
+        {
+            "role": "assistant",
+            "content": "",
+            "tool_calls": [{"id": "call_1", "type": "function", "function": {"name": "search", "arguments": "{}"}}],
+        },
+        {"role": "tool", "tool_call_id": "call_1", "content": '{"ok": true}'},
+        {"role": "user", "content": "Summarize that briefly."},
+    ]
+
+    trimmed, stats = gateway._trim_messages_to_budget(messages, 520)
+
+    assert stats["after"] < stats["before"]
+    trimmed_tool_ids = {message.get("tool_call_id") for message in trimmed if message.get("role") == "tool"}
+    assistant_tool_ids = {
+        tool_call.get("id")
+        for message in trimmed
+        for tool_call in (message.get("tool_calls") or [])
+        if isinstance(tool_call, dict) and tool_call.get("id")
+    }
+    assert trimmed_tool_ids <= assistant_tool_ids
+
+
 def _chat_completion_client(payload: dict):
     """httpx.AsyncClient mock for a non-streaming chat completion response."""
     resp = MagicMock()

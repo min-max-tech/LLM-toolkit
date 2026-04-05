@@ -44,8 +44,13 @@
       "debug": { "type": "boolean", "default": false },
       "injectSchemas": {
         "type": "boolean",
-        "description": "Automatically inject MCP tool schemas into agent context",
-        "default": true
+        "description": "Automatically inject full MCP tool schemas into agent context. Keep off by default and use discovery instead.",
+        "default": false
+      },
+      "flatTools": {
+        "type": "boolean",
+        "description": "Register individual flat tools per MCP tool (eager discovery). When false, only gateway__call is available.",
+        "default": false
       }
     }
   }
