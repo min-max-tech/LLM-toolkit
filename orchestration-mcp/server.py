@@ -80,6 +80,13 @@ def orchestration_readiness() -> dict:
 # ── Workflow lifecycle ────────────────────────────────────────────────────────
 
 @mcp.tool()
+def list_templates() -> dict:
+    """List available typed templates (generate_image, generate_video, etc.) that can be used with create_from_template and run_workflow."""
+    result = _get("/api/orchestration/workflows")
+    return {"templates": result.get("templates", [])}
+
+
+@mcp.tool()
 def list_workflows() -> dict:
     """List typed templates and workflow API files."""
     return _get("/api/orchestration/workflows")
@@ -90,7 +97,10 @@ def validate_workflow(workflow_json: str | None = None, workflow_id: str | None 
     """Validate API-format workflow JSON; rejects ComfyUI UI/editor exports."""
     body: dict[str, Any] = {}
     if workflow_json:
-        body["workflow"] = json.loads(workflow_json)
+        try:
+            body["workflow"] = json.loads(workflow_json)
+        except json.JSONDecodeError as e:
+            return {"error": f"Invalid JSON in workflow_json: {e}"}
     if workflow_id:
         body["workflow_id"] = workflow_id
     return _post("/api/orchestration/validate", body)
@@ -99,7 +109,10 @@ def validate_workflow(workflow_json: str | None = None, workflow_id: str | None 
 @mcp.tool()
 def create_from_template(template_id: str, params_json: str = "{}") -> dict:
     """Compile a typed template to API-format graph."""
-    params = json.loads(params_json) if params_json else {}
+    try:
+        params = json.loads(params_json) if params_json else {}
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in params_json: {e}"}
     return _post("/api/orchestration/workflows/from-template",
                  {"template_id": template_id, "params": params})
 
@@ -107,8 +120,14 @@ def create_from_template(template_id: str, params_json: str = "{}") -> dict:
 @mcp.tool()
 def save_workflow(workflow_id: str, workflow_json: str, params_schema_json: str = "{}") -> dict:
     """Save a compiled API-format workflow as a new versioned snapshot."""
-    workflow = json.loads(workflow_json)
-    params_schema = json.loads(params_schema_json) if params_schema_json else None
+    try:
+        workflow = json.loads(workflow_json)
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in workflow_json: {e}"}
+    try:
+        params_schema = json.loads(params_schema_json) if params_schema_json else None
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in params_schema_json: {e}"}
     return _post("/api/orchestration/workflows/save",
                  {"workflow_id": workflow_id, "workflow": workflow, "params_schema": params_schema})
 
@@ -146,7 +165,10 @@ def run_workflow(
     params_json: str = "{}",
 ) -> dict:
     """Queue a workflow run via the worker. Returns job_id immediately."""
-    params = json.loads(params_json) if params_json else {}
+    try:
+        params = json.loads(params_json) if params_json else {}
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in params_json: {e}"}
     body: dict[str, Any] = {"params": params}
     if template_id:
         body["template_id"] = template_id
@@ -181,7 +203,10 @@ def cancel_run(job_id: str) -> dict:
 @mcp.tool()
 def publish_enqueue(job_id: str, webhook_url: str | None = None, payload_json: str = "{}") -> dict:
     """Write to durable publish outbox (worker delivers with retries to n8n)."""
-    payload = json.loads(payload_json) if payload_json else {}
+    try:
+        payload = json.loads(payload_json) if payload_json else {}
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in payload_json: {e}"}
     body: dict[str, Any] = {"job_id": job_id, "payload": payload}
     if webhook_url:
         body["webhook_url"] = webhook_url
@@ -212,7 +237,10 @@ def create_schedule(
     params_json: str = "{}",
 ) -> dict:
     """Schedule a recurring workflow run using a cron expression (e.g. '0 9 * * *' = 9am daily)."""
-    params = json.loads(params_json) if params_json else {}
+    try:
+        params = json.loads(params_json) if params_json else {}
+    except json.JSONDecodeError as e:
+        return {"error": f"Invalid JSON in params_json: {e}"}
     body: dict[str, Any] = {"cron_expr": cron_expr, "params": params}
     if template_id:
         body["template_id"] = template_id

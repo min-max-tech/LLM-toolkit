@@ -68,6 +68,42 @@ function toFlatToolParametersSchema(rt) {
         description: "Arguments for this MCP tool (see injected MCP tool list).",
     });
 }
+function coerceToolArgs(raw) {
+    if (raw == null) {
+        return {};
+    }
+    if (typeof raw === "object" && !Array.isArray(raw)) {
+        return raw;
+    }
+    if (typeof raw !== "string") {
+        throw new Error("args must be an object or JSON object string");
+    }
+    let text = raw.trim();
+    if (!text) {
+        return {};
+    }
+    text = text
+        .replaceAll('<|"|>', '"')
+        .replaceAll("<|'|>", "'")
+        .replaceAll("<|`|>", "`")
+        .replaceAll("<|\\n|>", "\n")
+        .replace(/<\|(.)\|>/g, "$1");
+    if (!text.startsWith("{")) {
+        text = `{${text}}`;
+    }
+    let parsed;
+    try {
+        parsed = JSON.parse(text);
+    }
+    catch (err) {
+        const msg = err instanceof Error ? err.message : String(err);
+        throw new Error(`args JSON parse failed: ${msg}`);
+    }
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) {
+        throw new Error("args must resolve to an object");
+    }
+    return parsed;
+}
 // ---------------------------------------------------------------------------
 // Plugin registration
 // ---------------------------------------------------------------------------
@@ -116,12 +152,15 @@ function register(api) {
             description: `Call a tool on MCP server "${serverName}" (${serverConfig.url}). Pass tool name and arguments to invoke any tool on this server.`,
             parameters: Type.Object({
                 tool: Type.String({ description: "The tool name to call on this server" }),
-                args: Type.Optional(Type.Record(Type.String(), Type.Unknown(), { description: "Arguments to pass to the tool" })),
+                args: Type.Optional(Type.Union([
+                    Type.Record(Type.String(), Type.Unknown(), { description: "Arguments to pass to the tool" }),
+                    Type.String({ description: "JSON object string of arguments; accepted for models that emit stringified tool args" }),
+                ])),
             }),
             async execute(_toolCallId, params) {
                 await ensureConnected();
                 const toolName = params.tool;
-                const args = params.args ?? {};
+                const args = coerceToolArgs(params.args);
                 try {
                     const resolvedToolName = resolveProxyToolName(mcpManager, prefix, toolName);
                     if (resolvedToolName !== `${prefix}__${toolName}`) {

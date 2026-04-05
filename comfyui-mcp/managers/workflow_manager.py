@@ -42,7 +42,8 @@ PLACEHOLDER_DESCRIPTIONS = {
     "seconds": "Audio duration in seconds. Default: 60 (1 minute).",
     "lyrics_strength": "How strongly lyrics influence audio generation (0.0-1.0). Default: 0.99.",
     "duration": "Video duration in seconds. Default: 5.",
-    "fps": "Frames per second for video output. Default: 16.",
+    "fps": "Frames per second for video output. Default: 24.",
+    "frames": "Number of video frames (must be divisible by 8+1 for LTX-2). Default: 121 (5s at 24fps).",
 }
 DEFAULT_OUTPUT_KEYS = ("images", "image", "gifs", "gif")
 AUDIO_OUTPUT_KEYS = ("audio", "audios", "sound", "files")

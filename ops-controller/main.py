@@ -41,7 +41,11 @@ COMFYUI_MODELS_DIR = Path(os.environ.get("COMFYUI_MODELS_DIR", "/models/comfyui"
 # Same layout as docker-compose: ${BASE_PATH}/data/comfyui-storage → comfyui /root
 COMFYUI_CUSTOM_NODES_DIR = Path("/workspace/data/comfyui-storage/ComfyUI/custom_nodes")
 COMFYUI_CONTAINER_NAME = os.environ.get("COMFYUI_CONTAINER_NAME", "comfyui")
-COMFYUI_CATEGORIES = ("checkpoints", "loras", "text_encoders", "latent_upscale_models")
+COMFYUI_CATEGORIES = (
+    "checkpoints", "loras", "text_encoders", "latent_upscale_models",
+    "vae", "unet", "clip", "clip_vision", "controlnet", "embeddings",
+    "upscale_models", "diffusion_models", "vae_approx",
+)
 _NODE_PATH_SEGMENTS = re.compile(r"^[a-zA-Z0-9._-]+$")
 HF_TOKEN = os.environ.get("HF_TOKEN", "").strip() or os.environ.get("HUGGING_FACE_HUB_TOKEN", "").strip()
 _dl_lock = threading.Lock()
@@ -528,16 +532,27 @@ async def comfyui_install_node_requirements(
 def _auto_detect_category(url: str, filename: str) -> str:
     """Guess ComfyUI model category from URL path or filename."""
     parts = url.lower()
-    for cat in COMFYUI_CATEGORIES:
-        if cat in parts:
-            return cat
     fn = filename.lower()
-    if "lora" in fn or "lora" in parts:
+    combined = parts + " " + fn
+    # Check exact category names first (longest match wins)
+    for cat in sorted(COMFYUI_CATEGORIES, key=len, reverse=True):
+        if cat in combined:
+            return cat
+    # Keyword fallbacks
+    if "lora" in combined:
         return "loras"
-    if "text_encoder" in parts or "text_encoder" in fn:
+    if "text_encoder" in combined or "clip" in combined:
         return "text_encoders"
-    if "upscale" in parts or "upscale" in fn:
-        return "latent_upscale_models"
+    if "vae" in combined:
+        return "vae"
+    if "unet" in combined:
+        return "unet"
+    if "controlnet" in combined:
+        return "controlnet"
+    if "upscale" in combined:
+        return "upscale_models"
+    if "embedding" in combined:
+        return "embeddings"
     return "checkpoints"
 
 

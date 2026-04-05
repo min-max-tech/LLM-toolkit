@@ -1,8 +1,9 @@
 #!/usr/bin/env bash
 # ordo-ai-stack — project management CLI
-# Usage: ./ordo-ai-stack <command>
+# Usage: ./ordo-ai-stack [command]
 #
 # Commands:
+#   launch       Ensure directories/workspace, then start the stack without forcing rebuilds
 #   initialize   Bootstrap directories, config, hardware profile, then rebuild/recreate and start the full default stack
 #   help         Show this help
 
@@ -28,6 +29,51 @@ repo_root() {
 }
 
 # ── initialize ─────────────────────────────────────────────────────────────────
+
+cmd_launch() {
+  local base data
+  base="$(repo_root)"
+  data="${DATA_PATH:-$base/data}"
+
+  if [[ ! -f "$base/docker-compose.yml" ]]; then
+    err "No docker-compose.yml under: $base"
+    err "Set BASE_PATH to your Ordo AI Stack repo root, or run this script from the repo (./ordo-ai-stack launch)."
+    exit 1
+  fi
+
+  printf "\n${YELLOW}"
+  cat <<'BANNER'
+  ___          _       
+ / _ \ _ __ __| | ___  
+| | | | '__/ _` |/ _ \ 
+| |_| | | | (_| | (_) |
+ \___/|_|  \__,_|\___/
+BANNER
+  printf "${NC}"
+  printf "${DIM}  base=%s  data=%s${NC}\n" "$base" "$data"
+
+  export BASE_PATH="$base"
+
+  section "1/3" "Directories and hardware profile"
+  bash "$base/scripts/ensure_dirs.sh"
+
+  section "2/3" "OpenClaw workspace templates"
+  if [[ -f "$base/openclaw/scripts/ensure_openclaw_workspace.sh" ]]; then
+    bash "$base/openclaw/scripts/ensure_openclaw_workspace.sh"
+  else
+    warn "openclaw/scripts/ensure_openclaw_workspace.sh not found — skipped"
+  fi
+
+  section "3/3" "Docker — start Ordo stack"
+  info "docker compose up -d"
+  ( cd "$base" && docker compose up -d )
+
+  printf "\n${BOLD}${GREEN}✓  Ordo is up${NC}\n\n"
+  printf "  ${BOLD}%-22s${NC} %s\n" "Dashboard"      "http://localhost:8080"
+  printf "  ${BOLD}%-22s${NC} %s\n" "OpenClaw"       "http://localhost:6680"
+  printf "  ${BOLD}%-22s${NC} %s\n" "Open WebUI"     "http://localhost:3000"
+  printf "\n"
+}
 
 cmd_initialize() {
   local base data
@@ -84,8 +130,9 @@ BANNER
 }
 
 # ── dispatch ───────────────────────────────────────────────────────────────────
-cmd="${1:-help}"
+cmd="${1:-launch}"
 case "$cmd" in
+  launch|start|up) cmd_launch ;;
   initialize|init) cmd_initialize ;;
   help|--help|-h)
     sed -n 's/^# \{0,1\}//p' "$0" | sed -n '2,/^$/p'

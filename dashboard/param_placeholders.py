@@ -32,6 +32,7 @@ _OPTIONAL_PARAMS = frozenset(
         "lyrics_strength",
         "duration",
         "fps",
+        "frames",
     }
 )
 

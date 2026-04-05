@@ -142,3 +142,66 @@ def register_management_tools(mcp: FastMCP) -> None:
     def get_comfyui_model_pull_status() -> dict:
         """Poll the last pull_comfyui_models run: running, done, success, output log, pack string."""
         return _ops_get("/models/pull/status")
+
+    @mcp.tool()
+    def download_comfyui_model(url: str, category: str = "", filename: str = "") -> dict:
+        """Download any model file from HTTPS URL into ComfyUI's models directory.
+
+        Use this for models NOT in the curated packs — e.g. from HuggingFace, GitHub releases,
+        CivitAI, or any direct download URL.
+
+        Args:
+            url: Direct HTTPS download URL to the model file (e.g.
+                "https://huggingface.co/org/repo/resolve/main/model.safetensors").
+                Must start with https://.
+            category: Target subfolder under ComfyUI models directory. One of:
+                checkpoints, loras, text_encoders, vae, unet, clip, clip_vision,
+                controlnet, embeddings, upscale_models, diffusion_models,
+                latent_upscale_models, vae_approx.
+                If omitted, auto-detected from URL/filename keywords.
+            filename: Override filename to save as. If omitted, extracted from URL.
+
+        Runs in the background with resume support. Poll get_comfyui_model_download_status
+        for progress. Requires HF_TOKEN in .env for gated HuggingFace repos.
+        """
+        u = (url or "").strip()
+        if not u:
+            return {"ok": False, "error": "url is required"}
+        if not u.startswith("https://"):
+            return {"ok": False, "error": "url must start with https://"}
+        body: dict[str, Any] = {"url": u}
+        if category:
+            body["category"] = category.strip()
+        if filename:
+            body["filename"] = filename.strip()
+        return _ops_post("/models/download", body, timeout=120)
+
+    @mcp.tool()
+    def get_comfyui_model_download_status() -> dict:
+        """Poll the last download_comfyui_model run: running, done, success, progress %, filename, category."""
+        return _ops_get("/models/download/status")
+
+    @mcp.tool()
+    def pull_comfyui_gguf_models(repos: str = "", confirm: bool = True) -> dict:
+        """Download GGUF-quantized models from HuggingFace repos into ComfyUI.
+
+        Args:
+            repos: Comma-separated HuggingFace repo IDs, e.g.
+                "city96/FLUX.1-dev-gguf,unsloth/LTX-2.3-GGUF".
+                If empty, uses GGUF_MODELS from .env.
+            confirm: Must be true to start the download.
+
+        Runs in the background; poll get_comfyui_gguf_pull_status for progress.
+        """
+        if not confirm:
+            return {"ok": False, "error": "confirm must be true to execute"}
+        body: dict[str, Any] = {"confirm": True}
+        r = (repos or "").strip()
+        if r:
+            body["repos"] = r
+        return _ops_post("/models/gguf-pull", body, timeout=120)
+
+    @mcp.tool()
+    def get_comfyui_gguf_pull_status() -> dict:
+        """Poll the last pull_comfyui_gguf_models run: running, done, success, output log, repos."""
+        return _ops_get("/models/gguf-pull/status")

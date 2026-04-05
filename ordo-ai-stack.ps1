@@ -1,11 +1,12 @@
 # ordo-ai-stack -- project management CLI
-# Usage: .\ordo-ai-stack.ps1 <command>
+# Usage: .\ordo-ai-stack.ps1 [command]
 #
 # Commands:
+#   launch       Ensure directories/workspace, then start the stack without forcing rebuilds
 #   initialize   Bootstrap directories, config, hardware profile, then rebuild/recreate and start the full default stack
 #   help         Show this help
 
-param([string]$Command = "help")
+param([string]$Command = "launch")
 
 $ErrorActionPreference = "Stop"
 
@@ -97,8 +98,60 @@ function Invoke-Initialize {
     Write-Host ""
 }
 
+function Invoke-Launch {
+    $base = Get-RepoRoot
+    $composeFile = Join-Path $base "docker-compose.yml"
+    if (-not (Test-Path $composeFile)) {
+        err "No docker-compose.yml under: $base"
+        err "Set BASE_PATH to your Ordo AI Stack repo root, or run this script from the repo (.\ordo-ai-stack.ps1 launch)."
+        exit 1
+    }
+
+    Write-Host ""
+    $ordoBanner = @'
+  ___          _       
+ / _ \ _ __ __| | ___  
+| | | | '__/ _` |/ _ \ 
+| |_| | | | (_| | (_) |
+ \___/|_|  \__,_|\___/
+'@
+    Write-Host $ordoBanner -ForegroundColor Yellow
+    $dataPath = if ($env:DATA_PATH) { $env:DATA_PATH -replace '\\', '/' } else { "$base/data" }
+    Write-Host "base=$base  data=$dataPath" -ForegroundColor DarkGray
+
+    Push-Location -LiteralPath $base
+    try {
+        $env:BASE_PATH = $base
+
+        section "1/3" "Directories and hardware profile"
+        & (Join-Path $base "scripts/ensure_dirs.ps1")
+
+        section "2/3" "OpenClaw workspace templates"
+        $ensureWs = Join-Path $base "openclaw/scripts/ensure_openclaw_workspace.ps1"
+        if (Test-Path $ensureWs) {
+            & $ensureWs
+        } else {
+            warn "openclaw/scripts/ensure_openclaw_workspace.ps1 not found - skipped"
+        }
+
+        section "3/3" "Docker - start Ordo stack"
+        info "docker compose up -d"
+        docker compose up -d
+    }
+    finally {
+        Pop-Location
+    }
+
+    Write-Host "`nOrdo is up" -ForegroundColor Green
+    Write-Host "  Dashboard      http://localhost:8080"
+    Write-Host "  OpenClaw       http://localhost:6680"
+    Write-Host "  Open WebUI     http://localhost:3000"
+    Write-Host ""
+}
+
 # --- dispatch ---
 switch ($Command) {
+    { $_ -in "launch", "start", "up" } { Invoke-Launch }
     { $_ -in "initialize", "init" } { Invoke-Initialize }
     { $_ -in "help", "--help", "-h" } {
         Get-Content $MyInvocation.MyCommand.Path |

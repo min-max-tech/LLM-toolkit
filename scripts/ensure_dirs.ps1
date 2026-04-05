@@ -135,17 +135,25 @@ if (Test-Path $claudeEnvJson) {
 if (Get-Command claude -ErrorAction SilentlyContinue) {
     $port = if ($env:MODEL_GATEWAY_PORT) { $env:MODEL_GATEWAY_PORT } else { "11435" }
     if ($claudeEnvOverwrite) {
-        [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "local", "User")
-        [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "http://localhost:$port", "User")
-        Write-Host "OK Claude Code configured -> http://localhost:$port (restart terminal to apply)"
-        Write-Host "   Usage: claude --model <gguf-model-id-from-/v1/models>"
+        try {
+            [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", "local", "User")
+            [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", "http://localhost:$port", "User")
+            Write-Host "OK Claude Code configured -> http://localhost:$port (restart terminal to apply)"
+            Write-Host "   Usage: claude --model <gguf-model-id-from-/v1/models>"
+        } catch {
+            Write-Warning "Claude Code env override could not be written to the user registry. Run the terminal as your normal desktop user or set ANTHROPIC_API_KEY=local and ANTHROPIC_BASE_URL=http://localhost:$port manually."
+        }
     } else {
         $curKey = [System.Environment]::GetEnvironmentVariable("ANTHROPIC_API_KEY", "User")
         $curUrl = [System.Environment]::GetEnvironmentVariable("ANTHROPIC_BASE_URL", "User")
         if ($curKey -eq 'local' -and $curUrl -match '^http://localhost:\d+$') {
-            [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", $null, "User")
-            [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", $null, "User")
-            Write-Host "OK Claude Code ANTHROPIC_* user overrides cleared (local routing off in dashboard). Restart terminal."
+            try {
+                [System.Environment]::SetEnvironmentVariable("ANTHROPIC_API_KEY", $null, "User")
+                [System.Environment]::SetEnvironmentVariable("ANTHROPIC_BASE_URL", $null, "User")
+                Write-Host "OK Claude Code ANTHROPIC_* user overrides cleared (local routing off in dashboard). Restart terminal."
+            } catch {
+                Write-Warning "Claude Code user env overrides could not be cleared from the registry. Clear ANTHROPIC_API_KEY and ANTHROPIC_BASE_URL manually if needed."
+            }
         } else {
             Write-Host 'Claude Code: local Model Gateway routing disabled in dashboard - skipped setting ANTHROPIC_*.'
         }

@@ -10,6 +10,11 @@ services:
       --host 0.0.0.0 --port 8080
       --model /models/${LLAMACPP_MODEL:-model.gguf}
       --ctx-size ${LLAMACPP_CTX_SIZE:-262144}
+      --parallel ${LLAMACPP_PARALLEL:-1}
+      --rope-scaling ${LLAMACPP_ROPE_SCALING:-none}
+      --rope-scale ${LLAMACPP_ROPE_SCALE:-1}
+      --yarn-orig-ctx ${LLAMACPP_YARN_ORIG_CTX:-0}
+      --override-kv ${LLAMACPP_OVERRIDE_KV:-}
       --n-gpu-layers ${LLAMACPP_GPU_LAYERS:--1}
       --flash-attn auto
       --jinja
@@ -559,7 +564,7 @@ services:
       # Full config tree so we can chown agents/, canvas/, etc. (gateway runs as uid 1000)
       - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/openclaw-config
       - ${BASE_PATH:-.}/openclaw/scripts/workspace_sync_upgrade_tools.sh:/upgrade-tools.sh:ro
-    # Markdown: copy only if missing (preserves operator edits in data/). Always refresh health_check.sh + agents/.
+    # Markdown: copy only if missing (preserves operator edits in data/). Always refresh health_check.sh only.
     # TOOLS.md: replace stale short stubs with TOOLS.md.example (see /upgrade-tools.sh). Set OPENCLAW_SKIP_TOOLS_MD_UPGRADE=1 to skip.
     entrypoint:
       - /bin/sh
@@ -574,7 +579,6 @@ services:
         done
         sh /upgrade-tools.sh
         cp -f /templates/health_check.sh /workspace/ 2>/dev/null || true
-        mkdir -p /workspace/agents && cp -rf /templates/agents/. /workspace/agents/ 2>/dev/null || true
         # Gateway runs as uid 1000 (node); both mounts must be writable.
         chown -R 1000:1000 /workspace 2>/dev/null || true
         # Config tree also needs write access for agents/, canvas/, auth-profiles, etc.

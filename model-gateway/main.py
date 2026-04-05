@@ -62,6 +62,46 @@ _model_cache_ts: float = 0.0
 
 # Strip both <thinking> (Claude/OpenClaw format) and <think> (Qwen3/Gemma4 format).
 _THINKING_BLOCK_RE = re.compile(r"<think(?:ing)?>.*?</think(?:ing)?>", re.IGNORECASE | re.DOTALL)
+
+# Gemma 4 emits literal special tokens (<|"|>, <|'|>, etc.) in tool call arguments
+# instead of the actual characters. Replace them so JSON parses correctly.
+_GEMMA_SPECIAL_TOKEN_RE = re.compile(r'<\|("\|>)')
+
+
+def _clean_gemma_special_tokens(text: str) -> str:
+    """Replace Gemma special tokens (<|"|>, etc.) with their literal characters."""
+    if "<|" not in text:
+        return text
+    text = text.replace('<|"|>', '"')
+    text = text.replace("<|'|>", "'")
+    text = text.replace("<|`|>", "`")
+    text = text.replace("<|\\n|>", "\n")
+    # Catch any remaining <|X|> single-char tokens
+    text = re.sub(r"<\|(.)\|>", r"\1", text)
+    return text
+
+
+def _sanitize_tool_calls(tool_calls: list[dict]) -> list[dict]:
+    """Clean Gemma special tokens from tool call arguments and ensure valid JSON."""
+    for tc in tool_calls:
+        func = tc.get("function") or {}
+        args = func.get("arguments", "")
+        if isinstance(args, str) and "<|" in args:
+            cleaned = _clean_gemma_special_tokens(args)
+            # Try to parse as JSON; if it still fails, wrap bare values
+            try:
+                json.loads(cleaned)
+                func["arguments"] = cleaned
+            except json.JSONDecodeError:
+                # Might be missing outer braces or other issues
+                if not cleaned.strip().startswith("{"):
+                    cleaned = "{" + cleaned + "}"
+                try:
+                    json.loads(cleaned)
+                    func["arguments"] = cleaned
+                except json.JSONDecodeError:
+                    func["arguments"] = cleaned  # pass through best-effort
+    return tool_calls
 # Only extract <result> when scoped inside an <attempt_completion> wrapper (Cline agent format).
 _ATTEMPT_COMPLETION_RE = re.compile(
     r"<attempt_completion>\s*<result>\s*(.*?)\s*</result>\s*</attempt_completion>",
@@ -164,6 +204,8 @@ def _sanitize_openai_chat_response(
                 message["content"],
                 preserve_agent_markup=preserve_agent_markup,
             )
+        if isinstance(message.get("tool_calls"), list):
+            message["tool_calls"] = _sanitize_tool_calls(message["tool_calls"])
 
     return data
 
@@ -187,6 +229,8 @@ def _sanitize_openai_stream_event(data: dict[str, Any]) -> dict[str, Any] | None
         if isinstance(delta, dict):
             delta = dict(delta)
             delta.pop("reasoning_content", None)
+            if isinstance(delta.get("tool_calls"), list):
+                delta["tool_calls"] = _sanitize_tool_calls(delta["tool_calls"])
             if not delta:
                 sanitized_choice.pop("delta", None)
             else:
@@ -198,6 +242,8 @@ def _sanitize_openai_stream_event(data: dict[str, Any]) -> dict[str, Any] | None
             message.pop("reasoning_content", None)
             if "content" in message:
                 message["content"] = _sanitize_assistant_content(message["content"])
+            if isinstance(message.get("tool_calls"), list):
+                message["tool_calls"] = _sanitize_tool_calls(message["tool_calls"])
             sanitized_choice["message"] = message
 
         has_payload = any(
@@ -944,7 +990,7 @@ async def _restream_llamacpp_chat_from_nonstream(
     choice = (data.get("choices") or [{}])[0]
     message = choice.get("message") or {}
     content = message.get("content") or ""
-    tool_calls = message.get("tool_calls") or []
+    tool_calls = _sanitize_tool_calls(message.get("tool_calls") or [])
     model_name = data.get("model", model_id)
     created = data.get("created", int(time.time()))
     chunk_id = data.get("id", f"chatcmpl-{uuid.uuid4().hex[:12]}")
@@ -1430,6 +1476,7 @@ async def responses_api(request: Request, body: ResponsesRequest):
 
             # Finalize tool calls (emitted at their natural index, 0-based)
             for tc_idx, tc in sorted(tool_calls_acc.items()):
+                tc["arguments"] = _clean_gemma_special_tokens(tc["arguments"])
                 fc_item_id = tool_call_item_ids[tc_idx]
                 fc_item = {
                     "type": "function_call",
@@ -1833,6 +1880,9 @@ async def anthropic_messages(request: Request):
 
             yield _sse("content_block_stop", {"type": "content_block_stop", "index": 0})
             for tc_idx in sorted(tool_calls_acc):
+                tool_calls_acc[tc_idx]["arguments"] = _clean_gemma_special_tokens(
+                    tool_calls_acc[tc_idx]["arguments"]
+                )
                 yield _sse("content_block_stop", {"type": "content_block_stop", "index": tool_block_idx[tc_idx]})
             yield _sse("message_delta", {"type": "message_delta", "delta": {"stop_reason": stop_reason, "stop_sequence": None}, "usage": {"output_tokens": 0}})
             yield _sse("message_stop", {"type": "message_stop"})

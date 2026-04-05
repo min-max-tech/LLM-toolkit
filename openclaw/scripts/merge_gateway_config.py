@@ -658,14 +658,29 @@ def main() -> int:
         gateway["bind"] = "lan"
         modified = True
 
-    # Use "safeguard" compaction — proactively summarizes context before it grows too large.
-    # "default" only compacts when needed; for cron jobs running in "current" session the context
-    # accumulates over days, causing slow prefill. "safeguard" keeps the prefill cost bounded.
+    # Keep compaction on the default mode. "safeguard" was firing repeatedly in light sessions
+    # and adding extra churn without solving the real prompt-bloat sources.
     agents_defaults = data.setdefault("agents", {}).setdefault("defaults", {})
     compaction = agents_defaults.setdefault("compaction", {})
-    if compaction.get("mode") != "safeguard":
-        compaction["mode"] = "safeguard"
+    if compaction.get("mode") != "default":
+        compaction["mode"] = "default"
         modified = True
+    # Keep the default agent model pinned to the active llama.cpp model so isolated
+    # sessions and cron runs do not point at a stale provider model id.
+    active_model_id = os.environ.get("LLAMACPP_MODEL", "").strip().removesuffix(".gguf")
+    if not active_model_id and gateway_models:
+        first_id = gateway_models[0].get("id")
+        if isinstance(first_id, str):
+            active_model_id = first_id
+    if active_model_id:
+        model_defaults = agents_defaults.setdefault("model", {})
+        desired_primary = f"gateway/{active_model_id}"
+        if model_defaults.get("primary") != desired_primary:
+            model_defaults["primary"] = desired_primary
+            modified = True
+        if not isinstance(model_defaults.get("fallbacks"), list):
+            model_defaults["fallbacks"] = []
+            modified = True
     # Ensure cron/isolated sessions have enough runway for Tavily + LLM generation.
     if agents_defaults.get("timeoutSeconds") != 300:
         agents_defaults["timeoutSeconds"] = 300
