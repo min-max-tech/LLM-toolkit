@@ -1033,6 +1033,8 @@ function register(api) {
         contextLines.push(`Use \`${prefix}__discover\` first when you do not know the exact tool name or arguments.`);
         contextLines.push(`Inside \`${prefix}__call\`, pass the raw MCP tool name in \`tool\` without a \`${prefix}__\` prefix.`);
         contextLines.push(`Example: \`${prefix}__call({\"tool\":\"list_workflows\",\"args\":{\"details\":false}})\`.`);
+        contextLines.push(`Names like \`${prefix}__search\` or \`${prefix}__run_workflow\` are tool names, not shell commands.`);
+        contextLines.push(`Never run \`${prefix}__*\` through \`exec\`, shell, \`sh\`, or \`bash\`.`);
         contextLines.push("Never include raw `<|tool_call|>`, `<|tool_response|>`, `<channel|>`, or thought text inside tool arguments.");
         contextLines.push("Do not assume unavailable tools exist; discover them or report the failure truthfully.");
         const context = contextLines.join("\n");

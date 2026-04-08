@@ -458,9 +458,8 @@ def _gguf_model_entry(filename: str, context_window: int = LLAMACPP_CTX) -> dict
     name = filename.replace("-", " ").replace("_", " ").replace(".", " ")
     name = " ".join(w.capitalize() for w in name.split())
     return {
-        # Strip .gguf so the provider model ID matches agents.defaults.model.primary (which uses bare name).
-        # Mismatch causes isolated sessions (cron jobs) to abort immediately without calling the LLM.
-        "id": filename.removesuffix(".gguf"),
+        # Keep the real llama.cpp model ID so OpenClaw sends exactly what LiteLLM advertises.
+        "id": filename,
         "name": name,
         "reasoning": is_reasoning and not is_embed,
         "input": ["text", "image"] if has_vision else ["text"],
@@ -679,8 +678,8 @@ def main() -> int:
     if compaction.get("mode") != OPENCLAW_COMPACTION_MODE:
         compaction["mode"] = OPENCLAW_COMPACTION_MODE
         modified = True
-    # Keep the default agent model pinned to the active llama.cpp model so isolated
-    # sessions and cron runs do not point at a stale provider model id.
+    # Keep the default agent model pinned to the gateway-qualified llama.cpp model so
+    # OpenClaw does not apply its own provider fallback (which can rewrite bare ids to anthropic/...).
     active_model_id = os.environ.get("LLAMACPP_MODEL", "").strip()
     if not active_model_id and gateway_models:
         first_id = gateway_models[0].get("id")
@@ -688,7 +687,7 @@ def main() -> int:
             active_model_id = first_id
     if active_model_id:
         model_defaults = agents_defaults.setdefault("model", {})
-        desired_primary = active_model_id
+        desired_primary = active_model_id if "/" in active_model_id else f"gateway/{active_model_id}"
         if model_defaults.get("primary") != desired_primary:
             model_defaults["primary"] = desired_primary
             modified = True

@@ -10,6 +10,7 @@ def test_mcp_bridge_prompt_prefers_flat_tools_when_enabled():
     assert "Prefer direct flat MCP tools like" in text
     assert "Do not wrap a flat tool call inside" in text
     assert "only as a legacy fallback when a flat tool is unavailable" in text
+    assert "Never run \\`${prefix}__*\\` through \\`exec\\`, shell, \\`sh\\`, or \\`bash\\`." in text
     assert "Never include raw `<|tool_call|>`, `<|tool_response|>`, `<channel|>`, or thought text inside tool arguments." in text
 
 
