@@ -74,6 +74,152 @@ function toFlatToolParametersSchema(rt) {
     });
 }
 
+function sanitizeModelToolText(raw) {
+    if (typeof raw !== "string") {
+        return "";
+    }
+    return raw
+        .replace(/[â€œâ€]/g, '"')
+        .replace(/[â€˜â€™]/g, "'")
+        .replaceAll('<|"|>', '"')
+        .replaceAll("<|'|>", "'")
+        .replaceAll("<|`|>", "`")
+        .replaceAll("<|\\n|>", "\n")
+        .replace(/<\|(.)\|>/g, "$1")
+        .trim();
+}
+
+function collectStringFragments(value) {
+    const fragments = [];
+    const visit = (current) => {
+        if (current == null) {
+            return;
+        }
+        if (typeof current === "string") {
+            const text = sanitizeModelToolText(current);
+            if (text) {
+                fragments.push(text);
+            }
+            return;
+        }
+        if (Array.isArray(current)) {
+            for (const item of current) {
+                visit(item);
+            }
+            return;
+        }
+        if (typeof current === "object") {
+            for (const [key, nested] of Object.entries(current)) {
+                if (typeof key === "string" && key) {
+                    fragments.push(key);
+                }
+                visit(nested);
+            }
+        }
+    };
+    visit(value);
+    return fragments;
+}
+
+function extractQuotedField(text, fieldNames) {
+    for (const fieldName of fieldNames) {
+        const quoted = new RegExp(`["']${fieldName}["']\\s*[:=]\\s*["']([^"'\\n]+)["']`, "i");
+        const quotedMatch = text.match(quoted);
+        if (quotedMatch?.[1]) {
+            return quotedMatch[1].trim();
+        }
+        const bare = new RegExp(`\\b${fieldName}\\b\\s*[:=]\\s*([A-Za-z0-9_.:-]+)`, "i");
+        const bareMatch = text.match(bare);
+        if (bareMatch?.[1]) {
+            return bareMatch[1].trim();
+        }
+    }
+    return "";
+}
+
+function extractBalancedObject(text, anchorPattern) {
+    const anchorMatch = text.match(anchorPattern);
+    if (!anchorMatch || anchorMatch.index == null) {
+        return "";
+    }
+    const start = text.indexOf("{", anchorMatch.index);
+    if (start < 0) {
+        return "";
+    }
+    let depth = 0;
+    let inString = false;
+    let quote = "";
+    let escaped = false;
+    for (let index = start; index < text.length; index += 1) {
+        const char = text[index];
+        if (inString) {
+            if (escaped) {
+                escaped = false;
+                continue;
+            }
+            if (char === "\\") {
+                escaped = true;
+                continue;
+            }
+            if (char === quote) {
+                inString = false;
+                quote = "";
+            }
+            continue;
+        }
+        if (char === '"' || char === "'") {
+            inString = true;
+            quote = char;
+            continue;
+        }
+        if (char === "{") {
+            depth += 1;
+        }
+        else if (char === "}") {
+            depth -= 1;
+            if (depth === 0) {
+                return text.slice(start, index + 1);
+            }
+        }
+    }
+    return text.slice(start);
+}
+
+function recoverProxyInvocation(params) {
+    const fragments = collectStringFragments(params);
+    if (fragments.length === 0) {
+        return null;
+    }
+    const combined = fragments.join("\n");
+    const toolName = extractQuotedField(combined, ["tool", "toolName", "name", "namespacedTool"]);
+    const argsText = extractBalancedObject(combined, /["']args["']\s*[:=]\s*/i) || extractBalancedObject(combined, /\bargs\b\s*[:=]\s*/i);
+    const invocationText = extractBalancedObject(combined, /gateway__call\s*\(/i) || extractBalancedObject(combined, /call:gateway__call\s*/i);
+    for (const candidate of [argsText, invocationText].filter(Boolean)) {
+        try {
+            const parsed = coerceToolArgs(candidate);
+            const recoveredTool = toolName || (typeof parsed.tool === "string" ? parsed.tool.trim() : "");
+            const recoveredArgs = parsed.args && typeof parsed.args === "object" && !Array.isArray(parsed.args)
+                ? parsed.args
+                : parsed;
+            if (recoveredTool) {
+                return { toolName: recoveredTool, args: recoveredArgs };
+            }
+        }
+        catch { }
+    }
+    if (toolName) {
+        const inlineArgs = {};
+        for (const key of ["query", "input", "prompt", "url", "text", "path"]) {
+            const value = extractQuotedField(combined, [key]);
+            if (value) {
+                inlineArgs[key] = value;
+            }
+        }
+        return { toolName, args: inlineArgs };
+    }
+    return null;
+}
+
 function coerceToolArgs(raw) {
     if (raw == null) {
         return {};
@@ -84,7 +230,7 @@ function coerceToolArgs(raw) {
     if (typeof raw !== "string") {
         throw new Error("args must be an object or JSON object string");
     }
-    let text = raw.trim();
+    let text = sanitizeModelToolText(raw);
     if (!text) {
         return {};
     }
@@ -124,6 +270,8 @@ function coerceToolArgs(raw) {
     }
     catch (err) {
         const repaired = text
+            .replace(/\\"/g, '"')
+            .replace(/\\n/g, "\n")
             .replace(/\]\s*$/, "}")
             .replace(/,\s*}/g, "}")
             .replace(/([{,]\s*)([A-Za-z_][A-Za-z0-9_]*)(\s*:)/g, '$1"$2"$3')
@@ -593,7 +741,7 @@ function register(api) {
         api.registerTool({
             name: `${prefix}__call`,
             label: `MCP: ${serverName}`,
-            description: `Call a tool on MCP server "${serverName}" (${serverConfig.url}). Pass tool name and arguments to invoke any tool on this server.`,
+            description: `Legacy fallback for MCP server "${serverName}" (${serverConfig.url}). Prefer direct flat tools like ${prefix}__tool_name when available; use this only when a flat tool is unavailable or you must discover the raw MCP tool name first.`,
             parameters: Type.Object({
                 tool: Type.Optional(Type.String({ description: `The raw MCP tool name to call on this server (e.g. "duckduckgo_web_search"). Run ${prefix}__discover first if unsure of the exact name.` })),
                 toolName: Type.Optional(Type.String({ description: `Alias for tool. Accepted to recover from model formatting drift.` })),
@@ -607,8 +755,21 @@ function register(api) {
             async execute(_toolCallId, params) {
                 try {
                     await ensureConnected();
-                    const toolName = coerceToolName(params, prefix);
-                    const args = coerceToolArgs(params.args);
+                    let toolName;
+                    let args;
+                    try {
+                        toolName = coerceToolName(params, prefix);
+                        args = coerceToolArgs(params.args);
+                    }
+                    catch (primaryErr) {
+                        const recovered = recoverProxyInvocation(params);
+                        if (!recovered) {
+                            throw primaryErr;
+                        }
+                        toolName = coerceToolName({ tool: recovered.toolName }, prefix);
+                        args = recovered.args;
+                        api.logger.warn(`mcp-client: recovered malformed ${prefix}__call payload for tool "${toolName}"`);
+                    }
                     const resolvedToolName = resolveProxyToolName(mcpManager, prefix, toolName);
                     if (resolvedToolName !== `${prefix}__${toolName}`) {
                         api.logger.info(`mcp-client: normalized proxy tool "${toolName}" -> "${resolvedToolName}"`);
@@ -858,14 +1019,23 @@ function register(api) {
         const firstServerName = Object.keys(config.servers)[0];
         const firstConfig = config.servers[firstServerName];
         const prefix = firstConfig?.toolPrefix ?? firstServerName;
-        const context = [
+        const contextLines = [
             "## MCP Tool Contract",
-            `Use \`${prefix}__call\` to execute MCP tools.`,
-            `Use \`${prefix}__discover\` first when you do not know the exact tool name or arguments.`,
-            `Inside \`${prefix}__call\`, pass the raw MCP tool name in \`tool\` without a \`${prefix}__\` prefix.`,
-            `Example: \`${prefix}__call({\"tool\":\"list_workflows\",\"args\":{\"details\":false}})\`.`,
-            "Do not assume unavailable tools exist; discover them or report the failure truthfully.",
-        ].join("\n");
+        ];
+        if (flatToolsEnabled) {
+            contextLines.push(`Prefer direct flat MCP tools like \`${prefix}__tool_name\` when they are available.`);
+            contextLines.push(`Do not wrap a flat tool call inside \`${prefix}__call\`.`);
+            contextLines.push(`Use \`${prefix}__call\` only as a legacy fallback when a flat tool is unavailable.`);
+        }
+        else {
+            contextLines.push(`Use \`${prefix}__call\` to execute MCP tools.`);
+        }
+        contextLines.push(`Use \`${prefix}__discover\` first when you do not know the exact tool name or arguments.`);
+        contextLines.push(`Inside \`${prefix}__call\`, pass the raw MCP tool name in \`tool\` without a \`${prefix}__\` prefix.`);
+        contextLines.push(`Example: \`${prefix}__call({\"tool\":\"list_workflows\",\"args\":{\"details\":false}})\`.`);
+        contextLines.push("Never include raw `<|tool_call|>`, `<|tool_response|>`, `<channel|>`, or thought text inside tool arguments.");
+        contextLines.push("Do not assume unavailable tools exist; discover them or report the failure truthfully.");
+        const context = contextLines.join("\n");
         const { sessionId, sessionKey } = extractSessionIdentifiers(event);
         const transcriptEntries = await readRecentTranscriptEntries(sessionId);
         const transcriptState = deriveSessionStateFromTranscript(transcriptEntries);
