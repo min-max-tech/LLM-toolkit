@@ -41,3 +41,12 @@ def test_mcp_bridge_loosens_object_type_schema():
     assert "object-string fallback" in text
     # Direct object type also gets a string fallback
     assert "anyOf: [loosened, stringFallback]" in text
+
+
+def test_mcp_bridge_coerces_object_string_fields():
+    text = BRIDGE_DIST.read_text(encoding="utf-8")
+
+    assert "function coerceObjectField(value)" in text
+    assert "return coerceToolArgs(value)" in text
+    # coerceFlatToolValue calls it for string values in object context
+    assert "return coerceObjectField(value)" in text

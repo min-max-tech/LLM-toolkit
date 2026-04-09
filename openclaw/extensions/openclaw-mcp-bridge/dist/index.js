@@ -362,6 +362,18 @@ function coerceToolArgs(raw) {
     return parsed;
 }
 
+function coerceObjectField(value) {
+    if (typeof value !== "string") {
+        return value;
+    }
+    try {
+        return coerceToolArgs(value);
+    }
+    catch {
+        return value;
+    }
+}
+
 function coerceFlatToolValue(value, schema) {
     if (value == null || !schema || typeof schema !== "object" || Array.isArray(schema)) {
         if (typeof value === "string") {
@@ -428,6 +440,9 @@ function coerceFlatToolValue(value, schema) {
     }
     if (schema.type === "object") {
         if (!value || typeof value !== "object" || Array.isArray(value)) {
+            if (typeof value === "string") {
+                return coerceObjectField(value);
+            }
             return value;
         }
         const properties = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
