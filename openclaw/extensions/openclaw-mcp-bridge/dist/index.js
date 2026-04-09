@@ -691,6 +691,44 @@ async function clearRetryState(sessionKey, toolSlug) {
     }
 }
 
+function getRetryThresholds() {
+    // GGUF models correct themselves poorly from feedback — escalate sooner.
+    return IS_LOCAL_GGUF
+        ? { feedbackAt: 2, capAt: 4 }
+        : { feedbackAt: 3, capAt: 5 };
+}
+
+function buildFeedbackMessage(toolName, attempts, capAt, lastError, schema) {
+    const lines = [
+        `Tool call rejected (attempt ${String(attempts)} of ${String(capAt)}) — ${toolName}`,
+        "",
+        "Error returned:",
+        `  ${lastError}`,
+        "",
+    ];
+    const props = schema?.properties && typeof schema.properties === "object" ? schema.properties : {};
+    const required = Array.isArray(schema?.required) ? schema.required : [];
+    if (Object.keys(props).length > 0) {
+        lines.push("Expected argument types:");
+        for (const [name, spec] of Object.entries(props)) {
+            const req = required.includes(name) ? " (required)" : "";
+            const t = (spec && typeof spec === "object" && !Array.isArray(spec)) ? (spec.type ?? "any") : "any";
+            lines.push(`  ${name}${req}: ${t}`);
+        }
+        lines.push("");
+    }
+    lines.push("Stop retrying with the same arguments. Fix the listed fields and try once more.");
+    return lines.join("\n");
+}
+
+function buildCapMessage(toolName, attempts) {
+    return [
+        `Maximum retries reached for ${toolName} (attempt ${String(attempts)}).`,
+        "Do not retry this tool call.",
+        "Summarize what you tried to do and ask the user how to proceed.",
+    ].join("\n");
+}
+
 function looksLikeMediaSongGoal(text) {
     const lower = text.toLowerCase();
     return (lower.includes("comfyui") && (lower.includes("song") || lower.includes("music") || lower.includes("audio")))
@@ -952,6 +990,7 @@ function register(api) {
     const injectSchemasEnabled = config.injectSchemas !== false;
     const mcpManager = new MCPManager(toManagerConfig(config));
     const latestUserMessages = new Map();
+    let currentSessionKey = "";
 
     let connected = false;
     let connectingPromise = null;
@@ -1137,17 +1176,41 @@ function register(api) {
                         parameters: toFlatToolParametersSchema(rt),
                         async execute(_toolCallId, params) {
                             await ensureConnected();
+                            const sessionKey = currentSessionKey;
+                            const toolSlug = rt.namespacedName.replace(/__/g, "_").slice(0, 60);
+                            const thresholds = getRetryThresholds();
+                            const retryState = await readRetryState(sessionKey, toolSlug);
+                            const attempts = (retryState?.attempts ?? 0) + 1;
+                            // Tier 2: hard cap — stop before even calling the gateway
+                            if (attempts > thresholds.capAt) {
+                                await clearRetryState(sessionKey, toolSlug);
+                                return {
+                                    content: [{ type: "text", text: buildCapMessage(rt.namespacedName, attempts) }],
+                                    details: { server: rt.serverName, tool: rt.originalName, capped: true },
+                                };
+                            }
                             try {
                                 const coercedParams = coerceFlatToolParams(params, rt.inputSchema);
                                 const result = await mcpManager.callTool(rt.namespacedName, coercedParams);
-                                const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+                                // Success: clear retry state
+                                await clearRetryState(sessionKey, toolSlug);
+                                const rawText = typeof result === "string" ? result : JSON.stringify(result, null, 2);
                                 return {
-                                    content: [{ type: "text", text }],
+                                    content: [{ type: "text", text: rawText }],
                                     details: { server: rt.serverName, tool: rt.originalName, params: coercedParams, result },
                                 };
                             }
                             catch (err) {
                                 const message = err instanceof Error ? err.message : String(err);
+                                await writeRetryState(sessionKey, toolSlug, { attempts, lastError: message });
+                                // Tier 1: feedback injection
+                                if (attempts >= thresholds.feedbackAt) {
+                                    return {
+                                        content: [{ type: "text", text: buildFeedbackMessage(rt.namespacedName, attempts, thresholds.capAt, message, rt.inputSchema) }],
+                                        details: { server: rt.serverName, tool: rt.originalName, error: message, attempt: attempts },
+                                    };
+                                }
+                                // Tier 0: pass error through normally (silent repair attempt)
                                 return {
                                     content: [{ type: "text", text: `Error calling ${rt.namespacedName}: ${message}` }],
                                     details: { server: rt.serverName, tool: rt.originalName, error: message },
@@ -1193,6 +1256,7 @@ function register(api) {
             const key = safeStatusKey(sessionId, sessionKey);
             if (key) {
                 latestUserMessages.set(key, text);
+                currentSessionKey = key;
             }
             const patch = {};
             if (STATUS_REQUEST_RE.test(text)) {

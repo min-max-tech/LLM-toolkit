@@ -79,3 +79,15 @@ def test_mcp_bridge_retry_state_utilities():
     assert "function writeRetryState(sessionKey, toolSlug, patch)" in text
     assert "function clearRetryState(sessionKey, toolSlug)" in text
     assert "RETRY_TTL_MS" in text
+
+
+def test_mcp_bridge_retry_tier_logic():
+    text = BRIDGE_DIST.read_text(encoding="utf-8")
+
+    assert "function getRetryThresholds()" in text
+    assert "function buildFeedbackMessage(" in text
+    assert "function buildCapMessage(" in text
+    assert "Do not retry this tool call." in text
+    assert "Stop retrying with the same arguments." in text
+    assert "let currentSessionKey" in text
+    assert "currentSessionKey = key;" in text
