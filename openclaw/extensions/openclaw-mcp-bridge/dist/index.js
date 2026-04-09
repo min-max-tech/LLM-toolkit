@@ -408,7 +408,7 @@ function coerceFlatToolValue(value, schema) {
     }
     if (schema.type === "integer" || schema.type === "number") {
         if (typeof value === "string") {
-            const cleaned = sanitizeModelToolText(value).replace(/,/g, "").trim();
+            const cleaned = sanitizeModelToolText(value).replace(/,/g, "").replace(/[\])"\']+$/, "").trim();
             if (/^-?\d+$/.test(cleaned) && schema.type === "integer") {
                 return Number.parseInt(cleaned, 10);
             }

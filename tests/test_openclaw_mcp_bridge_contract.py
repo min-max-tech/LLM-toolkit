@@ -50,3 +50,10 @@ def test_mcp_bridge_coerces_object_string_fields():
     assert "return coerceToolArgs(value)" in text
     # coerceFlatToolValue calls it for string values in object context
     assert "return coerceObjectField(value)" in text
+
+
+def test_mcp_bridge_strips_integer_trailing_artifacts():
+    text = BRIDGE_DIST.read_text(encoding="utf-8")
+
+    # Regex that strips trailing ], ), ", ' from integer strings
+    assert r'.replace(/[\])"\']+$/, "")' in text
