@@ -640,6 +640,57 @@ async function writeSessionStatus(sessionId, sessionKey, patch) {
     return next;
 }
 
+// ---------------------------------------------------------------------------
+// Retry state — per-session-per-tool failure tracking
+// ---------------------------------------------------------------------------
+const RETRY_TTL_MS = 30 * 60 * 1000; // 30 minutes
+const RETRY_DIR = path.join(SESSION_STATUS_DIR, "retry");
+
+function retryStatePath(sessionKey, toolSlug) {
+    const safeKey = (sessionKey || "default").replace(/[^A-Za-z0-9._-]+/g, "_");
+    const safeSlug = toolSlug.replace(/[^A-Za-z0-9._-]+/g, "_").slice(0, 60);
+    return path.join(RETRY_DIR, `${safeKey}__${safeSlug}.json`);
+}
+
+async function readRetryState(sessionKey, toolSlug) {
+    try {
+        const raw = await fs.readFile(retryStatePath(sessionKey, toolSlug), "utf8");
+        const parsed = JSON.parse(raw);
+        if (!parsed || typeof parsed !== "object") {
+            return null;
+        }
+        if (Date.now() - (parsed.ts ?? 0) > RETRY_TTL_MS) {
+            await clearRetryState(sessionKey, toolSlug);
+            return null;
+        }
+        return parsed;
+    }
+    catch {
+        return null;
+    }
+}
+
+async function writeRetryState(sessionKey, toolSlug, patch) {
+    try {
+        await fs.mkdir(RETRY_DIR, { recursive: true });
+        const current = await readRetryState(sessionKey, toolSlug) ?? {};
+        const next = { ...current, ...patch, ts: Date.now() };
+        await fs.writeFile(retryStatePath(sessionKey, toolSlug), JSON.stringify(next), "utf8");
+    }
+    catch {
+        // Best-effort: write failure means this attempt is not counted toward the retry budget.
+    }
+}
+
+async function clearRetryState(sessionKey, toolSlug) {
+    try {
+        await fs.unlink(retryStatePath(sessionKey, toolSlug));
+    }
+    catch {
+        // File may not exist — ignore.
+    }
+}
+
 function looksLikeMediaSongGoal(text) {
     const lower = text.toLowerCase();
     return (lower.includes("comfyui") && (lower.includes("song") || lower.includes("music") || lower.includes("audio")))

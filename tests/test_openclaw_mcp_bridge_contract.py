@@ -68,3 +68,14 @@ def test_mcp_bridge_model_tier_detection():
     assert r"/\.gguf/i" in text
     assert r"/q[45678]_/i" in text
     assert 'api.logger.info("[mcp-bridge] GGUF mode' in text
+
+
+def test_mcp_bridge_retry_state_utilities():
+    text = BRIDGE_DIST.read_text(encoding="utf-8")
+
+    assert "const RETRY_TTL_MS = 30 * 60 * 1000;" in text
+    assert "function retryStatePath(sessionKey, toolSlug)" in text
+    assert "function readRetryState(sessionKey, toolSlug)" in text
+    assert "function writeRetryState(sessionKey, toolSlug, patch)" in text
+    assert "function clearRetryState(sessionKey, toolSlug)" in text
+    assert "RETRY_TTL_MS" in text
