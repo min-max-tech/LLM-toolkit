@@ -1138,7 +1138,8 @@ function register(api) {
                         api.logger.info(`mcp-client: normalized proxy tool "${toolName}" -> "${resolvedToolName}"`);
                     }
                     const result = await mcpManager.callTool(resolvedToolName, args);
-                    const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+                    const rawText = typeof result === "string" ? result : JSON.stringify(result, null, 2);
+                    const text = truncateToolResult(rawText, resolvedToolName);
                     return {
                         content: [{ type: "text", text }],
                         details: { server: serverName, tool: toolName, resolvedTool: resolvedToolName, result },
