@@ -67,11 +67,75 @@ function resolveProxyToolName(mcpManager, prefix, rawToolName) {
 function toFlatToolParametersSchema(rt) {
     const schema = rt?.inputSchema;
     if (schema && typeof schema === "object" && !Array.isArray(schema)) {
-        return schema;
+        return buildLooseToolSchema(schema);
     }
     return Type.Record(Type.String(), Type.Unknown(), {
         description: "Arguments for this MCP tool (see injected MCP tool list).",
     });
+}
+
+function buildLooseToolSchema(schema) {
+    if (!schema || typeof schema !== "object" || Array.isArray(schema)) {
+        return schema;
+    }
+    if (Array.isArray(schema.anyOf)) {
+        const mapped = schema.anyOf.map((entry) => buildLooseToolSchema(entry));
+        // object-string fallback: if anyOf contains an object variant, also accept a string
+        // so models that emit JSON object strings (e.g. overrides: "{...}") pass validation.
+        const hasObjectType = mapped.some((v) => v && typeof v === "object" && !Array.isArray(v) && v.type === "object");
+        const hasStringFallback = mapped.some((v) => v && typeof v === "object" && !Array.isArray(v) && v.type === "string");
+        if (hasObjectType && !hasStringFallback) {
+            mapped.push({
+                type: "string",
+                description: "object-string fallback: pass a JSON object string; the bridge will parse and repair it before forwarding.",
+            });
+        }
+        return { ...schema, anyOf: mapped };
+    }
+    if (Array.isArray(schema.oneOf)) {
+        return {
+            ...schema,
+            oneOf: schema.oneOf.map((entry) => buildLooseToolSchema(entry)),
+        };
+    }
+    if (Array.isArray(schema.allOf)) {
+        return {
+            ...schema,
+            allOf: schema.allOf.map((entry) => buildLooseToolSchema(entry)),
+        };
+    }
+    if (schema.type === "object") {
+        const properties = schema.properties && typeof schema.properties === "object"
+            ? Object.fromEntries(Object.entries(schema.properties).map(([key, value]) => [key, buildLooseToolSchema(value)]))
+            : schema.properties;
+        const additionalProperties = schema.additionalProperties && typeof schema.additionalProperties === "object"
+            ? buildLooseToolSchema(schema.additionalProperties)
+            : schema.additionalProperties;
+        const loosened = { ...schema, properties, additionalProperties };
+        const stringFallback = {
+            type: "string",
+            description: "object-string fallback: pass a JSON object string; the bridge will parse and repair it before forwarding.",
+        };
+        return { anyOf: [loosened, stringFallback] };
+    }
+    if (schema.type === "array" && schema.items && typeof schema.items === "object" && !Array.isArray(schema.items)) {
+        return {
+            ...schema,
+            items: buildLooseToolSchema(schema.items),
+        };
+    }
+    if (schema.type === "integer" || schema.type === "number" || schema.type === "boolean") {
+        const stringFallback = {
+            type: "string",
+            description: "String fallback accepted so the bridge can sanitize and coerce model-emitted arguments before execution.",
+        };
+        const variants = Array.isArray(schema.anyOf) ? [...schema.anyOf, stringFallback] : [schema, stringFallback];
+        return {
+            ...schema,
+            anyOf: variants,
+        };
+    }
+    return schema;
 }
 
 function sanitizeModelToolText(raw) {
@@ -295,6 +359,93 @@ function coerceToolArgs(raw) {
         return parsed.args;
     }
     return parsed;
+}
+
+function coerceFlatToolValue(value, schema) {
+    if (value == null || !schema || typeof schema !== "object" || Array.isArray(schema)) {
+        if (typeof value === "string") {
+            return sanitizeModelToolText(value);
+        }
+        if (Array.isArray(value)) {
+            return value.map((item) => coerceFlatToolValue(item, null));
+        }
+        if (value && typeof value === "object") {
+            return Object.fromEntries(Object.entries(value).map(([key, nested]) => [key, coerceFlatToolValue(nested, null)]));
+        }
+        return value;
+    }
+    if (Array.isArray(schema.anyOf)) {
+        for (const option of schema.anyOf) {
+            const coerced = coerceFlatToolValue(value, option);
+            if (coerced !== value || option?.type === typeof coerced) {
+                return coerced;
+            }
+        }
+    }
+    if (Array.isArray(schema.oneOf)) {
+        for (const option of schema.oneOf) {
+            const coerced = coerceFlatToolValue(value, option);
+            if (coerced !== value || option?.type === typeof coerced) {
+                return coerced;
+            }
+        }
+    }
+    if (schema.type === "string") {
+        return typeof value === "string" ? sanitizeModelToolText(value) : value;
+    }
+    if (schema.type === "integer" || schema.type === "number") {
+        if (typeof value === "string") {
+            const cleaned = sanitizeModelToolText(value).replace(/,/g, "").trim();
+            if (/^-?\d+$/.test(cleaned) && schema.type === "integer") {
+                return Number.parseInt(cleaned, 10);
+            }
+            if (/^-?(?:\d+\.?\d*|\.\d+)$/.test(cleaned)) {
+                const parsed = Number.parseFloat(cleaned);
+                if (!Number.isNaN(parsed)) {
+                    return parsed;
+                }
+            }
+            return cleaned;
+        }
+        return value;
+    }
+    if (schema.type === "boolean" && typeof value === "string") {
+        const cleaned = sanitizeModelToolText(value).toLowerCase();
+        if (cleaned === "true") {
+            return true;
+        }
+        if (cleaned === "false") {
+            return false;
+        }
+        return cleaned;
+    }
+    if (schema.type === "array") {
+        if (!Array.isArray(value)) {
+            return value;
+        }
+        return value.map((item) => coerceFlatToolValue(item, schema.items ?? null));
+    }
+    if (schema.type === "object") {
+        if (!value || typeof value !== "object" || Array.isArray(value)) {
+            return value;
+        }
+        const properties = schema.properties && typeof schema.properties === "object" ? schema.properties : {};
+        const additionalSchema = schema.additionalProperties && typeof schema.additionalProperties === "object"
+            ? schema.additionalProperties
+            : null;
+        return Object.fromEntries(Object.entries(value).map(([key, nested]) => {
+            const propertySchema = Object.prototype.hasOwnProperty.call(properties, key) ? properties[key] : additionalSchema;
+            return [key, coerceFlatToolValue(nested, propertySchema)];
+        }));
+    }
+    return typeof value === "string" ? sanitizeModelToolText(value) : value;
+}
+
+function coerceFlatToolParams(params, schema) {
+    if (!params || typeof params !== "object" || Array.isArray(params)) {
+        return params;
+    }
+    return coerceFlatToolValue(params, schema);
 }
 
 function coerceToolName(raw, prefix) {
@@ -901,11 +1052,12 @@ function register(api) {
                         async execute(_toolCallId, params) {
                             await ensureConnected();
                             try {
-                                const result = await mcpManager.callTool(rt.namespacedName, params);
+                                const coercedParams = coerceFlatToolParams(params, rt.inputSchema);
+                                const result = await mcpManager.callTool(rt.namespacedName, coercedParams);
                                 const text = typeof result === "string" ? result : JSON.stringify(result, null, 2);
                                 return {
                                     content: [{ type: "text", text }],
-                                    details: { server: rt.serverName, tool: rt.originalName, result },
+                                    details: { server: rt.serverName, tool: rt.originalName, params: coercedParams, result },
                                 };
                             }
                             catch (err) {

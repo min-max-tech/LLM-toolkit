@@ -21,3 +21,23 @@ def test_mcp_bridge_recovers_malformed_gateway_call_payloads():
     assert "mcp-client: recovered malformed" in text
     assert '.replace(/\\\\"/g, \'"\')' in text
     assert 'extractBalancedObject(combined, /gateway__call\\s*\\(/i)' in text
+
+
+def test_mcp_bridge_relaxes_and_coerces_flat_tool_params():
+    text = BRIDGE_DIST.read_text(encoding="utf-8")
+
+    assert "function buildLooseToolSchema(schema)" in text
+    assert 'schema.type === "integer" || schema.type === "number" || schema.type === "boolean"' in text
+    assert "function coerceFlatToolParams(params, schema)" in text
+    assert "const coercedParams = coerceFlatToolParams(params, rt.inputSchema);" in text
+    assert "params: coercedParams" in text
+
+
+def test_mcp_bridge_loosens_object_type_schema():
+    text = BRIDGE_DIST.read_text(encoding="utf-8")
+
+    # String fallback added when anyOf contains an object variant
+    assert "hasObjectType" in text
+    assert "object-string fallback" in text
+    # Direct object type also gets a string fallback
+    assert "anyOf: [loosened, stringFallback]" in text
