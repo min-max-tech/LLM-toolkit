@@ -1,8 +1,15 @@
 # TOOLS.md
 
-**MCP (primary):** `servers.gateway` → `http://mcp-gateway:8811/mcp`. Use flat `gateway__...` tools first; `gateway__call` only as fallback (raw `tool` + `args`). Never use `gateway__gateway__...`.
+**MCP:** `gateway__call` only. Pass `tool` = raw MCP tool name (no `gateway__` prefix), `args` = object. Example: `gateway__call({"tool": "tavily_search", "args": {"query": "..."}})`.
 
-**Search:** Prefer `gateway__tavily__tavily_search`. Fallback: `gateway__duckduckgo__search`. Do not use native `web_search`.
+**Search:** `gateway__call({"tool": "tavily_search", ...})`. Fallback: `gateway__call({"tool": "duckduckgo_web_search", ...})`. Do not use native `web_search`.
+
+**Session Startup:** Read workspace files via `gateway__call` before greeting. Required steps:
+```
+gateway__call({"tool": "read_file", "args": {"path": "TOOLS.md"}})
+gateway__call({"tool": "read_file", "args": {"path": "AGENTS.md"}})
+```
+Do not skip this. Do not greet the user before reading these files.
 
 **Browser:** Denied in merged config. No Playwright MCP in this stack.
 
@@ -27,6 +34,6 @@
 | n8n | `http://n8n:5678` |
 | OpenClaw UI | `http://openclaw-gateway:6680` |
 
-**Discord:** `message` with `to: "channel:<id>"`.
+**Discord:** `gateway__call({"tool": "message", "args": {"to": "channel:<id>", "message": "..."}})`.
 
-**Model pulls:** `gateway__pull_comfyui_models`. Runbook in `agents/stack-ops.md`.
+**Model pulls:** `gateway__call({"tool": "pull_comfyui_models", ...})`. Runbook in `agents/stack-ops.md`.
