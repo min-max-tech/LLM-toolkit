@@ -1892,6 +1892,30 @@ async def rag_status():
 BASE_PATH_ENV = os.environ.get("BASE_PATH", "/")
 
 
+def _pid_to_service_label(pid: int) -> str:
+    """Map a host PID to a human-readable service label via psutil cmdline.
+
+    Requires the dashboard container to run with ``pid: host`` so that
+    /proc/<host_pid> is accessible from within the container.
+    """
+    try:
+        proc = psutil.Process(pid)
+        cmdline = " ".join(proc.cmdline()).lower()
+        name = proc.name().lower()
+    except (psutil.NoSuchProcess, psutil.AccessDenied, psutil.ZombieProcess):
+        return f"pid:{pid}"
+
+    if "llama-server" in cmdline or "llama_server" in cmdline:
+        return "LLM"
+    if "comfyui" in cmdline:
+        return "ComfyUI"
+    if "embed" in name or "embed" in cmdline:
+        return "Embed"
+    if "python" in name:
+        return "Python"
+    return name[:12] if name else f"pid:{pid}"
+
+
 def _nvml_vram_to_gpu_dict(
     name: str,
     used_b: int,
