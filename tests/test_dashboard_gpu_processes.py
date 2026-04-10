@@ -4,7 +4,6 @@ from __future__ import annotations
 from unittest.mock import MagicMock, patch
 
 import psutil
-import pytest
 from fastapi.testclient import TestClient
 
 
@@ -120,6 +119,7 @@ def test_gpu_processes_vram_pct_sums_to_at_most_100(monkeypatch) -> None:
 
 def test_gpu_processes_endpoint_handles_nvml_unavailable(monkeypatch) -> None:
     import pynvml
+
     import dashboard.app as app
     monkeypatch.setattr(pynvml, "nvmlInit", lambda: (_ for _ in ()).throw(Exception("no GPU")))
     client = TestClient(app.app)

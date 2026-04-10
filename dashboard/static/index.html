@@ -2871,7 +2871,7 @@
 
     async function _fetchCpStats() {
       try {
-        const r = await fetch('/api/throughput/stats');
+        const r = await api('/api/throughput/stats');
         if (r.ok) _cpStats = await r.json();
       } catch (_) {}
     }
@@ -2913,7 +2913,7 @@
 
           const li = document.createElement('div');
           li.className = 'cp-legend-item';
-          li.innerHTML = `<span class="cp-legend-dot" style="background:${_cpColor(p.label)}"></span>${p.label}&nbsp;${p.vram_gb}&nbsp;GB`;
+          li.innerHTML = `<span class="cp-legend-dot" style="background:${_cpColor(p.label)}"></span>${escapeHtml(p.label)}&nbsp;${p.vram_gb}&nbsp;GB`;
           legend.appendChild(li);
         });
 
@@ -2946,7 +2946,7 @@
           const row = document.createElement('div');
           row.className = 'cp-row';
           row.innerHTML = `
-            <span class="cp-row-label">${p.label}</span>
+            <span class="cp-row-label">${escapeHtml(p.label)}</span>
             <div class="cp-row-bar">
               <div class="cp-row-bar-fill" style="width:${p.vram_pct}%;background:${_cpColor(p.label)}"></div>
             </div>
