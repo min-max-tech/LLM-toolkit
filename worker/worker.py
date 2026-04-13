@@ -56,6 +56,7 @@ WORKFLOWS_DIR = Path(os.environ.get("COMFYUI_WORKFLOWS_DIR", "/comfyui-workflows
 WORKER_POLL_SEC = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "0.5"))
 WORKER_CONCURRENCY = max(1, int(os.environ.get("WORKER_CONCURRENCY", "1")))
 SCHEDULE_CHECK_SEC = float(os.environ.get("WORKER_SCHEDULE_CHECK_SEC", "30"))
+OUTBOX_CHECK_SEC = float(os.environ.get("WORKER_OUTBOX_CHECK_SEC", "5"))
 WAL_CHECKPOINT_SEC = float(os.environ.get("WORKER_WAL_CHECKPOINT_SEC", "300"))
 VACUUM_SEC = float(os.environ.get("WORKER_VACUUM_SEC", "86400"))
 MAX_RETRIES = int(os.environ.get("WORKER_MAX_JOB_RETRIES", "2"))
@@ -278,6 +279,7 @@ def main() -> None:
         logger.warning("Recovered %d stale running/validated jobs → requeued", recovered)
 
     last_schedule_check = 0.0
+    last_outbox_check = 0.0
     last_wal_checkpoint = 0.0
     last_vacuum = time.time()
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKER_CONCURRENCY) as pool:
@@ -299,10 +301,12 @@ def main() -> None:
                 future = pool.submit(execute_job, job)
                 inflight[future] = job.job_id
 
-            try:
-                process_outbox()
-            except Exception as exc:
-                logger.error("Outbox processing error: %s", exc)
+            if time.time() - last_outbox_check >= OUTBOX_CHECK_SEC:
+                try:
+                    process_outbox()
+                except Exception as exc:
+                    logger.error("Outbox processing error: %s", exc)
+                last_outbox_check = time.time()
 
             if time.time() - last_schedule_check >= SCHEDULE_CHECK_SEC:
                 try:
@@ -319,7 +323,10 @@ def main() -> None:
                 last_wal_checkpoint = time.time()
 
             if time.time() - last_vacuum >= VACUUM_SEC and not inflight:
-                pool.submit(vacuum_db, DATA_DIR)
+                vf = pool.submit(vacuum_db, DATA_DIR)
+                vf.add_done_callback(
+                    lambda f: f.exception() and logger.error("Vacuum failed: %s", f.exception())
+                )
                 last_vacuum = time.time()
 
             HEARTBEAT_PATH.write_text(str(int(time.time())), encoding="utf-8")

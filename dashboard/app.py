@@ -270,7 +270,8 @@ def _scan_gguf_models() -> list[dict]:
     try:
         for p in sorted(_GGUF_MODELS_DIR.iterdir()):
             if p.suffix.lower() == ".gguf" and p.is_file():
-                models.append({"name": p.name, "size": p.stat().st_size, "modified_at": int(p.stat().st_mtime)})
+                st = p.stat()
+                models.append({"name": p.name, "size": st.st_size, "modified_at": int(st.st_mtime)})
     except OSError as e:
         logger.warning("GGUF model scan failed: %s", e)
     return models

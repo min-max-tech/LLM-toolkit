@@ -473,14 +473,19 @@ async def audit(limit: int = 50, _: None = Depends(verify_token)):
     """Read audit log. Auth required."""
     if not AUDIT_LOG_PATH.exists():
         return {"entries": []}
-    lines = AUDIT_LOG_PATH.read_text().strip().splitlines()
+    from collections import deque
+    with open(AUDIT_LOG_PATH, encoding="utf-8", errors="replace") as f:
+        tail = deque(f, maxlen=limit)
     entries = []
-    for line in reversed(lines[-limit:]):
+    for line in tail:
+        line = line.strip()
+        if not line:
+            continue
         try:
             entries.append(json.loads(line))
         except json.JSONDecodeError:
             continue
-    return {"entries": list(reversed(entries))}
+    return {"entries": entries}
 
 
 def _validate_custom_node_path(node_path: str) -> str:

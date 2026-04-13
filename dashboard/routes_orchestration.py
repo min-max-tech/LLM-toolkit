@@ -312,7 +312,7 @@ async def publish_enqueue(body: PublishEnqueueBody):
             ip = ipaddress.ip_address(addr[0])
             if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
                 # Allow Docker internal network (common for n8n webhooks)
-                if not (ip.is_private and hostname.endswith((".internal", ".local")) or "." not in hostname):
+                if not (ip.is_private and (hostname.endswith((".internal", ".local")) or "." not in hostname)):
                     raise HTTPException(status_code=400, detail="webhook_url must not resolve to a private IP")
     except (ValueError, socket.gaierror):
         pass  # Allow unresolvable hostnames (Docker DNS resolves at delivery time)

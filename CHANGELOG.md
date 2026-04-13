@@ -136,6 +136,16 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Missing index on `workflow_versions.promoted_at`:** `get_promoted_workflow` filtered on `promoted_at IS NOT NULL` without a covering index, forcing a scan of all versions per workflow. Added partial index on `(workflow_id, version DESC) WHERE promoted_at IS NOT NULL`.
 
+- **SSRF bypass via operator precedence:** The SSRF allowlist condition had a Python precedence bug: `and` bound tighter than `or`, causing any dotless hostname (e.g. `http://metadata/`) resolving to a private IP to bypass the check. Fixed parenthesization to correctly scope the Docker hostname exception.
+
+- **Double `stat()` in GGUF model scan:** `_scan_gguf_models` called `p.stat()` twice per file (size + mtime). Now caches the result.
+
+- **Outbox processing runs every poll tick:** `process_outbox()` ran every 0.5s unconditionally, opening a DB connection each time even when no entries existed. Now gated by a 5-second interval (`OUTBOX_CHECK_SEC`).
+
+- **Audit log reads entire file into memory:** `GET /audit` loaded the full audit log (up to 10 MB) via `read_text()` on every request. Now uses `deque(f, maxlen=limit)` to read only the last N lines.
+
+- **Vacuum future silently lost:** `pool.submit(vacuum_db)` discarded the returned future; unexpected exceptions were silently swallowed. Now logs errors via `add_done_callback`.
+
 ### Added
 
 - **Global exception handler:** Unhandled exceptions in API endpoints now return `{"detail": "Internal server error"}` instead of raw Python tracebacks with internal paths and variable values. Full traceback is logged server-side.
