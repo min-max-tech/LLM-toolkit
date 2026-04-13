@@ -81,7 +81,7 @@ def _coerce_value(value: Any, annotation: type) -> Any:
         if annotation is str:
             return str(value)
         if annotation is int:
-            return int(value)
+            return int(float(value))
         if annotation is float:
             return float(value)
         if annotation is bool:

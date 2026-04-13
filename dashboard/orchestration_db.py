@@ -668,7 +668,7 @@ def create_schedule(
     now = _now_iso()
     try:
         from croniter import croniter
-        next_run = croniter(cron_expr).get_next(datetime).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+        next_run = croniter(cron_expr, datetime.now(UTC)).get_next(datetime).isoformat().replace("+00:00", "Z")
     except (ImportError, ValueError, KeyError):
         next_run = None
     with _connect(data_dir) as conn:
@@ -711,7 +711,7 @@ def update_schedule(data_dir: Path, schedule_id: str, **fields: Any) -> dict[str
     if "cron_expr" in fields:
         try:
             from croniter import croniter
-            next_run = croniter(fields["cron_expr"]).get_next(datetime).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+            next_run = croniter(fields["cron_expr"], datetime.now(UTC)).get_next(datetime).isoformat().replace("+00:00", "Z")
         except (ImportError, ValueError, KeyError):
             next_run = None
         sets.append("next_run_at=?")
@@ -748,7 +748,7 @@ def tick_schedule(data_dir: Path, schedule_id: str, cron_expr: str) -> None:
     now = _now_iso()
     try:
         from croniter import croniter
-        next_run = croniter(cron_expr).get_next(datetime).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+        next_run = croniter(cron_expr, datetime.now(UTC)).get_next(datetime).isoformat().replace("+00:00", "Z")
     except (ImportError, ValueError, KeyError):
         next_run = None
     with _connect(data_dir) as conn:

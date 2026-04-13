@@ -94,6 +94,10 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **MCP empty-hint null dereference on poll:** `loadMcpServers()` looked up `mcp-empty-hint` by ID, but the element is a child of `mcp-enabled-chips` and gets destroyed when `innerHTML` is rewritten. On every subsequent 15s poll cycle, `.style.display` threw `TypeError`. Added null guard.
 
+- **Croniter schedules fire at wrong time (timezone bug):** `croniter()` defaulted to naive local time, then `.replace(tzinfo=UTC)` stamped the local value as UTC without converting. On non-UTC machines, schedules fired off by the UTC offset (e.g., 5 hours late in US Eastern). Fixed all 3 call sites to pass `datetime.now(UTC)` as start time.
+
+- **INT param coercion fails on decimal strings:** `int("3.5")` raises `ValueError` in Python, but decimal strings are common from JSON or form fields. Now uses `int(float(value))` to handle inputs like `"20.0"` or `"3.5"`.
+
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 
 - **Worker cancellation during ComfyUI polling:** `_comfyui_wait_outputs` now checks job state each poll iteration, allowing cancellation to take effect within 3 seconds instead of waiting up to 600 seconds for the full timeout.
