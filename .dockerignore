@@ -1,0 +1,24 @@
+# Ignore heavy directories that bloat build context
+.git
+data/
+models/
+docs/
+.tmp-pytest*/
+
+# Python artifacts
+__pycache__
+*.pyc
+*.pyo
+
+# Environment / secrets
+.env
+.env.*
+
+# IDE / editor
+.vscode/
+.idea/
+*.swp
+
+# Misc
+*.md
+LICENSE

@@ -20,6 +20,6 @@ def test_litellm_config_exists_and_routes_llamacpp():
 def test_litellm_dockerfile_uses_proxy_image():
     dockerfile = (MODEL_GATEWAY_DIR / "Dockerfile").read_text(encoding="utf-8")
 
-    assert "ghcr.io/berriai/litellm:main-stable" in dockerfile
+    assert "ghcr.io/berriai/litellm:" in dockerfile
     assert "config.template.yaml" in dockerfile
     assert "entrypoint.sh" in dockerfile

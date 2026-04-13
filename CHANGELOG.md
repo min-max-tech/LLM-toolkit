@@ -4,6 +4,14 @@ All notable changes to this project are documented here. The format is loosely b
 
 ## [Unreleased]
 
+### Security
+
+- **Timing-safe token comparison:** Auth token verification in dashboard and ops-controller now uses `hmac.compare_digest()` instead of `==`, preventing timing side-channel attacks.
+
+- **LLAMACPP_EXTRA_ARGS injection prevention:** `POST /env/set` now validates `LLAMACPP_EXTRA_ARGS` values with a strict character allowlist, preventing shell injection via backtick/subshell syntax when the value is word-split in run scripts.
+
+- **Hardened CSP headers:** Added `connect-src 'self'`, `frame-ancestors 'none'`, `base-uri 'self'`, and `form-action 'self'` directives to Content-Security-Policy.
+
 ### Added
 
 - **Global exception handler:** Unhandled exceptions in API endpoints now return `{"detail": "Internal server error"}` instead of raw Python tracebacks with internal paths and variable values. Full traceback is logged server-side.
@@ -56,7 +64,11 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **CI path filter:** Added `rag-ingestion/**` to orchestration-stack-e2E path-gated filter.
 
-- **Docker hardening:** Worker and orchestration-mcp Dockerfiles now run as non-root `appuser`. Worker Dockerfile upgraded from Python 3.11 to 3.12 for consistency.
+- **Docker hardening:** Worker, orchestration-mcp, and ops-controller Dockerfiles now run as non-root `appuser`. Worker Dockerfile upgraded from Python 3.11 to 3.12 for consistency. Added root `.dockerignore` to exclude `.git`, `data/`, `models/`, `.env` from build context (worker uses repo root as context).
+
+- **Reproducible builds:** Pinned model-gateway base image from floating `:main-stable` to `:main-v1.65.5`. Pinned comfyui-mcp upstream clone to specific commit SHA.
+
+- **CI pip caching:** All `setup-python` steps now use `cache: pip` with `cache-dependency-path`, saving 30-60s per CI run.
 
 - **Exception handling:** Replaced bare `except Exception: pass/continue` patterns in ComfyUI queue polling (dashboard) and history polling (worker) with specific exception types and debug logging.
 

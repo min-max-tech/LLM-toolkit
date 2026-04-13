@@ -14,5 +14,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY main.py .
 
+# Run as non-root user (docker group for socket access)
+RUN groupadd -g 999 docker && useradd -m -u 1000 -G docker appuser
+USER appuser
+
 EXPOSE 9000
 CMD ["uvicorn", "main:app", "--host", "0.0.0.0", "--port", "9000"]

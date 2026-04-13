@@ -1,4 +1,5 @@
-FROM ghcr.io/berriai/litellm:main-stable
+# Pin to specific version for reproducible builds (floating :main-stable can break silently)
+FROM ghcr.io/berriai/litellm:main-v1.65.5
 
 WORKDIR /app
 

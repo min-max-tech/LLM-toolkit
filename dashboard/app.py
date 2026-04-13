@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import json
 import logging
 import os
@@ -99,7 +100,7 @@ def _verify_auth(request: Request) -> bool:
     if not auth.startswith("Bearer "):
         return False
     token = auth[7:].strip()
-    return token == DASHBOARD_AUTH_TOKEN
+    return hmac.compare_digest(token, DASHBOARD_AUTH_TOKEN)
 
 
 @app.middleware("http")
@@ -112,8 +113,12 @@ async def security_headers_middleware(request: Request, call_next):
         "default-src 'self'; "
         "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com; "
         "font-src https://fonts.gstatic.com; "
-        "script-src 'self' 'unsafe-inline'; "
-        "img-src 'self' data:"
+        "script-src 'self' 'unsafe-inline'; "  # TODO: extract JS to external file and remove unsafe-inline
+        "img-src 'self' data:; "
+        "connect-src 'self'; "
+        "frame-ancestors 'none'; "
+        "base-uri 'self'; "
+        "form-action 'self'"
     )
     return response
 
@@ -139,7 +144,7 @@ async def auth_middleware(request: Request, call_next):
     # /api/throughput/record: requires THROUGHPUT_RECORD_TOKEN when set (model-gateway internal; PRD §3.E)
     if path == "/api/throughput/record":
         token = os.environ.get("THROUGHPUT_RECORD_TOKEN", "").strip()
-        if token and request.headers.get("X-Throughput-Token") != token:
+        if token and not hmac.compare_digest(request.headers.get("X-Throughput-Token", ""), token):
             return JSONResponse(status_code=401, content={"detail": "Invalid or missing X-Throughput-Token"})
         return await call_next(request)
     if _AUTH_REQUIRED and not _verify_auth(request):

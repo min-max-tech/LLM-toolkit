@@ -2,6 +2,7 @@
 from __future__ import annotations
 
 import asyncio
+import hmac
 import ipaddress
 import json
 import logging
@@ -89,7 +90,7 @@ async def verify_token(request: Request) -> None:
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
     token = auth[7:].strip()
-    if token != OPS_CONTROLLER_TOKEN:
+    if not hmac.compare_digest(token, OPS_CONTROLLER_TOKEN):
         raise HTTPException(status_code=403, detail="Invalid token")
 
 
@@ -375,6 +376,10 @@ async def env_set(body: EnvSetBody, request: Request, _: None = Depends(verify_t
         raise HTTPException(status_code=400, detail=f"Key not in allowlist: {body.key!r}")
     if "\n" in body.value or "\r" in body.value:
         raise HTTPException(status_code=400, detail="Value must not contain newlines")
+    # Prevent shell injection via LLAMACPP_EXTRA_ARGS (value is word-split in run script)
+    if body.key == "LLAMACPP_EXTRA_ARGS":
+        if not re.fullmatch(r"[a-zA-Z0-9 _.=:/-]*", body.value):
+            raise HTTPException(status_code=400, detail="LLAMACPP_EXTRA_ARGS: only alphanumeric, spaces, dashes, dots, equals, colons, slashes allowed")
     env_path = Path("/workspace/.env")
     if not env_path.exists():
         raise HTTPException(status_code=404, detail=".env not found at /workspace/.env")
