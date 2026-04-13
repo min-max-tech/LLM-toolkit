@@ -2088,6 +2088,10 @@ def _gpu_processes() -> dict:
     Requires the dashboard container to have ``pid: host`` set in
     overrides/compute.yml so that psutil can read host-level /proc entries.
     Returns an empty processes list (not an error) when pynvml is unavailable.
+
+    On Windows/WSL2 (WDDM drivers), per-process VRAM is unavailable (returns
+    None). In that case, falls back to showing aggregate used VRAM as a single
+    "GPU" entry so the compute pressure section still displays useful info.
     """
     import pynvml
     pynvml.nvmlInit()
@@ -2095,22 +2099,51 @@ def _gpu_processes() -> dict:
         h = pynvml.nvmlDeviceGetHandleByIndex(0)
         mi = pynvml.nvmlDeviceGetMemoryInfo(h)
         ut = pynvml.nvmlDeviceGetUtilizationRates(h)
-        raw_procs = pynvml.nvmlDeviceGetComputeRunningProcesses(h)
         total_b = int(mi.total)
+        used_b_total = int(mi.used)
+
+        # Collect both compute and graphics processes
+        seen_pids: set[int] = set()
+        raw_procs = []
+        for getter in (pynvml.nvmlDeviceGetComputeRunningProcesses,
+                       pynvml.nvmlDeviceGetGraphicsRunningProcesses):
+            try:
+                for p in getter(h):
+                    if p.pid not in seen_pids:
+                        seen_pids.add(p.pid)
+                        raw_procs.append(p)
+            except pynvml.NVMLError:
+                pass
+
         processes = []
+        has_per_process_vram = False
         for p in raw_procs:
             pid = p.pid
-            used_b = int(getattr(p, "usedGpuMemory", None) or getattr(p, "used_gpu_memory", 0))
+            mem = getattr(p, "usedGpuMemory", None) or getattr(p, "used_gpu_memory", None)
+            if mem is not None and int(mem) > 0:
+                has_per_process_vram = True
+            used_b = int(mem) if mem is not None else 0
             processes.append({
                 "label": _pid_to_service_label(pid),
                 "pid": pid,
                 "vram_gb": round(used_b / 1e9, 1),
                 "vram_pct": round(used_b / total_b * 100, 1) if total_b > 0 else 0.0,
             })
-        processes.sort(key=lambda x: x["vram_gb"], reverse=True)
+
+        if not has_per_process_vram and used_b_total > 0:
+            # Windows/WSL2 fallback: show aggregate used VRAM as single entry
+            processes = [{
+                "label": "GPU",
+                "pid": 0,
+                "vram_gb": round(used_b_total / 1e9, 1),
+                "vram_pct": round(used_b_total / total_b * 100, 1) if total_b > 0 else 0.0,
+            }]
+        else:
+            processes.sort(key=lambda x: x["vram_gb"], reverse=True)
+
         return {
             "total_gb": round(total_b / 1e9, 1),
-            "used_gb": round(int(mi.used) / 1e9, 1),
+            "used_gb": round(used_b_total / 1e9, 1),
             "utilization_pct": int(ut.gpu),
             "processes": processes,
         }

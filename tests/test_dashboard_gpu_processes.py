@@ -86,6 +86,7 @@ def _patch_nvml(monkeypatch, procs: list) -> None:
     monkeypatch.setattr(pynvml, "nvmlDeviceGetMemoryInfo", lambda h: _MockMemInfo())
     monkeypatch.setattr(pynvml, "nvmlDeviceGetUtilizationRates", lambda h: _MockUtil())
     monkeypatch.setattr(pynvml, "nvmlDeviceGetComputeRunningProcesses", lambda h: procs)
+    monkeypatch.setattr(pynvml, "nvmlDeviceGetGraphicsRunningProcesses", lambda h: [])
 
 
 def test_gpu_processes_endpoint_returns_structure(monkeypatch) -> None:
