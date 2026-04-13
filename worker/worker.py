@@ -166,19 +166,28 @@ def execute_job(job: OrchestrationJob) -> None:
         logger.exception("Job %s failed", jid)
         retry_count = (job.retry_count or 0) + 1
         if retry_count <= MAX_RETRIES:
-            # Re-queue with incremented retry_count (compiled workflow already stored)
-            update_job(DATA_DIR, jid, state=JobState.failed,
-                       error=f"attempt {retry_count - 1} failed: {exc}")
-            new_job = create_job(
-                DATA_DIR,
-                template_id=job.template_id,
-                workflow_id=job.workflow_id,
-                params=json.loads(job.params_json) if job.params_json else {},
-                compiled_workflow=json.loads(job.compiled_workflow) if job.compiled_workflow else None,
-                extra={"retried_from": jid, "retry_count": retry_count},
-            )
-            update_job(DATA_DIR, new_job.job_id, retry_count=retry_count)
-            logger.info("Job %s failed; requeued (attempt %d/%d)", jid, retry_count, MAX_RETRIES + 1)
+            try:
+                update_job(DATA_DIR, jid, state=JobState.failed,
+                           error=f"attempt {retry_count - 1} failed: {exc}")
+                params = json.loads(job.params_json) if job.params_json else {}
+                compiled = (json.loads(job.compiled_workflow)
+                            if isinstance(job.compiled_workflow, str) and job.compiled_workflow
+                            else job.compiled_workflow if isinstance(job.compiled_workflow, dict)
+                            else None)
+                new_job = create_job(
+                    DATA_DIR,
+                    template_id=job.template_id,
+                    workflow_id=job.workflow_id,
+                    params=params,
+                    compiled_workflow=compiled,
+                    extra={"retried_from": jid, "retry_count": retry_count},
+                )
+                update_job(DATA_DIR, new_job.job_id, retry_count=retry_count)
+                logger.info("Job %s failed; requeued (attempt %d/%d)", jid, retry_count, MAX_RETRIES + 1)
+            except Exception as retry_exc:
+                logger.error("Job %s retry failed: %s", jid, retry_exc)
+                update_job(DATA_DIR, jid, state=JobState.failed,
+                           error=f"retry failed: {retry_exc}")
         else:
             update_job(DATA_DIR, jid, state=JobState.failed, error=str(exc))
             logger.error("Job %s permanently failed after %d attempts", jid, retry_count)

@@ -85,7 +85,7 @@ def _docker_client():
 async def verify_token(request: Request) -> None:
     """Verify Bearer token. Use as Depends(verify_token)."""
     if not OPS_CONTROLLER_TOKEN:
-        raise HTTPException(status_code=503, detail="Ops controller not configured (no token)")
+        raise HTTPException(status_code=503, detail="Ops controller authentication not configured. Set OPS_CONTROLLER_TOKEN in your .env file and restart.")
     auth = request.headers.get("Authorization", "")
     if not auth.startswith("Bearer "):
         raise HTTPException(status_code=401, detail="Missing or invalid Authorization header")
@@ -208,7 +208,7 @@ async def service_start(
     if body.dry_run:
         return {"would": "start", "service": service_id}
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     containers = _containers_for_service(service_id)
     if not containers:
         raise HTTPException(status_code=404, detail=f"No container found for service {service_id}")
@@ -237,7 +237,7 @@ async def service_stop(
     if body.dry_run:
         return {"would": "stop", "service": service_id}
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     containers = _containers_for_service(service_id)
     if not containers:
         raise HTTPException(status_code=404, detail=f"No container found for service {service_id}")
@@ -266,7 +266,7 @@ async def service_restart(
     if body.dry_run:
         return {"would": "restart", "service": service_id}
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     containers = _containers_for_service(service_id)
     if not containers:
         raise HTTPException(status_code=404, detail=f"No container found for service {service_id}")
@@ -371,7 +371,7 @@ class EnvSetBody(BaseModel):
 async def env_set(body: EnvSetBody, request: Request, _: None = Depends(verify_token)):
     """Update a single allowed key in .env. Requires confirm: true. Audited."""
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     if body.key not in ENV_ALLOWED_KEYS:
         raise HTTPException(status_code=400, detail=f"Key not in allowlist: {body.key!r}")
     if "\n" in body.value or "\r" in body.value:
@@ -423,7 +423,7 @@ async def service_recreate(
     if body.dry_run:
         return {"would": "recreate", "service": service_id}
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     compose_files = [f.strip() for f in COMPOSE_FILE_ENV.split(";") if f.strip()]
     cmd = ["docker-compose"]
     for cf in compose_files:
@@ -524,7 +524,7 @@ async def comfyui_install_node_requirements(
 ):
     """Install Python deps for a custom node pack (pip -r) inside the running comfyui container."""
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     node_path = _validate_custom_node_path(body.node_path)
     result = await asyncio.to_thread(_comfyui_pip_install_sync, node_path)
     if result.get("http_status"):
@@ -830,7 +830,7 @@ async def models_pull(body: ModelPullRequest, request: Request, _: None = Depend
         )
     packs_csv = ",".join(parts)
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     with _pull_lock:
         if _pull_status.get("running"):
             raise HTTPException(status_code=409, detail="A pull is already in progress")
@@ -923,7 +923,7 @@ class GgufPullRequest(BaseModel):
 async def models_gguf_pull(body: GgufPullRequest, request: Request, _: None = Depends(verify_token)):
     """Run gguf-puller container. Auth required."""
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     raw = (body.repos or "").strip()
     if raw:
         for part in raw.split(","):

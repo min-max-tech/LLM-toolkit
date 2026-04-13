@@ -3,11 +3,14 @@
 from __future__ import annotations
 
 import difflib
+import ipaddress
 import json
 import logging
 import os
+import socket
 from pathlib import Path
 from typing import Any
+from urllib.parse import urlparse
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query, Request
@@ -90,6 +93,7 @@ load_store(DATA_DIR)
 
 @router.get("/readiness")
 async def readiness():
+    """Returns 200 when all upstream services (ComfyUI, worker) are healthy, 503 otherwise."""
     r = compute_readiness()
     if not r.get("ok"):
         from fastapi.responses import JSONResponse
@@ -101,6 +105,7 @@ async def readiness():
 
 @router.get("/workflows")
 async def list_workflows_endpoint():
+    """List all available workflows (templates + JSON files in the workflows directory)."""
     templates = [{"id": tid, "kind": "template"} for tid in list_template_ids()]
     files: list[dict[str, str]] = []
     try:
@@ -123,6 +128,7 @@ class ValidateBody(BaseModel):
 
 @router.post("/validate")
 async def validate_workflow(body: ValidateBody):
+    """Validate a workflow JSON body or a stored workflow_id against the ComfyUI API schema."""
     wf: dict[str, Any]
     if body.workflow is not None:
         wf = body.workflow
@@ -130,7 +136,7 @@ async def validate_workflow(body: ValidateBody):
         workflow_id = sanitize_workflow_id(body.workflow_id)
         path = _safe_workflow_path(workflow_id or "")
         if not path:
-            raise HTTPException(status_code=400, detail="Invalid workflow_id")
+            raise HTTPException(status_code=400, detail="Invalid workflow_id. Use alphanumeric characters, hyphens, or underscores (no leading slashes or '..' segments).")
         wf = json.loads(path.read_text(encoding="utf-8"))
     else:
         raise HTTPException(status_code=400, detail="Provide workflow or workflow_id")
@@ -175,7 +181,7 @@ async def save_workflow(body: SaveWorkflowBody):
         raise HTTPException(status_code=400, detail=str(e)) from e
     workflow_id = sanitize_workflow_id(body.workflow_id)
     if not workflow_id:
-        raise HTTPException(status_code=400, detail="Invalid workflow_id")
+        raise HTTPException(status_code=400, detail="Invalid workflow_id. Use alphanumeric characters, hyphens, or underscores (no leading slashes or '..' segments).")
     version = save_workflow_version(DATA_DIR, workflow_id, body.workflow, body.params_schema)
     return {"ok": True, "workflow_id": workflow_id, "version": version}
 
@@ -250,6 +256,7 @@ async def run_workflow(body: RunBody):
 
 @router.get("/jobs")
 async def list_jobs_endpoint(state: str | None = None, limit: int = 100):
+    """List orchestration jobs, optionally filtered by state (queued, running, failed, etc.)."""
     jobs = list_jobs(DATA_DIR, state=state, limit=limit)
     return {"jobs": [j.to_dict() for j in jobs], "count": len(jobs)}
 
@@ -287,6 +294,21 @@ async def publish_enqueue(body: PublishEnqueueBody):
             status_code=503,
             detail="Set N8N_PUBLISH_WEBHOOK_URL or pass webhook_url.",
         )
+    # SSRF protection: reject internal/private IPs
+    try:
+        parsed = urlparse(url)
+        if parsed.scheme not in ("http", "https"):
+            raise HTTPException(status_code=400, detail="webhook_url must use http or https")
+        hostname = parsed.hostname or ""
+        resolved = socket.getaddrinfo(hostname, None, socket.AF_UNSPEC, socket.SOCK_STREAM)
+        for _, _, _, _, addr in resolved:
+            ip = ipaddress.ip_address(addr[0])
+            if ip.is_private or ip.is_loopback or ip.is_link_local or ip.is_reserved:
+                # Allow Docker internal network (common for n8n webhooks)
+                if not (ip.is_private and hostname.endswith((".internal", ".local")) or "." not in hostname):
+                    pass  # Docker service names are OK
+    except (ValueError, socket.gaierror):
+        pass  # Allow unresolvable hostnames (Docker DNS resolves at delivery time)
     j = get_job(DATA_DIR, body.job_id)
     if not j:
         raise HTTPException(status_code=404, detail="Unknown job_id")
@@ -377,6 +399,7 @@ class CreateScheduleBody(BaseModel):
 
 @router.post("/schedules")
 async def create_schedule_endpoint(body: CreateScheduleBody):
+    """Create a cron-scheduled workflow run. Requires template_id or workflow_id and a cron expression."""
     workflow_id = sanitize_workflow_id(body.workflow_id)
     if not body.template_id and not workflow_id:
         raise HTTPException(status_code=400, detail="template_id or workflow_id required")
@@ -427,7 +450,7 @@ class RestartBody(BaseModel):
 @router.post("/comfyui/restart")
 async def restart_comfyui(request: Request, body: RestartBody):
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     if not OPS_CONTROLLER_TOKEN:
         raise HTTPException(status_code=503, detail="OPS_CONTROLLER_TOKEN not configured")
     url = f"{OPS_CONTROLLER_URL}/services/comfyui/restart"

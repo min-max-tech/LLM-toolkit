@@ -14,6 +14,10 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **XSS fix in service cards:** Service hint text was injected as raw HTML; now uses `escapeHtml()`.
 
+- **SSRF protection on outbox webhooks:** `publish_enqueue` endpoint now validates webhook URLs against private/reserved IP ranges using `ipaddress` module, preventing SSRF via crafted callback URLs.
+
+- **Non-root ops-controller container:** ops-controller Dockerfile now runs as `appuser` (UID 1000) with docker group access instead of root.
+
 ### Fixed
 
 - **`ttft_ms` always zero in service-usage:** `/api/throughput/service-usage` was building per-service dicts without `ttft_ms`, so the `last_ttft_ms` stat always reported `0.0`. Now correctly propagated from the raw samples.
@@ -23,6 +27,10 @@ All notable changes to this project are documented here. The format is loosely b
 - **Dead `:path` route modifier:** `DELETE /api/comfyui/models/{category}/{filename:path}` declared `:path` (allows slashes) but immediately rejected any filename containing `/`. Changed to plain `{filename}`.
 
 - **VACUUM blocks readers under load:** `vacuum_db()` ran with 30s busy_timeout, blocking all dashboard reads during the full rewrite. Now uses 5s timeout and logs a debug message on skip. Worker also skips vacuum when jobs are in-flight.
+
+- **Worker retry crash protection:** If retry logic itself fails (e.g. corrupted compiled_workflow), the failure handler now catches the inner exception and marks the original job as failed instead of crashing the worker thread.
+
+- **OPENCLAW_CONTEXT_WINDOW validation:** Invalid values now log a warning instead of silently falling back, making misconfigurations visible in logs.
 
 ### Added
 
@@ -47,6 +55,8 @@ All notable changes to this project are documented here. The format is loosely b
 - **comfyui-mcp healthcheck:** Changed from HTTP GET to `/mcp` (returned 406 and terminated the MCP server) to a TCP socket check on port 9000.
 
 - **Pull endpoint race condition fix:** `/api/ollama/pull` and `/api/comfyui/pull` set `running=True` while holding `_state_lock` before spawning the background thread, closing a TOCTOU race where concurrent requests could bypass the "already running" guard.
+
+- **Improved error messages:** Ops-controller confirm messages now explain what the destructive operation does and the expected JSON shape. Orchestration workflow_id errors include format guidance. Auth error tells user to set the token in `.env`.
 
 - **Orchestration endpoint error handling:** `/api/orchestration/workflows` and `/api/orchestration/outputs` wrapped in `try/except OSError` so filesystem failures return empty lists instead of 500 tracebacks.
 

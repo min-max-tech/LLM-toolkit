@@ -36,6 +36,8 @@ from dashboard.settings import DASHBOARD_AUTH_TOKEN, OPENCLAW_CONFIG_PATH
 
 # Default OpenClaw model metadata to the server cap unless a lower compaction target is set explicitly.
 _ctx_raw = os.environ.get("OPENCLAW_CONTEXT_WINDOW", os.environ.get("LLAMACPP_CTX_SIZE", "262144")).strip()
+if not _ctx_raw.isdigit() or int(_ctx_raw) <= 0:
+    logger.warning("Invalid OPENCLAW_CONTEXT_WINDOW=%r — using default 262144", _ctx_raw)
 OPENCLAW_CONTEXT_WINDOW = int(_ctx_raw) if _ctx_raw.isdigit() and int(_ctx_raw) > 0 else 262144
 
 
@@ -852,7 +854,7 @@ async def comfyui_install_node_requirements_api(
 ):
     """Run pip install -r for a pack under ComfyUI custom_nodes (ops-controller → comfyui container)."""
     if not body.confirm:
-        raise HTTPException(status_code=400, detail="Set confirm: true to execute")
+        raise HTTPException(status_code=400, detail="Destructive operation requires confirmation. Set {\"confirm\": true} in the request body to proceed.")
     code, data = await _ops_request(
         "POST",
         "/comfyui/install-node-requirements",
