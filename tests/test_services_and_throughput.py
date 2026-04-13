@@ -52,6 +52,21 @@ def test_services_have_required_fields(client):
         assert "hint" in svc
 
 
+def test_services_do_not_leak_auth_token(client, monkeypatch):
+    """Regression: OPENCLAW_GATEWAY_TOKEN must not appear in public /api/services URLs."""
+    monkeypatch.setattr("dashboard.settings.OPENCLAW_GATEWAY_TOKEN", "secret-test-token-1234")
+    # Re-import to pick up monkeypatched value
+    import importlib
+    import dashboard.services_catalog
+    importlib.reload(dashboard.services_catalog)
+    try:
+        for svc in dashboard.services_catalog.SERVICES:
+            assert "secret-test-token-1234" not in svc.get("url", ""), \
+                f"Token leaked in service {svc['id']} URL: {svc['url']}"
+    finally:
+        importlib.reload(dashboard.services_catalog)
+
+
 # ── /api/ollama/library ──────────────────────────────────────────────────────
 
 def test_ollama_library_returns_models(client):

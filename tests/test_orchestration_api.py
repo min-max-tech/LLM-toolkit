@@ -100,6 +100,30 @@ def test_template_compile_minimal(tmp_path: Path, monkeypatch):
     assert out["9"]["inputs"]["text"] == "hello"
 
 
+def test_load_template_rejects_path_traversal(tmp_path: Path, monkeypatch):
+    """Regression: template_id containing ../ must not escape templates directory."""
+    from dashboard.workflow_templates import load_template, _templates_dir
+
+    # Create a templates dir with a valid template
+    tpl_dir = tmp_path / "templates"
+    tpl_dir.mkdir()
+    (tpl_dir / "legit.json").write_text('{"id": "legit"}', encoding="utf-8")
+    # Create a file outside that should NOT be reachable
+    secret = tmp_path / "secret.json"
+    secret.write_text('{"leaked": true}', encoding="utf-8")
+
+    monkeypatch.setattr("dashboard.workflow_templates._templates_dir", lambda: tpl_dir)
+
+    # Valid template works
+    result = load_template("legit")
+    assert result["id"] == "legit"
+
+    # Path traversal attempts must fail
+    for malicious_id in ["../secret", "..\\secret", "sub/../../secret"]:
+        with pytest.raises((ValueError, FileNotFoundError)):
+            load_template(malicious_id)
+
+
 def test_sanitize_workflow_id_strips_gemma_wrappers():
     assert sanitize_workflow_id('<|"|>mcp-api/generate_song<|"|>') == "mcp-api/generate_song"
 

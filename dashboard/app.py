@@ -1049,6 +1049,7 @@ async def models_download(req: ModelDownloadRequest, request: Request):
         with _state_lock:
             if _ollama_pull_status.get("running"):
                 raise HTTPException(status_code=409, detail="Pull already in progress")
+            _ollama_pull_status["running"] = True
         thread = threading.Thread(target=_run_ollama_pull, args=(raw,), daemon=True)
         thread.start()
         return {

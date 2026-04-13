@@ -95,7 +95,7 @@ load_store(DATA_DIR)
 @router.get("/readiness")
 async def readiness():
     """Returns 200 when upstream services (model-gateway, MCP, ComfyUI) are healthy, 503 otherwise."""
-    r = compute_readiness()
+    r = await asyncio.to_thread(compute_readiness)
     if not r.get("ok"):
         from fastapi.responses import JSONResponse
         return JSONResponse(status_code=503, content=r)
@@ -240,7 +240,7 @@ class RunBody(BaseModel):
 @router.post("/run")
 async def run_workflow(body: RunBody):
     """Queue a job for the worker. Returns job_id immediately."""
-    r = compute_readiness()
+    r = await asyncio.to_thread(compute_readiness)
     if not r.get("ok"):
         raise HTTPException(status_code=503, detail={"readiness": r})
     workflow_id = sanitize_workflow_id(body.workflow_id)

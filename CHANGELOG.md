@@ -78,6 +78,12 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Misleading readiness and comfyui_delete docstrings:** Readiness endpoint docstring claimed worker health check (never performed); comfyui_delete listed only 5 of 13 valid categories. Both corrected.
 
+- **TOCTOU race in GGUF pull:** Two rapid requests to `/api/models/download` could both pass the `running` guard and spawn concurrent pulls, corrupting status. Now sets `running = True` inside the lock before spawning the thread.
+
+- **Blocking `compute_readiness()` on async event loop:** Readiness and run_workflow endpoints called synchronous HTTP probes (up to 11s) directly, blocking all other requests. Now wrapped in `asyncio.to_thread`.
+
+- **Regression tests for security fixes:** Added tests for token leak prevention in `/api/services`, `PublishCallbackBody` invalid status rejection (422), and `load_template` path traversal prevention.
+
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 
 - **Worker cancellation during ComfyUI polling:** `_comfyui_wait_outputs` now checks job state each poll iteration, allowing cancellation to take effect within 3 seconds instead of waiting up to 600 seconds for the full timeout.

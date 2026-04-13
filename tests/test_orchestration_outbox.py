@@ -162,6 +162,16 @@ class TestPublishCallback:
         assert r.status_code == 404
         assert "Unknown job_id" in r.json()["detail"]
 
+    def test_callback_rejects_invalid_status(self, client: TestClient, db_dir: Path):
+        """Regression: invalid status values like 'DELIVERED' must be rejected with 422."""
+        job_id = _create_job(db_dir)
+        for bad_status in ["DELIVERED", "ok", "success", ""]:
+            r = client.post(
+                "/api/orchestration/publish/callback",
+                json={"job_id": job_id, "status": bad_status},
+            )
+            assert r.status_code == 422, f"Expected 422 for status={bad_status!r}, got {r.status_code}"
+
 
 # ── Outbox DB function tests ─────────────────────────────────────────────────
 
