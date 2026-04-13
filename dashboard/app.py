@@ -204,8 +204,9 @@ def _fetch_ollama_library() -> list[str]:
     """Fetch pullable model names from Ollama registry. Uses community JSON; caches 24h."""
     global _ollama_library_cache, _ollama_library_ts
     now = time.monotonic()
-    if _ollama_library_cache and (now - _ollama_library_ts) < OLLAMA_LIBRARY_CACHE_TTL:
-        return _ollama_library_cache
+    with _state_lock:
+        if _ollama_library_cache and (now - _ollama_library_ts) < OLLAMA_LIBRARY_CACHE_TTL:
+            return list(_ollama_library_cache)
 
     urls = [OLLAMA_LIBRARY_URL]
     for url in urls:
@@ -241,19 +242,22 @@ def _fetch_ollama_library() -> list[str]:
                         names.add(base)
 
         if names:
-            _ollama_library_cache = sorted(names)
-            _ollama_library_ts = now
-            return _ollama_library_cache
+            result = sorted(names)
+            with _state_lock:
+                _ollama_library_cache = result
+                _ollama_library_ts = now
+            return result
 
-    _ollama_library_cache = OLLAMA_LIBRARY_FALLBACK
-    _ollama_library_ts = now
-    return _ollama_library_cache
+    with _state_lock:
+        _ollama_library_cache = OLLAMA_LIBRARY_FALLBACK
+        _ollama_library_ts = now
+    return list(OLLAMA_LIBRARY_FALLBACK)
 
 
 @app.get("/api/ollama/library")
 async def ollama_library():
     """List models available in the Ollama registry (fetched programmatically, cached 24h)."""
-    models = _fetch_ollama_library()
+    models = await asyncio.to_thread(_fetch_ollama_library)
     return {"models": models, "ok": True}
 
 
@@ -673,7 +677,7 @@ def _run_comfyui_pull(packs: str | None = None):
     # Load models config
     config_path = SCRIPTS_DIR / "comfyui" / "models.json"
     try:
-        with open(config_path) as f:
+        with open(config_path, encoding="utf-8") as f:
             config = _json.load(f)
     except Exception as e:
         with _state_lock:
@@ -819,8 +823,10 @@ async def comfyui_delete(category: str, filename: str):
     try:
         path.unlink()
         return {"ok": True, "message": f"Deleted {category}/{filename}"}
+    except PermissionError as e:
+        raise HTTPException(status_code=403, detail=f"Permission denied: {e}") from e
     except OSError as e:
-        raise HTTPException(status_code=500, detail=f"Delete failed: {e}")
+        raise HTTPException(status_code=500, detail=f"Delete failed: {e}") from e
 
 
 @app.get("/api/comfyui/models")

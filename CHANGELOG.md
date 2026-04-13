@@ -74,6 +74,20 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Model deletion missing audit trail:** `ollama_delete` permanently removed model files without any log entry. Now logs `MODEL_DELETED` with model name and path.
 
+- **Worker creates new TCP connection per ComfyUI poll:** `_comfyui_post_prompt` and `_comfyui_wait_outputs` used bare `httpx.post()`/`httpx.get()`, creating a new connection each call. Now reuses a module-level `httpx.Client` with connection pooling.
+
+- **`_fetch_ollama_library` blocks async event loop:** Synchronous `urllib.request.urlopen` with 15s timeout ran directly in an `async def` route, blocking all other requests. Now wrapped with `asyncio.to_thread`.
+
+- **Ollama library cache race condition:** `_ollama_library_cache` and `_ollama_library_ts` were read/written from both background threads and async handlers without synchronization. Now guarded by `_state_lock`.
+
+- **ComfyUI models.json opened without encoding:** `open(config_path)` used platform-default encoding. Now explicit `encoding="utf-8"`.
+
+- **ComfyUI model delete returns 500 for permission errors:** `PermissionError` is now caught separately and returns HTTP 403 instead of 500.
+
+- **Ops-controller `/services` swallows Docker errors as 200:** Docker failures returned `{"services": [], "error": "..."}` with HTTP 200. Now returns HTTP 503 with `detail` field.
+
+- **OpenClaw startup path error:** TOOLS.md Session Startup used relative paths (`TOOLS.md`) which less capable models resolved as `/app/TOOLS.md` instead of the workspace directory. Now uses absolute `/home/node/.openclaw/workspace/` paths.
+
 ### Added
 
 - **Global exception handler:** Unhandled exceptions in API endpoints now return `{"detail": "Internal server error"}` instead of raw Python tracebacks with internal paths and variable values. Full traceback is logged server-side.

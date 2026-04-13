@@ -205,7 +205,7 @@ async def list_services():
             services.append({"id": svc, "name": svc, "state": state})
         return {"services": sorted(services, key=lambda s: s["id"])}
     except Exception as e:
-        return {"services": [], "error": str(e)}
+        return JSONResponse(status_code=503, content={"services": [], "detail": f"Docker unavailable: {e}"})
 
 
 class ConfirmBody(BaseModel):

@@ -65,9 +65,12 @@ HEARTBEAT_PATH = Path("/tmp/worker.heartbeat")
 
 # ── ComfyUI HTTP (inline; no async needed in worker) ─────────────────────────
 
+_comfyui_client = httpx.Client(base_url=COMFYUI_URL, timeout=30)
+
+
 def _comfyui_post_prompt(workflow: dict[str, Any], client_id: str) -> str:
     body = {"prompt": workflow, "client_id": client_id}
-    r = httpx.post(f"{COMFYUI_URL}/prompt", json=body, timeout=30)
+    r = _comfyui_client.post("/prompt", json=body)
     r.raise_for_status()
     data = r.json()
     pid = data.get("prompt_id")
@@ -84,7 +87,7 @@ def _comfyui_wait_outputs(prompt_id: str, job_id: str, timeout: int = 600) -> di
         if fresh and fresh.state == JobState.cancelling:
             raise RuntimeError(f"Job {job_id} cancelled during execution")
         try:
-            r = httpx.get(f"{COMFYUI_URL}/history/{prompt_id}", timeout=15)
+            r = _comfyui_client.get(f"/history/{prompt_id}", timeout=15)
             r.raise_for_status()
             history = r.json()
             entry = history.get(prompt_id, {})
