@@ -1785,6 +1785,7 @@
               const d = await r.json();
               if (r.ok && d.logs) {
                 const win = window.open('', '_blank', 'width=900,height=600');
+                if (!win) { toast('Enable popups to view logs', 'error'); return; }
                 win.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(id)} logs</title><style>
                   body{margin:0;background:#020307;color:#dde2ee;font-family:'JetBrains Mono',monospace;font-size:12px}
                   pre{padding:1.5rem;white-space:pre-wrap;word-break:break-all;line-height:1.6;margin:0}

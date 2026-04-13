@@ -47,8 +47,13 @@ async def _read_json_async(path: Path) -> dict:
 
 
 async def _write_json_async(path: Path, data: dict) -> None:
-    """Serialise and write JSON off the event loop."""
-    await asyncio.to_thread(lambda: path.write_text(json.dumps(data, indent=2), encoding="utf-8"))
+    """Serialise and write JSON off the event loop via atomic write-then-rename."""
+    def _atomic_write() -> None:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        tmp = path.with_suffix(path.suffix + ".tmp")
+        tmp.write_text(json.dumps(data, indent=2), encoding="utf-8")
+        tmp.replace(path)
+    await asyncio.to_thread(_atomic_write)
 
 
 # Persistent httpx client — connection pooling avoids per-request TCP handshake overhead.
@@ -1638,8 +1643,8 @@ async def throughput_benchmark(req: ThroughputBenchmarkRequest):
                 _throughput_samples[model] = []
         if model in _throughput_samples:
             _throughput_samples[model].append(output_tokens_per_sec)
-        if len(_throughput_samples[model]) > _MAX_SAMPLES_PER_MODEL:
-            _throughput_samples[model] = _throughput_samples[model][-_MAX_SAMPLES_PER_MODEL:]
+            if len(_throughput_samples[model]) > _MAX_SAMPLES_PER_MODEL:
+                _throughput_samples[model] = _throughput_samples[model][-_MAX_SAMPLES_PER_MODEL:]
         _maybe_save_throughput()
 
     payload = {

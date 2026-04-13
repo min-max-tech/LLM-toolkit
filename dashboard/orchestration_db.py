@@ -266,6 +266,7 @@ def get_job(data_dir: Path, job_id: str) -> OrchestrationJob | None:
 
 
 def list_jobs(data_dir: Path, state: str | None = None, limit: int = 100) -> list[OrchestrationJob]:
+    limit = max(1, min(limit, 1000))
     with _connect(data_dir) as conn:
         if state:
             rows = conn.execute(
@@ -684,6 +685,15 @@ def update_schedule(data_dir: Path, schedule_id: str, **fields: Any) -> dict[str
             continue
         sets.append(f"{k}=?")
         vals.append(v)
+    # Recompute next_run_at when cron_expr changes
+    if "cron_expr" in fields:
+        try:
+            from croniter import croniter
+            next_run = croniter(fields["cron_expr"]).get_next(datetime).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
+        except (ImportError, ValueError, KeyError):
+            next_run = None
+        sets.append("next_run_at=?")
+        vals.append(next_run)
     if not sets:
         return get_schedule(data_dir, schedule_id)
     vals.append(schedule_id)

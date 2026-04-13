@@ -160,6 +160,16 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Cron expression not validated on schedule creation:** `POST /api/orchestration/schedules` accepted arbitrary cron strings without validation (only `PATCH` validated). Invalid expressions were silently persisted with `next_run=None`. Now validated before creation, returning 400.
 
+- **KeyError crash in benchmark when model cap reached:** `/api/throughput/benchmark` hit a `KeyError` when `_throughput_samples` was at the 50-model cap: the trim-samples line ran unconditionally outside the `if model in` guard. Now properly nested.
+
+- **`update_schedule` preserves stale `next_run_at` on cron change:** Updating a schedule's `cron_expr` via PATCH kept the old `next_run_at`, causing the first fire to use the old timing. Now recomputes `next_run_at` from the new expression.
+
+- **`_write_json_async` not crash-safe:** OpenClaw config and other JSON files were written via `path.write_text()` directly; a crash mid-write would leave truncated JSON. Now uses atomic write-then-rename (matching the throughput state pattern).
+
+- **`list_jobs` limit unsanitized in DB layer:** The routes layer clamped limits, but direct callers of `list_jobs` could pass negative or extreme values. Now clamped to `max(1, min(limit, 1000))` in the DB function itself.
+
+- **Popup-blocked crash in logs viewer:** `window.open` returns `null` when popups are blocked; the next line threw `TypeError` on `win.document.write`. Now checks for null and shows a toast message.
+
 ### Added
 
 - **Test coverage expansion (session 4):** Added 3 tests: state transition rejection (published cannot transition to running), cancelled-is-terminal invariant, and `_resolve_workflow_under_root` path traversal prevention (6 attack vectors). Total: 223 tests.
