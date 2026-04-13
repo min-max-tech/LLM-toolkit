@@ -477,7 +477,7 @@ async def audit(limit: int = 50, _: None = Depends(verify_token)):
     with open(AUDIT_LOG_PATH, encoding="utf-8", errors="replace") as f:
         tail = deque(f, maxlen=limit)
     entries = []
-    for line in tail:
+    for line in reversed(tail):
         line = line.strip()
         if not line:
             continue

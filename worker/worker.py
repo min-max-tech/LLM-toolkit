@@ -329,10 +329,12 @@ def main() -> None:
                 last_wal_checkpoint = time.time()
 
             if time.time() - last_vacuum >= VACUUM_SEC and not inflight:
+                def _on_vacuum_done(f):
+                    exc = f.exception()
+                    if exc:
+                        logger.error("Vacuum failed: %s", exc)
                 vf = pool.submit(vacuum_db, DATA_DIR)
-                vf.add_done_callback(
-                    lambda f: f.exception() and logger.error("Vacuum failed: %s", f.exception())
-                )
+                vf.add_done_callback(_on_vacuum_done)
                 last_vacuum = time.time()
 
             HEARTBEAT_PATH.write_text(str(int(time.time())), encoding="utf-8")

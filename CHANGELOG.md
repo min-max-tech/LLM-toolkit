@@ -182,6 +182,12 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **ComfyUI resume poll has no error handling:** `resumeActivePulls` poll chain had no `.catch()`, causing the UI to freeze if a network error occurred. Now handles errors with a 20-retry cap.
 
+- **Audit log response order reversed:** The `deque`-based tail read returned entries in oldest-first order instead of the original newest-first. Now iterates with `reversed(tail)`.
+
+- **`update_schedule_endpoint` crashes if croniter not installed:** The update path caught `(ValueError, KeyError)` but not `ImportError`, causing an unhandled exception. Now matches the create path with `except ImportError: pass`.
+
+- **Vacuum callback double-calls `f.exception()`:** The lambda `f.exception() and logger.error(...)` called `f.exception()` twice, risking `CancelledError` propagation. Now uses a named function that calls it once.
+
 ### Added
 
 - **Test coverage expansion (session 4):** Added 3 tests: state transition rejection (published cannot transition to running), cancelled-is-terminal invariant, and `_resolve_workflow_under_root` path traversal prevention (6 attack vectors). Total: 223 tests.

@@ -448,6 +448,8 @@ async def update_schedule_endpoint(schedule_id: str, body: UpdateScheduleBody):
         try:
             from croniter import croniter
             croniter(body.cron_expr)
+        except ImportError:
+            pass  # croniter not installed — skip validation
         except (ValueError, KeyError) as e:
             raise HTTPException(status_code=400, detail=f"Invalid cron expression: {e}")
         fields["cron_expr"] = body.cron_expr
