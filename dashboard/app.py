@@ -392,6 +392,8 @@ async def _do_set_active_model(req: PullRequest, request: Request):
         raise HTTPException(status_code=400, detail="Model must be a .gguf filename")
 
     bare_name = model[:-5]  # strip .gguf → gateway model id
+    if not bare_name:
+        raise HTTPException(status_code=400, detail="Invalid model filename")
     results: dict = {}
     errors: list[str] = []
 

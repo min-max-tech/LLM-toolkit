@@ -2392,8 +2392,10 @@
 
     function pollOllamaPull(logEl, barEl) {
       return new Promise((resolve) => {
+        let pollErrors = 0;
         const poll = () => {
           api('/api/ollama/pull/status').then(r => r.json()).then(s => {
+            pollErrors = 0;
             if (s.output) { logEl.textContent = s.output; logEl.scrollTop = logEl.scrollHeight; }
             if (s.pct != null) { barEl.style.width = s.pct + '%'; barEl.setAttribute('aria-valuenow', s.pct); }
             if (s.running) { setTimeout(poll, 1500); }
@@ -2402,7 +2404,10 @@
               barEl.setAttribute('aria-valuenow', 100);
               resolve(s);
             }
-          }).catch((e) => setTimeout(poll, 2000));
+          }).catch((e) => {
+            if (++pollErrors >= 20) { resolve({success: false, output: 'Connection lost'}); return; }
+            setTimeout(poll, 2000);
+          });
         };
         poll();
       });
@@ -2563,6 +2568,7 @@
           // ComfyUI file: poll status
           const d = await r.json();
           logEl.textContent = `Downloading ${d.filename || val} → ${d.category || 'checkpoints'}/`;
+          let hubPollErrors = 0;
           const poll = () => {
             api('/api/models/download/status').then(r2 => r2.json()).then(s => {
               logEl.textContent = s.output || 'Downloading…';
@@ -2581,8 +2587,12 @@
                 btn.disabled = false;
               }
             }).catch(e => {
-              logEl.textContent += '\nPoll error: ' + e.message;
-              btn.disabled = false;
+              if (++hubPollErrors >= 20) {
+                logEl.textContent += '\nConnection lost after 20 errors.';
+                btn.disabled = false;
+                return;
+              }
+              setTimeout(poll, 3000);
             });
           };
           poll();
@@ -2878,7 +2888,9 @@
           const logEl = document.getElementById('comfyui-log');
           btn.disabled = true;
           prog.style.display = 'block';
+          let resumePollErrors = 0;
           const poll = () => api('/api/comfyui/pull/status').then(r => r.json()).then(s => {
+            resumePollErrors = 0;
             logEl.textContent = s.output || 'Preparing...';
             logEl.scrollTop = logEl.scrollHeight;
             if (s.running) setTimeout(poll, 1500);
@@ -2889,6 +2901,13 @@
               loadComfyuiModels();
               loadComfyuiPacks();
             }
+          }).catch(() => {
+            if (++resumePollErrors >= 20) {
+              logEl.textContent += '\nConnection lost.';
+              btn.disabled = false;
+              return;
+            }
+            setTimeout(poll, 2000);
           });
           poll();
         }

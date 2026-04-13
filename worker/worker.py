@@ -83,6 +83,7 @@ def _comfyui_post_prompt(workflow: dict[str, Any], client_id: str) -> str:
 
 def _comfyui_wait_outputs(prompt_id: str, job_id: str, timeout: int = 600) -> dict[str, Any]:
     deadline = time.time() + timeout
+    poll_interval = 3.0
     while time.time() < deadline:
         # Check for cancellation between polls
         fresh = get_job(DATA_DIR, job_id)
@@ -95,12 +96,15 @@ def _comfyui_wait_outputs(prompt_id: str, job_id: str, timeout: int = 600) -> di
             entry = history.get(prompt_id, {})
             if not isinstance(entry, dict):
                 logger.warning("Unexpected history format for %s: %s", prompt_id, type(entry).__name__)
+                time.sleep(poll_interval)
+                poll_interval = min(poll_interval * 1.5, 15.0)
                 continue
             if entry.get("outputs"):
                 return entry
         except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError) as exc:
             logger.debug("ComfyUI history poll for %s: %s", prompt_id, exc)
-        time.sleep(3)
+        time.sleep(poll_interval)
+        poll_interval = min(poll_interval * 1.5, 15.0)
     raise TimeoutError(f"ComfyUI did not finish prompt {prompt_id} within {timeout}s")
 
 
@@ -119,6 +123,8 @@ def _resolve_workflow_path(workflow_id: str) -> Path | None:
         p = (root / rel).with_suffix(".json").resolve()
     else:
         safe = "".join(c for c in raw if c.isalnum() or c in ("_", "-"))
+        if not safe:
+            return None
         p = (root / f"{safe}.json").resolve()
     try:
         p.relative_to(root)

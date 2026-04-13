@@ -170,6 +170,18 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Popup-blocked crash in logs viewer:** `window.open` returns `null` when popups are blocked; the next line threw `TypeError` on `win.document.write`. Now checks for null and shows a toast message.
 
+- **Worker `_resolve_workflow_path` missing empty-safe guard:** Workflow IDs consisting entirely of filtered characters (e.g. `"..."`) produced `safe=""`, resolving to `root/.json`. Now returns `None` (matching the dashboard version).
+
+- **`.gguf` filename yields empty `bare_name` in model switch:** `set_active_model` accepted `.gguf` as a valid filename, producing an empty model ID passed to downstream services. Now rejected with 400.
+
+- **ComfyUI history poll uses fixed 3s interval:** `_comfyui_wait_outputs` polled every 3 seconds regardless of render duration, generating ~200 requests over 600s. Now uses exponential backoff (3s → 15s cap).
+
+- **Ollama pull poll retries forever on error:** Frontend `pollOllamaPull` had no error counter; a persistent server error caused infinite 2s polling. Now caps at 20 consecutive errors.
+
+- **Hub model download poll aborts on first error:** A single transient failure stopped polling and left the UI in an indeterminate state. Now retries up to 20 times before giving up.
+
+- **ComfyUI resume poll has no error handling:** `resumeActivePulls` poll chain had no `.catch()`, causing the UI to freeze if a network error occurred. Now handles errors with a 20-retry cap.
+
 ### Added
 
 - **Test coverage expansion (session 4):** Added 3 tests: state transition rejection (published cannot transition to running), cancelled-is-terminal invariant, and `_resolve_workflow_under_root` path traversal prevention (6 attack vectors). Total: 223 tests.
