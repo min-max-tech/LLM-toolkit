@@ -62,6 +62,10 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Blocking I/O in comfyui_packs endpoint:** `_scan_comfyui_models()` and `config_path.read_text()` ran synchronously on the async event loop, blocking all other requests during filesystem I/O. Now uses `asyncio.to_thread` and `_read_json_async` respectively.
 
+- **ComfyUI pull subprocess can hang forever:** `_run_comfyui_pull_subprocess` called `proc.wait()` without a timeout; a hung child process would permanently block future pulls (409 guard). Now uses `proc.wait(timeout=7200)` with `proc.kill()` on timeout, and kills the process on unexpected errors to prevent resource leaks.
+
+- **Dashboard missing ComfyUI model categories:** Dashboard's `COMFYUI_CATEGORIES` only listed 6 subdirs while ops-controller supports 13. Models downloaded to `clip`, `controlnet`, `embeddings`, `upscale_models`, `diffusion_models`, etc. were invisible in the dashboard and could not be deleted. Now synced with ops-controller's full list.
+
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 
 - **Worker cancellation during ComfyUI polling:** `_comfyui_wait_outputs` now checks job state each poll iteration, allowing cancellation to take effect within 3 seconds instead of waiting up to 600 seconds for the full timeout.

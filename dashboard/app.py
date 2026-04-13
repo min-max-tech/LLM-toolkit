@@ -598,7 +598,7 @@ async def ollama_pull_status():
 
 def _scan_comfyui_models() -> list[dict]:
     """Scan ComfyUI models directory for installed files."""
-    subdirs = ("checkpoints", "unet", "loras", "text_encoders", "latent_upscale_models", "vae")
+    subdirs = COMFYUI_CATEGORIES
     models = []
     for sub in subdirs:
         d = MODELS_DIR / sub
@@ -625,6 +625,7 @@ def _run_comfyui_pull_subprocess(packs: str | None = None):
     env["PYTHONUNBUFFERED"] = "1"
     if packs:
         env["COMFYUI_PACKS"] = packs
+    proc = None
     try:
         proc = subprocess.Popen(
             ["python3", "-u", str(script)],
@@ -639,11 +640,19 @@ def _run_comfyui_pull_subprocess(packs: str | None = None):
             output_lines.append(line)
             with _state_lock:
                 _comfyui_status["output"] = "".join(output_lines)
-        proc.wait()
+        proc.wait(timeout=7200)
         with _state_lock:
             _comfyui_status["success"] = proc.returncode == 0
+    except subprocess.TimeoutExpired:
+        proc.kill()
+        logger.error("ComfyUI pull (subprocess) timed out after 7200s")
+        with _state_lock:
+            _comfyui_status["output"] += "\nError: process timed out after 2 hours"
+            _comfyui_status["success"] = False
     except Exception as e:
         logger.error("ComfyUI pull (subprocess) failed: %s", e)
+        if proc and proc.poll() is None:
+            proc.kill()
         with _state_lock:
             _comfyui_status["output"] += f"\nError: {e}"
             _comfyui_status["success"] = False
@@ -823,7 +832,11 @@ def _run_comfyui_pull(packs: str | None = None):
             _comfyui_status["done"] = True
 
 
-COMFYUI_CATEGORIES = ("checkpoints", "unet", "loras", "text_encoders", "latent_upscale_models", "vae")
+COMFYUI_CATEGORIES = (
+    "checkpoints", "loras", "text_encoders", "latent_upscale_models",
+    "vae", "unet", "clip", "clip_vision", "controlnet", "embeddings",
+    "upscale_models", "diffusion_models", "vae_approx",
+)
 
 
 @app.delete("/api/comfyui/models/{category}/{filename}")
