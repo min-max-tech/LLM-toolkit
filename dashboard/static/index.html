@@ -1562,7 +1562,7 @@
         const chipsEl = document.getElementById('mcp-enabled-chips');
         const emptyHint = document.getElementById('mcp-empty-hint');
         if (chipsEl) {
-          emptyHint.style.display = mcpEnabled.length ? 'none' : 'inline';
+          if (emptyHint) emptyHint.style.display = mcpEnabled.length ? 'none' : 'inline';
           chipsEl.innerHTML = mcpEnabled.length ? mcpEnabled.map(s =>
             `<span class="mcp-chip" title="${escapeHtml(s)}" data-server="${escapeHtml(s)}"><span>${escapeHtml(s)}</span><button type="button" class="mcp-chip-remove mcp-remove-btn" data-server="${escapeHtml(s)}" aria-label="Remove ${escapeHtml(s)}">×</button></span>`
           ).join('') : '';

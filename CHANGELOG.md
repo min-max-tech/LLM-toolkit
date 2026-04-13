@@ -92,6 +92,8 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Non-atomic .env write in ops-controller:** `env_set` endpoint wrote directly to `.env`; a crash mid-write would corrupt the file, breaking all service restarts. Now uses write-to-temp + `os.replace` for crash safety.
 
+- **MCP empty-hint null dereference on poll:** `loadMcpServers()` looked up `mcp-empty-hint` by ID, but the element is a child of `mcp-enabled-chips` and gets destroyed when `innerHTML` is rewritten. On every subsequent 15s poll cycle, `.style.display` threw `TypeError`. Added null guard.
+
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 
 - **Worker cancellation during ComfyUI polling:** `_comfyui_wait_outputs` now checks job state each poll iteration, allowing cancellation to take effect within 3 seconds instead of waiting up to 600 seconds for the full timeout.
