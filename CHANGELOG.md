@@ -150,6 +150,16 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **MCP server add/remove missing audit trail:** `POST /api/mcp/add` and `POST /api/mcp/remove` modified gateway configuration with no log entry. Now logs `MCP_SERVER_ADDED` and `MCP_SERVER_REMOVED` with the server name.
 
+- **TTFT samples bypass `_MAX_TRACKED_MODELS` cap:** `_ttft_samples` dict grew unboundedly with unique model names even though `_throughput_samples` was capped at 50 keys. Now both dicts share the same cap.
+
+- **Benchmark endpoint bypasses model-key cap:** `/api/throughput/benchmark` inserted into `_throughput_samples` without checking `_MAX_TRACKED_MODELS`, allowing unbounded growth via arbitrary model names. Now guarded.
+
+- **Concurrent model switch race condition:** Two simultaneous `POST /api/active-model` calls could interleave `.env` writes and service restarts, leaving services pointing at different models. Now guarded by an `asyncio.Lock`, returning 409 if a switch is already in progress.
+
+- **Throughput state file encoding mismatch:** `_load_throughput_state` used platform-default encoding while model names may contain non-ASCII characters, causing decode errors on Windows. Now explicit `encoding="utf-8"` on both read and write.
+
+- **Cron expression not validated on schedule creation:** `POST /api/orchestration/schedules` accepted arbitrary cron strings without validation (only `PATCH` validated). Invalid expressions were silently persisted with `next_run=None`. Now validated before creation, returning 400.
+
 ### Added
 
 - **Test coverage expansion (session 4):** Added 3 tests: state transition rejection (published cannot transition to running), cancelled-is-terminal invariant, and `_resolve_workflow_under_root` path traversal prevention (6 attack vectors). Total: 223 tests.

@@ -416,6 +416,13 @@ async def create_schedule_endpoint(body: CreateScheduleBody):
     if not body.template_id and not workflow_id:
         raise HTTPException(status_code=400, detail="template_id or workflow_id required")
     try:
+        from croniter import croniter
+        croniter(body.cron_expr)
+    except ImportError:
+        pass  # croniter not installed — skip validation (validated at fire time)
+    except (ValueError, KeyError) as e:
+        raise HTTPException(status_code=400, detail=f"Invalid cron expression: {e}") from e
+    try:
         s = create_schedule(DATA_DIR, body.cron_expr, body.template_id, workflow_id, body.params)
     except Exception as e:
         raise HTTPException(status_code=400, detail=str(e)) from e

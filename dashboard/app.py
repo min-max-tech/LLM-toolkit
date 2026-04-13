@@ -367,9 +367,19 @@ async def llamacpp_switch_model(req: PullRequest, request: Request):
     return {"ok": True, "model": model, "llamacpp_restarting": started}
 
 
+_model_switch_lock = asyncio.Lock()
+
+
 @app.post("/api/active-model")
 async def set_active_model(req: PullRequest, request: Request):
     """Unified: switch llamacpp model and keep Open WebUI + OpenClaw defaults in parity."""
+    if _model_switch_lock.locked():
+        raise HTTPException(status_code=409, detail="Model switch already in progress")
+    async with _model_switch_lock:
+        return await _do_set_active_model(req, request)
+
+
+async def _do_set_active_model(req: PullRequest, request: Request):
     model = (req.model or "").strip()
     if not model or ".." in model or "/" in model:
         raise HTTPException(status_code=400, detail="Invalid model filename")
@@ -1318,7 +1328,7 @@ def _load_throughput_state() -> None:
     if not _THROUGHPUT_FILE.exists():
         return
     try:
-        data = json.loads(_THROUGHPUT_FILE.read_text())
+        data = json.loads(_THROUGHPUT_FILE.read_text(encoding="utf-8"))
         _throughput_samples = {k: v for k, v in (data.get("samples") or {}).items() if isinstance(v, list)}
         _ttft_samples = {k: v for k, v in (data.get("ttft_samples") or {}).items() if isinstance(v, list)}
         _last_benchmark = data.get("last_benchmark") if isinstance(data.get("last_benchmark"), dict) else None
@@ -1337,7 +1347,7 @@ def _save_throughput_state() -> None:
             "ttft_samples": _ttft_samples,
             "last_benchmark": _last_benchmark,
             "service_usage": _service_usage[-_MAX_SERVICE_USAGE:],
-        }))
+        }), encoding="utf-8")
         tmp.replace(_THROUGHPUT_FILE)
     except Exception as e:
         logger.warning("Throughput state save failed: %s", e)
@@ -1394,7 +1404,7 @@ async def throughput_record(req: ThroughputRecordRequest):
         _throughput_samples[model].append(req.output_tokens_per_sec)
         if len(_throughput_samples[model]) > _MAX_SAMPLES_PER_MODEL:
             _throughput_samples[model] = _throughput_samples[model][-_MAX_SAMPLES_PER_MODEL:]
-        if req.ttft_ms > 0:
+        if req.ttft_ms > 0 and (model in _ttft_samples or len(_ttft_samples) < _MAX_TRACKED_MODELS):
             if model not in _ttft_samples:
                 _ttft_samples[model] = []
             _ttft_samples[model].append(req.ttft_ms)
@@ -1622,8 +1632,12 @@ async def throughput_benchmark(req: ThroughputBenchmarkRequest):
     # Store sample for stats (peak, percentiles)
     with _state_lock:
         if model not in _throughput_samples:
-            _throughput_samples[model] = []
-        _throughput_samples[model].append(output_tokens_per_sec)
+            if len(_throughput_samples) >= _MAX_TRACKED_MODELS:
+                pass  # cap reached — skip storage but still return payload
+            else:
+                _throughput_samples[model] = []
+        if model in _throughput_samples:
+            _throughput_samples[model].append(output_tokens_per_sec)
         if len(_throughput_samples[model]) > _MAX_SAMPLES_PER_MODEL:
             _throughput_samples[model] = _throughput_samples[model][-_MAX_SAMPLES_PER_MODEL:]
         _maybe_save_throughput()
