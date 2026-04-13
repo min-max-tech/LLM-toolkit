@@ -501,16 +501,22 @@ def mark_outbox_delivered(data_dir: Path, idempotency_key: str) -> None:
 def record_outbox_attempt(data_dir: Path, row_id: int, error: str | None = None) -> None:
     from datetime import timedelta
     with _connect(data_dir) as conn:
-        # Atomic: read + update in same transaction
-        row = conn.execute("SELECT attempts FROM publish_outbox WHERE id=?", (row_id,)).fetchone()
-        n = (row["attempts"] or 0) + 1
-        # Exponential backoff: 30s, 2m, 8m, 30m, 2h
-        delay_sec = min(30 * (4 ** (n - 1)), 7200)
-        next_retry = (datetime.now(UTC) + timedelta(seconds=delay_sec)).isoformat().replace("+00:00", "Z")
+        # Single atomic UPDATE — avoids read-then-write race under concurrency
         conn.execute(
-            "UPDATE publish_outbox SET attempts=?, last_attempt_at=?, next_retry_at=?, error=? WHERE id=?",
-            (n, _now_iso(), next_retry, error, row_id),
+            "UPDATE publish_outbox SET "
+            "attempts = COALESCE(attempts, 0) + 1, "
+            "last_attempt_at = ?, "
+            "error = ? "
+            "WHERE id = ?",
+            (_now_iso(), error, row_id),
         )
+        # Compute next_retry_at from the updated attempts value
+        row = conn.execute("SELECT attempts FROM publish_outbox WHERE id=?", (row_id,)).fetchone()
+        if row:
+            n = row["attempts"] or 1
+            delay_sec = min(30 * (4 ** (n - 1)), 7200)
+            next_retry = (datetime.now(UTC) + timedelta(seconds=delay_sec)).isoformat().replace("+00:00", "Z")
+            conn.execute("UPDATE publish_outbox SET next_retry_at=? WHERE id=?", (next_retry, row_id))
         conn.commit()
 
 
@@ -579,9 +585,15 @@ def get_workflow_version(
 
 def promote_workflow_version(data_dir: Path, workflow_id: str, version: int) -> bool:
     with _connect(data_dir) as conn:
+        now = _now_iso()
+        # Demote any previously promoted versions for this workflow
+        conn.execute(
+            "UPDATE workflow_versions SET promoted_at=NULL WHERE workflow_id=? AND promoted_at IS NOT NULL",
+            (workflow_id,),
+        )
         result = conn.execute(
             "UPDATE workflow_versions SET promoted_at=? WHERE workflow_id=? AND version=?",
-            (_now_iso(), workflow_id, version),
+            (now, workflow_id, version),
         )
         conn.commit()
     return result.rowcount > 0

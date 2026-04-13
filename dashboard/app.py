@@ -865,11 +865,11 @@ async def comfyui_packs():
     if not config_path.exists():
         return {"packs": {}, "defaults": [], "ok": False, "error": "models.json not found"}
     try:
-        import json as _json
-        config = _json.loads(config_path.read_text(encoding="utf-8"))
+        config = await _read_json_async(config_path)
         default_quant = config.get("defaults", {}).get("quant", "Q4_K_M")
         try:
-            installed = {(m["category"], m["name"]) for m in _scan_comfyui_models()}
+            models = await asyncio.to_thread(_scan_comfyui_models)
+            installed = {(m["category"], m["name"]) for m in models}
         except (OSError, KeyError):
             installed = set()
         packs = {}

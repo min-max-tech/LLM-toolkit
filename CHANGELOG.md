@@ -56,6 +56,12 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **loadMcpServers crash on error response:** Same missing `r.ok` guard; added early return on non-OK responses.
 
+- **Stale promoted workflow versions:** `promote_workflow_version()` set `promoted_at` on the new version but never cleared it on previously promoted versions, leaving multiple rows with non-NULL `promoted_at`. Now demotes all prior versions before promoting the target.
+
+- **Outbox attempt counter race condition:** `record_outbox_attempt()` used a read-then-write pattern (SELECT attempts, then UPDATE), which could lose increments under concurrent calls. Now uses a single atomic `UPDATE SET attempts = COALESCE(attempts, 0) + 1`.
+
+- **Blocking I/O in comfyui_packs endpoint:** `_scan_comfyui_models()` and `config_path.read_text()` ran synchronously on the async event loop, blocking all other requests during filesystem I/O. Now uses `asyncio.to_thread` and `_read_json_async` respectively.
+
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 
 - **Worker cancellation during ComfyUI polling:** `_comfyui_wait_outputs` now checks job state each poll iteration, allowing cancellation to take effect within 3 seconds instead of waiting up to 600 seconds for the full timeout.
