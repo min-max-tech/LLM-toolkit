@@ -55,7 +55,7 @@ def _post(path: str, body: dict[str, Any]) -> dict[str, Any]:
         if r.status_code >= 400:
             try:
                 detail = r.json()
-            except Exception:
+            except (ValueError, UnicodeDecodeError):
                 detail = {"detail": r.text}
             raise RuntimeError(json.dumps(detail))
         return r.json()
@@ -67,7 +67,7 @@ def _patch(path: str, body: dict[str, Any]) -> dict[str, Any]:
         if r.status_code >= 400:
             try:
                 detail = r.json()
-            except Exception:
+            except (ValueError, UnicodeDecodeError):
                 detail = {"detail": r.text}
             raise RuntimeError(json.dumps(detail))
         return r.json()
@@ -79,7 +79,7 @@ def _delete(path: str) -> dict[str, Any]:
         if r.status_code >= 400:
             try:
                 detail = r.json()
-            except Exception:
+            except (ValueError, UnicodeDecodeError):
                 detail = {"detail": r.text}
             raise RuntimeError(json.dumps(detail))
         return r.json()
@@ -240,7 +240,7 @@ def publish_enqueue(job_id: str, webhook_url: str | None = None, payload_json: s
 @mcp.tool()
 def publish_status(job_id: str) -> dict:
     """Publish pipeline status and delivery history for a job. CRITICAL: Provide the raw ID only. Do NOT include the 'gateway__' prefix or any other namespace prefix inside the arguments of this tool."""
-    return _get(f"/api/orchestration/publish/status", params={"job_id": job_id})
+    return _get("/api/orchestration/publish/status", params={"job_id": job_id})
 
 
 # ── Outputs ───────────────────────────────────────────────────────────────────

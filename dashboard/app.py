@@ -20,10 +20,10 @@ import psutil
 
 logger = logging.getLogger(__name__)
 
+import httpx as _httpx
 from fastapi import FastAPI, HTTPException, Request
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
-from httpx import AsyncClient
 from pydantic import BaseModel
 
 from dashboard.orchestration_db import get_job_counts, get_outbox_stats
@@ -37,22 +37,58 @@ from dashboard.settings import DASHBOARD_AUTH_TOKEN, OPENCLAW_CONFIG_PATH
 _ctx_raw = os.environ.get("OPENCLAW_CONTEXT_WINDOW", os.environ.get("LLAMACPP_CTX_SIZE", "262144")).strip()
 OPENCLAW_CONTEXT_WINDOW = int(_ctx_raw) if _ctx_raw.isdigit() and int(_ctx_raw) > 0 else 262144
 
+
+async def _read_json_async(path: Path) -> dict:
+    """Read and parse a JSON file off the event loop."""
+    return await asyncio.to_thread(lambda: json.loads(path.read_text(encoding="utf-8")))
+
+
+async def _write_json_async(path: Path, data: dict) -> None:
+    """Serialise and write JSON off the event loop."""
+    await asyncio.to_thread(lambda: path.write_text(json.dumps(data, indent=2), encoding="utf-8"))
+
+
+# Persistent httpx client — connection pooling avoids per-request TCP handshake overhead.
+_http_client: _httpx.AsyncClient | None = None
+
+
+def _get_http_client() -> _httpx.AsyncClient:
+    """Return the shared async HTTP client (created in lifespan)."""
+    assert _http_client is not None, "HTTP client not initialised — is lifespan running?"
+    return _http_client
+
 # Dashboard auth (optional bearer token only; see dashboard.settings)
 
 
 @asynccontextmanager
 async def _lifespan(_app: FastAPI):
+    global _http_client
     if not _AUTH_REQUIRED:
         logger.warning(
             "Dashboard is running WITHOUT authentication. "
             "Set DASHBOARD_AUTH_TOKEN in .env to require Bearer auth on /api/*."
         )
-    yield
+    _http_client = _httpx.AsyncClient(
+        timeout=30.0,
+        limits=_httpx.Limits(max_connections=20, max_keepalive_connections=10),
+    )
+    try:
+        yield
+    finally:
+        await _http_client.aclose()
+        _http_client = None
 
 
 app = FastAPI(title="Ordo AI Stack Dashboard", version="1.0.0", lifespan=_lifespan)
 app.include_router(hub_router)
 app.include_router(orchestration_router)
+
+
+@app.exception_handler(Exception)
+async def _global_exception_handler(request: Request, exc: Exception):
+    """Catch unhandled exceptions — log the traceback but return a safe 500 to the client."""
+    logger.exception("Unhandled error on %s %s", request.method, request.url.path)
+    return JSONResponse(status_code=500, content={"detail": "Internal server error"})
 
 
 def _verify_auth(request: Request) -> bool:
@@ -93,6 +129,9 @@ async def auth_middleware(request: Request, call_next):
         "/api/dependencies",
         "/api/auth/config",
         "/api/hardware",
+        "/api/hardware/gpu-processes",
+        "/api/throughput/stats",
+        "/api/throughput/service-usage",
         "/api/rag/status",
         "/api/orchestration/readiness",
     ):
@@ -216,7 +255,7 @@ def _scan_gguf_models() -> list[dict]:
         for p in sorted(_GGUF_MODELS_DIR.iterdir()):
             if p.suffix.lower() == ".gguf" and p.is_file():
                 models.append({"name": p.name, "size": p.stat().st_size, "modified_at": int(p.stat().st_mtime)})
-    except Exception:
+    except OSError:
         pass
     return models
 
@@ -228,15 +267,14 @@ async def ollama_models():
     if disk_models:
         return {"models": disk_models, "ok": True}
     # Fallback: ask model-gateway
-    async with AsyncClient(timeout=30.0) as client:
-        try:
-            r = await client.get(f"{MODEL_GATEWAY_URL}/v1/models", headers=_model_gateway_headers())
-            r.raise_for_status()
-            data = r.json()
-            models = [{"name": m["id"]} for m in data.get("data", []) if m.get("id")]
-            return {"models": models, "ok": True}
-        except Exception as e:
-            return {"models": [], "ok": False, "error": str(e)}
+    try:
+        r = await _get_http_client().get(f"{MODEL_GATEWAY_URL}/v1/models", headers=_model_gateway_headers())
+        r.raise_for_status()
+        data = r.json()
+        models = [{"name": m["id"]} for m in data.get("data", []) if m.get("id")]
+        return {"models": models, "ok": True}
+    except Exception as e:
+        return {"models": [], "ok": False, "error": str(e)}
 
 
 @app.post("/api/ollama/delete")
@@ -267,22 +305,22 @@ async def ollama_unload(req: PullRequest):
     name = (req.model or "").strip()
     if not name or ".." in name:
         raise HTTPException(status_code=400, detail="Invalid model name")
-    async with AsyncClient(timeout=60.0) as client:
-        try:
-            r = await client.request(
-                "DELETE",
-                f"{MODEL_GATEWAY_URL.rstrip('/')}/api/delete",
-                headers=_model_gateway_headers(),
-                json={"name": name},
-            )
-            if r.status_code == 404:
-                raise HTTPException(status_code=404, detail=f"Model '{name}' not found")
-            r.raise_for_status()
-            return {"ok": True, "message": f"Unloaded '{name}' from the gateway."}
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}") from e
+    try:
+        r = await _get_http_client().request(
+            "DELETE",
+            f"{MODEL_GATEWAY_URL.rstrip('/')}/api/delete",
+            headers=_model_gateway_headers(),
+            json={"name": name},
+            timeout=60.0,
+        )
+        if r.status_code == 404:
+            raise HTTPException(status_code=404, detail=f"Model '{name}' not found")
+        r.raise_for_status()
+        return {"ok": True, "message": f"Unloaded '{name}' from the gateway."}
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Ollama request failed: {e}") from e
 
 
 @app.post("/api/llamacpp/switch")
@@ -350,7 +388,7 @@ async def set_active_model(req: PullRequest, request: Request):
     openclaw_model = model
     if OPENCLAW_CONFIG_PATH.exists():
         try:
-            cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+            cfg = await _read_json_async(OPENCLAW_CONFIG_PATH)
             model_cfg = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("model", {})
             model_cfg["primary"] = openclaw_model
             model_cfg.setdefault("fallbacks", [])
@@ -368,12 +406,12 @@ async def set_active_model(req: PullRequest, request: Request):
                         if k != "models":
                             gw[k] = v
                     gw["models"] = [active_entry]
-            OPENCLAW_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+            await _write_json_async(OPENCLAW_CONFIG_PATH, cfg)
             code4, _ = await _ops_request(
                 "POST", "/services/openclaw-gateway/restart", request=request, json={"confirm": True}
             )
             results["openclaw_restarting"] = code4 in (200, 201)
-        except Exception:
+        except (OSError, json.JSONDecodeError, _httpx.RequestError):
             results["openclaw_restarting"] = False
     else:
         results["openclaw_restarting"] = False
@@ -433,7 +471,7 @@ def _run_ollama_pull(model: str):
             if r.status_code >= 400:
                 try:
                     det = r.json().get("detail", r.text)
-                except Exception:
+                except (ValueError, UnicodeDecodeError):
                     det = r.text
                 with _state_lock:
                     _ollama_pull_status["output"] = f"Failed to start gguf-puller: {det}"
@@ -477,6 +515,8 @@ async def ollama_pull(req: PullRequest):
     with _state_lock:
         if _ollama_pull_status.get("running"):
             raise HTTPException(status_code=409, detail="Pull already in progress")
+        _ollama_pull_status["running"] = True
+        _ollama_pull_status["model"] = req.model
     thread = threading.Thread(target=_run_ollama_pull, args=(req.model,), daemon=True)
     thread.start()
     return {"status": "started", "model": req.model}
@@ -575,8 +615,8 @@ def _run_comfyui_pull(packs: str | None = None):
     )
     if use_manager:
         try:
-            urllib.request.urlopen(f"{COMFYUI_URL}/", timeout=5)
-        except Exception:
+            urllib.request.urlopen(f"{COMFYUI_URL}/", timeout=5)  # noqa: S310 — internal URL only
+        except (OSError, urllib.error.URLError):
             use_manager = False
 
     if not use_manager:
@@ -671,7 +711,8 @@ def _run_comfyui_pull(packs: str | None = None):
                 try:
                     r = client.get(f"{COMFYUI_URL}/manager/queue/status")
                     data = r.json()
-                except Exception:
+                except (json.JSONDecodeError, _httpx.RequestError, _httpx.HTTPStatusError) as e:
+                    logger.debug("ComfyUI queue poll failed: %s", e)
                     continue
 
                 items = data if isinstance(data, list) else data.get("queue", [])
@@ -754,7 +795,7 @@ async def comfyui_packs():
         default_quant = config.get("defaults", {}).get("quant", "Q4_K_M")
         try:
             installed = {(m["category"], m["name"]) for m in _scan_comfyui_models()}
-        except Exception:
+        except (OSError, KeyError):
             installed = set()
         packs = {}
         for name, pack in config.get("packs", {}).items():
@@ -780,6 +821,7 @@ async def comfyui_pull(packs: str | None = None):
     with _state_lock:
         if _comfyui_status.get("running"):
             raise HTTPException(status_code=409, detail="Pull already in progress")
+        _comfyui_status["running"] = True
     thread = threading.Thread(target=_run_comfyui_pull, args=(packs,))
     thread.daemon = True
     thread.start()
@@ -1044,7 +1086,7 @@ def _get_active_mcp_servers() -> list[str]:
     """Get enabled MCP servers from configuration file."""
     try:
         return _read_mcp_servers()
-    except Exception:
+    except OSError:
         return []
 
 
@@ -1082,14 +1124,14 @@ async def mcp_health():
     gateway_ok = False
     gateway_error = ""
     try:
-        async with AsyncClient(timeout=5.0) as client:
-            r = await client.get(
-                f"{MCP_GATEWAY_URL.rstrip('/')}/mcp",
-                headers={"X-Client-ID": "dashboard"},
-            )
-            gateway_ok = r.status_code < 500
-            if not gateway_ok:
-                gateway_error = f"HTTP {r.status_code}"
+        r = await _get_http_client().get(
+            f"{MCP_GATEWAY_URL.rstrip('/')}/mcp",
+            headers={"X-Client-ID": "dashboard"},
+            timeout=5.0,
+        )
+        gateway_ok = r.status_code < 500
+        if not gateway_ok:
+            gateway_error = f"HTTP {r.status_code}"
     except Exception as e:
         gateway_error = str(e)
 
@@ -1296,7 +1338,6 @@ async def throughput_record(req: ThroughputRecordRequest):
 async def throughput_service_usage():
     """Return recent service usage: which service used which model (from model gateway traffic)."""
     now = time.time()
-    # Last 24h, grouped by model -> services
     with _state_lock:
         usage_snapshot = list(_service_usage)
     recent = [u for u in usage_snapshot if (now - u["ts"]) < 86400]
@@ -1418,15 +1459,18 @@ async def performance_summary():
 @app.get("/api/ollama/ps")
 async def ollama_ps():
     """List models currently advertised by model-gateway."""
-    async with AsyncClient(timeout=10.0) as client:
-        try:
-            r = await client.get(f"{MODEL_GATEWAY_URL.rstrip('/')}/v1/models", headers=_model_gateway_headers())
-            r.raise_for_status()
-            data = r.json()
-            models = [{"name": m["id"]} for m in data.get("data", []) if m.get("id")]
-            return {"models": models}
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Model gateway request failed: {e}")
+    try:
+        r = await _get_http_client().get(
+            f"{MODEL_GATEWAY_URL.rstrip('/')}/v1/models",
+            headers=_model_gateway_headers(),
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        data = r.json()
+        models = [{"name": m["id"]} for m in data.get("data", []) if m.get("id")]
+        return {"models": models}
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Model gateway request failed: {e}")
 
 
 # Embedding models don't support chat completions — exclude from throughput benchmark
@@ -1449,37 +1493,37 @@ async def throughput_benchmark(req: ThroughputBenchmarkRequest):
         )
     prompt = "Say 'ok' and nothing else."
     url = f"{MODEL_GATEWAY_URL.rstrip('/')}/v1/chat/completions"
-    async with AsyncClient(timeout=60.0) as client:
-        try:
-            started = time.perf_counter()
-            r = await client.post(
-                url,
-                headers=_model_gateway_headers(),
-                json={
-                    "model": model,
-                    "messages": [{"role": "user", "content": prompt}],
-                    "max_tokens": 16,
-                    "stream": False,
-                },
-            )
-            elapsed_ms = (time.perf_counter() - started) * 1000
-            if r.status_code == 400:
-                try:
-                    err = r.json()
-                    error_obj = err.get("error", err)
-                    if isinstance(error_obj, dict):
-                        msg = error_obj.get("message") or error_obj.get("error") or r.text or "Bad request"
-                    else:
-                        msg = str(error_obj) or r.text or "Bad request"
-                except Exception:
-                    msg = r.text or "Bad request"
-                raise HTTPException(status_code=400, detail=f"Model gateway: {msg}")
-            r.raise_for_status()
-            data = r.json()
-        except HTTPException:
-            raise
-        except Exception as e:
-            raise HTTPException(status_code=502, detail=f"Model gateway request failed: {e}")
+    try:
+        started = time.perf_counter()
+        r = await _get_http_client().post(
+            url,
+            headers=_model_gateway_headers(),
+            json={
+                "model": model,
+                "messages": [{"role": "user", "content": prompt}],
+                "max_tokens": 16,
+                "stream": False,
+            },
+            timeout=60.0,
+        )
+        elapsed_ms = (time.perf_counter() - started) * 1000
+        if r.status_code == 400:
+            try:
+                err = r.json()
+                error_obj = err.get("error", err)
+                if isinstance(error_obj, dict):
+                    msg = error_obj.get("message") or error_obj.get("error") or r.text or "Bad request"
+                else:
+                    msg = str(error_obj) or r.text or "Bad request"
+            except (ValueError, UnicodeDecodeError, KeyError):
+                msg = r.text or "Bad request"
+            raise HTTPException(status_code=400, detail=f"Model gateway: {msg}")
+        r.raise_for_status()
+        data = r.json()
+    except HTTPException:
+        raise
+    except Exception as e:
+        raise HTTPException(status_code=502, detail=f"Model gateway request failed: {e}")
 
     usage = data.get("usage", {}) if isinstance(data, dict) else {}
     eval_count = int(usage.get("completion_tokens") or 0)
@@ -1541,13 +1585,12 @@ async def _ops_request(
         extra = {**extra, "X-Request-ID": request.headers["X-Request-ID"]}
     headers = {"Authorization": f"Bearer {OPS_CONTROLLER_TOKEN}", **extra}
     try:
-        async with AsyncClient(timeout=timeout) as client:
-            r = await client.request(method, url, headers=headers, **kwargs)
-            try:
-                data = r.json()
-            except Exception:
-                data = {"detail": r.text or "Unknown error"}
-            return r.status_code, data
+        r = await _get_http_client().request(method, url, headers=headers, timeout=timeout, **kwargs)
+        try:
+            data = r.json()
+        except (ValueError, UnicodeDecodeError):
+            data = {"detail": r.text or "Unknown error"}
+        return r.status_code, data
     except Exception as e:
         return 503, {"detail": str(e)}
 
@@ -1729,7 +1772,7 @@ async def get_openclaw_models():
     if not OPENCLAW_CONFIG_PATH.exists():
         return {"models": [], "count": 0, "config_found": False}
     try:
-        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = await _read_json_async(OPENCLAW_CONFIG_PATH)
         gw = cfg.get("models", {}).get("providers", {}).get("gateway", {})
         models = gw.get("models", [])
         return {"models": models, "count": len(models), "config_found": True}
@@ -1743,7 +1786,7 @@ async def get_openclaw_default_model():
     if not OPENCLAW_CONFIG_PATH.exists():
         return {"default_model": "", "config_found": False}
     try:
-        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = await _read_json_async(OPENCLAW_CONFIG_PATH)
         primary = (
             cfg.get("agents", {})
             .get("defaults", {})
@@ -1769,7 +1812,7 @@ async def set_openclaw_default_model(req: OpenClawDefaultModelRequest, request: 
         raise HTTPException(status_code=400, detail="Model cannot be empty")
 
     try:
-        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = await _read_json_async(OPENCLAW_CONFIG_PATH)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cannot read openclaw.json: {e}")
 
@@ -1781,7 +1824,7 @@ async def set_openclaw_default_model(req: OpenClawDefaultModelRequest, request: 
         model_cfg["fallbacks"] = []
 
     try:
-        OPENCLAW_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        await _write_json_async(OPENCLAW_CONFIG_PATH, cfg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cannot write openclaw.json: {e}")
 
@@ -1804,10 +1847,11 @@ async def sync_openclaw_models(request: Request):
 
     # Fetch live model list from model-gateway
     try:
-        async with AsyncClient(timeout=15.0) as client:
-            r = await client.get(f"{MODEL_GATEWAY_URL}/v1/models", headers=_model_gateway_headers())
-            r.raise_for_status()
-            raw = r.json()
+        r = await _get_http_client().get(
+            f"{MODEL_GATEWAY_URL}/v1/models", headers=_model_gateway_headers(), timeout=15.0
+        )
+        r.raise_for_status()
+        raw = r.json()
     except Exception as e:
         raise HTTPException(status_code=502, detail=f"Cannot reach model-gateway: {e}")
 
@@ -1817,7 +1861,7 @@ async def sync_openclaw_models(request: Request):
 
     # Read + patch openclaw.json
     try:
-        cfg = json.loads(OPENCLAW_CONFIG_PATH.read_text(encoding="utf-8"))
+        cfg = await _read_json_async(OPENCLAW_CONFIG_PATH)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cannot read openclaw.json: {e}")
 
@@ -1843,7 +1887,7 @@ async def sync_openclaw_models(request: Request):
             gw["models"] = new_models
 
     try:
-        OPENCLAW_CONFIG_PATH.write_text(json.dumps(cfg, indent=2), encoding="utf-8")
+        await _write_json_async(OPENCLAW_CONFIG_PATH, cfg)
     except Exception as e:
         raise HTTPException(status_code=500, detail=f"Cannot write openclaw.json: {e}")
 
@@ -1870,19 +1914,18 @@ RAG_COLLECTION = os.environ.get("RAG_COLLECTION", "documents")
 async def rag_status():
     """Qdrant health and document collection stats. No auth required."""
     try:
-        async with AsyncClient(timeout=5.0) as client:
-            r = await client.get(f"{QDRANT_URL}/collections/{RAG_COLLECTION}")
-            if r.status_code == 200:
-                info = r.json().get("result", {})
-                return {
-                    "ok": True,
-                    "collection": RAG_COLLECTION,
-                    "points_count": info.get("points_count", 0),
-                    "status": info.get("status", "unknown"),
-                }
-            if r.status_code == 404:
-                return {"ok": True, "collection": RAG_COLLECTION, "points_count": 0, "status": "empty"}
-            return {"ok": False, "error": f"HTTP {r.status_code}"}
+        r = await _get_http_client().get(f"{QDRANT_URL}/collections/{RAG_COLLECTION}", timeout=5.0)
+        if r.status_code == 200:
+            info = r.json().get("result", {})
+            return {
+                "ok": True,
+                "collection": RAG_COLLECTION,
+                "points_count": info.get("points_count", 0),
+                "status": info.get("status", "unknown"),
+            }
+        if r.status_code == 404:
+            return {"ok": True, "collection": RAG_COLLECTION, "points_count": 0, "status": "empty"}
+        return {"ok": False, "error": f"HTTP {r.status_code}"}
     except Exception as e:
         return {"ok": False, "error": str(e)}
 

@@ -26,7 +26,7 @@
       /* Text */
       --fg:       #dde2ee;
       --fg-muted: #848da4;
-      --muted:    #4d5468;
+      --muted:    #6e7694;
       /* Accent: electric cyan */
       --accent:        #00c9ff;
       --accent-soft:   #4dd8ff;
@@ -213,7 +213,7 @@
     }
     .btn-icon:hover { color: var(--accent); border-color: rgba(0,201,255,.3); background: var(--accent-dim); box-shadow: var(--glow-accent); }
     .btn-icon.btn-text { width: auto; padding: 0 var(--space-4); font-size: var(--text-sm); }
-    .btn-icon.loading { animation: spin 1s linear infinite; }
+    .btn-icon.loading { opacity: 0.5; pointer-events: none; }
     @keyframes spin { to { transform: rotate(360deg); } }
     /* ── Badges ── */
     .badge {
@@ -373,7 +373,11 @@
       margin-bottom: var(--space-2); letter-spacing: .02em;
       display: flex; align-items: center; gap: var(--space-2);
     }
-    .service-card .row { display: flex; align-items: center; gap: var(--space-2); min-width: 0; flex-wrap: wrap; }
+    .service-card .row {
+      display: flex; align-items: center; gap: var(--space-1); min-width: 0; flex-wrap: wrap;
+      margin-top: var(--space-2); padding-top: var(--space-2);
+      border-top: 1px solid var(--border-subtle);
+    }
     .service-card .row .service .label {
       overflow: hidden; text-overflow: ellipsis; white-space: nowrap; color: var(--fg); min-width: 4rem;
     }
@@ -1067,7 +1071,7 @@
           <a href="#services-section">⚡ Services</a>
           <a href="#dependencies-section">🔗 Dependencies</a>
           <a href="#rag-section">📚 RAG</a>
-          <a href="#throughput-section">📊 Throughput</a>
+          <a href="#throughput-section">📊 Telemetry</a>
           <a href="#models-section">📦 Models</a>
         </nav>
       </div>
@@ -1176,7 +1180,7 @@
 
     <section id="dependencies-section">
       <h2>Dependencies</h2>
-      <p class="section-desc">Canonical registry (M7): live HTTP probes from this dashboard. URLs use Docker DNS names as seen from the dashboard container; use <code>scripts/doctor</code> from the host for localhost ports.</p>
+      <p class="section-desc">Live health probes for core services. Checked from inside the Docker network.</p>
       <div class="deps-wrap" id="dependencies-wrap">
         <div class="skeleton skeleton-line" style="height:120px;width:100%;"></div>
       </div>
@@ -1440,12 +1444,27 @@
     }
 
     function showAuthModal() {
-      document.getElementById('auth-modal').style.display = 'flex';
+      const modal = document.getElementById('auth-modal');
+      modal.style.display = 'flex';
       document.getElementById('auth-token-input').focus();
+      modal.addEventListener('keydown', _modalKeyHandler);
     }
 
     function hideAuthModal() {
-      document.getElementById('auth-modal').style.display = 'none';
+      const modal = document.getElementById('auth-modal');
+      modal.style.display = 'none';
+      modal.removeEventListener('keydown', _modalKeyHandler);
+    }
+
+    function _modalKeyHandler(e) {
+      if (e.key === 'Escape') { hideAuthModal(); }
+      if (e.key === 'Tab') {
+        const focusable = document.getElementById('auth-modal').querySelectorAll('input, button');
+        if (focusable.length < 2) return;
+        const first = focusable[0], last = focusable[focusable.length - 1];
+        if (e.shiftKey && document.activeElement === first) { e.preventDefault(); last.focus(); }
+        else if (!e.shiftKey && document.activeElement === last) { e.preventDefault(); first.focus(); }
+      }
     }
 
     function submitAuth(e) {
@@ -1479,8 +1498,10 @@
       el.setAttribute('role', 'status');
       el.setAttribute('aria-live', 'polite');
       el.textContent = msg;
+      el.style.cursor = 'pointer';
+      el.addEventListener('click', () => el.remove());
       document.getElementById('toasts').appendChild(el);
-      setTimeout(() => el.remove(), 4000);
+      setTimeout(() => el.remove(), 5000);
     }
 
     function formatSize(bytes) {
@@ -1498,6 +1519,14 @@
       const div = document.createElement('div');
       div.textContent = s;
       return div.innerHTML;
+    }
+
+    function debounce(fn, ms) {
+      let timer;
+      return function (...args) {
+        clearTimeout(timer);
+        timer = setTimeout(() => fn.apply(this, args), ms);
+      };
     }
 
     function getPerfLevel(tps) {
@@ -1739,8 +1768,12 @@
               const r = await api('/api/ops/services/' + id + '/logs?tail=100');
               const d = await r.json();
               if (r.ok && d.logs) {
-                const win = window.open('', '_blank', 'width=800,height=600');
-                win.document.write('<pre style="font-family:monospace;white-space:pre-wrap;padding:1rem;font-size:12px;">' + escapeHtml(d.logs) + '</pre>');
+                const win = window.open('', '_blank', 'width=900,height=600');
+                win.document.write(`<!DOCTYPE html><html><head><title>${escapeHtml(id)} logs</title><style>
+                  body{margin:0;background:#020307;color:#dde2ee;font-family:'JetBrains Mono',monospace;font-size:12px}
+                  pre{padding:1.5rem;white-space:pre-wrap;word-break:break-all;line-height:1.6;margin:0}
+                  .bar{position:sticky;top:0;padding:8px 16px;background:#07080e;border-bottom:1px solid #1c1f2e;font-size:13px;font-weight:600;color:#00c9ff;letter-spacing:.04em}
+                </style></head><body><div class="bar">${escapeHtml(id)} — last 100 lines</div><pre>${escapeHtml(d.logs)}</pre></body></html>`);
                 win.document.close();
               } else {
                 toast((d.detail || 'No logs') + '', 'error');
@@ -1797,34 +1830,26 @@
         const head = `<thead><tr>
           <th scope="col">Name</th>
           <th scope="col">Category</th>
-          <th scope="col">OpenClaw</th>
           <th scope="col">Health</th>
-          <th scope="col">Ready</th>
+          <th scope="col">Latency</th>
           <th scope="col">Hint</th>
         </tr></thead>`;
         const body = entries.map((e) => {
           const name = escapeHtml(e.name || e.id || '—');
           const idAttr = escapeHtml(e.id || '');
           const cat = escapeHtml(e.category || '—');
-          const oc = e.openclaw_critical
-            ? '<span class="badge badge-warn" title="On critical path for OpenClaw">Yes</span>'
-            : '<span class="badge badge-muted">—</span>';
           const healthLine = e.ok
-            ? `<div class="deps-okline"><span class="status ok" aria-hidden="true"></span><span>OK</span> <span class="deps-mono" style="color:var(--muted);">${fmtDepLatency(e.latency_ms)}</span></div>`
+            ? `<div class="deps-okline"><span class="status ok" aria-hidden="true"></span><span>OK</span></div>`
             : `<div class="deps-okline"><span class="status fail" aria-hidden="true"></span><span class="deps-err">${escapeHtml(e.error || 'Unreachable')}</span></div>`;
-          let readyCell = '<span class="deps-mono" style="color:var(--muted);">—</span>';
-          if (e.ready_url) {
-            readyCell = e.ready_ok
-              ? `<div class="deps-okline"><span class="status ok" aria-hidden="true"></span><span>OK</span> <span class="deps-mono" style="color:var(--muted);">${fmtDepLatency(e.ready_latency_ms)}</span></div>`
-              : `<div class="deps-okline"><span class="status fail" aria-hidden="true"></span><span class="deps-err">${escapeHtml(e.ready_error || 'Not ready')}</span></div>`;
-          }
+          const latency = e.ok
+            ? `<span class="deps-mono" style="color:var(--muted);">${fmtDepLatency(e.latency_ms)}</span>`
+            : '<span class="deps-mono" style="color:var(--muted);">—</span>';
           const hint = e.hint ? `<span class="deps-hint">${escapeHtml(e.hint)}</span>` : '';
           return `<tr>
             <td><span class="deps-name" title="${idAttr}">${name}</span></td>
             <td class="deps-mono">${cat}</td>
-            <td>${oc}</td>
             <td>${healthLine}</td>
-            <td>${readyCell}</td>
+            <td>${latency}</td>
             <td>${hint || '—'}</td>
           </tr>`;
         }).join('');
@@ -2298,9 +2323,9 @@
       document.getElementById('ollama-library-search').value = '';
     });
 
-    document.getElementById('ollama-library-search').oninput = (e) => {
+    document.getElementById('ollama-library-search').oninput = debounce((e) => {
       buildOllamaDropdown(e.target.value);
-    };
+    }, 200);
 
     document.getElementById('ollama-library-search').onkeydown = (e) => {
       e.stopPropagation();
@@ -2771,7 +2796,7 @@
 
     async function refreshHardware() {
       try {
-        const d = await fetch('/api/hardware', { cache: 'no-store' }).then(r => r.json());
+        const d = await api('/api/hardware').then(r => r.json());
         const cpu = d.cpu_pct != null ? d.cpu_pct : 0;
         document.getElementById('hw-cpu').textContent = cpu.toFixed(0) + '%';
         setBar(document.getElementById('hw-cpu-bar'), cpu);
@@ -2892,7 +2917,7 @@
     async function refreshComputePressure() {
       try {
         await _fetchCpStats();
-        const r = await fetch('/api/hardware/gpu-processes');
+        const r = await api('/api/hardware/gpu-processes');
         if (!r.ok) return;
         const d = await r.json();
 
@@ -2973,7 +2998,11 @@
     }
 
     refreshComputePressure();
-    setInterval(refreshComputePressure, 3000);
+    let cpTimer = setInterval(refreshComputePressure, 3000);
+    document.addEventListener('visibilitychange', () => {
+      if (document.hidden) { clearInterval(cpTimer); }
+      else { refreshComputePressure(); cpTimer = setInterval(refreshComputePressure, 3000); }
+    });
     // ── End Compute Pressure ──────────────────────────────────
 
     (async function init() {
@@ -2985,9 +3014,27 @@
         loadOllamaLibrary().then(() => refresh());
         resumeActivePulls();
       }
-      setInterval(refresh, 15000);
+      // Visibility-aware polling — pause when tab is hidden to save CPU/network
+      const pollTimers = [];
+      function startPolling() {
+        pollTimers.push(setInterval(refresh, 15000));
+        pollTimers.push(setInterval(refreshHardware, 5000));
+      }
+      function stopPolling() {
+        pollTimers.forEach(clearInterval);
+        pollTimers.length = 0;
+      }
+      startPolling();
       refreshHardware();
-      setInterval(refreshHardware, 5000);
+      document.addEventListener('visibilitychange', () => {
+        if (document.hidden) {
+          stopPolling();
+        } else {
+          refresh();
+          refreshHardware();
+          startPolling();
+        }
+      });
     })();
   </script>
 </body>

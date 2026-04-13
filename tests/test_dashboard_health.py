@@ -1,4 +1,6 @@
 """Test dashboard /api/health endpoint."""
+from __future__ import annotations
+
 import os
 import sys
 
@@ -13,10 +15,16 @@ def client(monkeypatch):
     """Stub service probes — real checks hit Docker DNS hostnames and are slow/flaky without a running stack."""
     import dashboard.app as dashboard_app
 
-    async def _stub_check(url: str):
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def _stub_check(url: str, client=None):
         return (True, "")
 
     monkeypatch.setattr("dashboard.services_catalog._check_service", _stub_check)
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=MagicMock(status_code=200))
+    monkeypatch.setattr("dashboard.app._http_client", mock_client)
     return TestClient(dashboard_app.app)
 
 

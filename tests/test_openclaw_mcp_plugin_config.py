@@ -1,4 +1,5 @@
 """Tests for OpenClaw MCP bridge config sync helpers."""
+from __future__ import annotations
 
 import importlib.util
 import json

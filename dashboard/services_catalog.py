@@ -1,7 +1,7 @@
 """Service list for dashboard health/UI and ops ID mapping. Separated from app.py for maintainability."""
 from __future__ import annotations
 
-from httpx import AsyncClient
+import httpx as _httpx
 
 from dashboard.settings import (
     OPENCLAW_GATEWAY_INTERNAL_PORT as _OPENCLAW_GATEWAY_INTERNAL_PORT,
@@ -31,8 +31,8 @@ OPS_SERVICE_MAP = {
 SERVICES = [
     {"id": "llamacpp", "name": "llama.cpp", "port": 8080, "url": "http://localhost:8080", "check": "http://llamacpp:8080/health",
      "hint": "Backend-only; use model-gateway :11435 from host. Run: docker compose up -d llamacpp"},
-    {"id": "model-gateway", "name": "Model Gateway", "port": 11435, "url": "http://localhost:11435", "check": "http://model-gateway:11435/health",
-     "hint": "OpenAI-compatible proxy. Set OPENAI_API_BASE to use."},
+    {"id": "model-gateway", "name": "Model Gateway", "port": 11435, "url": "http://localhost:11435", "check": "http://model-gateway:11435/health/liveliness",
+     "hint": "OpenAI-compatible proxy (LiteLLM). Routes inference to llama.cpp."},
     {"id": "webui", "name": "Open WebUI", "port": 3000, "url": "http://localhost:3000", "check": "http://open-webui:8080",
      "hint": "Uses model-gateway for chat. Check: docker compose logs open-webui"},
     {"id": "mcp", "name": "MCP Gateway", "port": 8811, "url": "http://localhost:8811", "check": "http://mcp-gateway:8811/mcp",
@@ -54,13 +54,17 @@ SERVICES = [
 ]
 
 
-async def _check_service(url: str) -> tuple[bool, str]:
+async def _check_service(url: str, client: _httpx.AsyncClient | None = None) -> tuple[bool, str]:
     """Check if a service is reachable. Returns (ok, error_message)."""
     try:
-        async with AsyncClient(timeout=3.0) as client:
-            r = await client.get(url)
+        c = client or _httpx.AsyncClient(timeout=3.0)
+        try:
+            r = await c.get(url)
             return (r.status_code < 500, "")
-    except Exception as e:
+        finally:
+            if client is None:
+                await c.aclose()
+    except (_httpx.RequestError, OSError) as e:
         err = str(e).lower()
         if "connection refused" in err or "connection reset" in err:
             return (False, str(e))

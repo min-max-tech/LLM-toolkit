@@ -1,4 +1,5 @@
 """Workflow management for loading and processing ComfyUI workflows"""
+from __future__ import annotations
 
 import copy
 import json
@@ -47,7 +48,6 @@ PLACEHOLDER_DESCRIPTIONS = {
     "duration": "Video duration in seconds. Default: 5.",
     "fps": "Frames per second for video output. Default: 24.",
     "frames": "Number of video frames (must be divisible by 8+1 for LTX-2). Default: 121 (5s at 24fps).",
-    "scheduler": "Scheduler type for the sampler. Default: 'simple'.",
 }
 OPTIONAL_PARAM_DEFAULTS = {
     "width": 512,
@@ -63,7 +63,6 @@ OPTIONAL_PARAM_DEFAULTS = {
     "lyrics_strength": 0.99,
     "language": "en",
     "key": "C major",
-    "scheduler": "simple",
     "duration": 5,
     "fps": 24,
     "frames": 121,

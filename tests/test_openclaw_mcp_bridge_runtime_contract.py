@@ -1,4 +1,5 @@
 """Contract checks for the forked OpenClaw MCP bridge runtime."""
+from __future__ import annotations
 
 from pathlib import Path
 

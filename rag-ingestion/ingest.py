@@ -79,7 +79,7 @@ def _chunk(text: str, size: int, overlap: int) -> list[str]:
 def _file_key(path: Path) -> str:
     try:
         return str(path.resolve().relative_to(WATCH_DIR)).replace("\\", "/")
-    except Exception:
+    except (ValueError, OSError):
         return path.name
 
 
@@ -107,7 +107,7 @@ def _load_state() -> dict[str, str]:
         return {}
     try:
         return json.loads(STATE_PATH.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         return {}
 
 

@@ -35,7 +35,7 @@ def _ops_get(path: str, timeout: int = 60) -> dict:
         r = requests.get(url, headers=headers, timeout=timeout)
         try:
             data = r.json()
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             data = {"detail": r.text}
         if not isinstance(data, dict):
             data = {"detail": data}
@@ -66,7 +66,7 @@ def _ops_post(path: str, body: dict[str, Any], timeout: int = 600) -> dict:
         r = requests.post(url, json=body, headers=headers, timeout=timeout)
         try:
             data = r.json()
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             data = {"detail": r.text}
         if not isinstance(data, dict):
             data = {"detail": data}

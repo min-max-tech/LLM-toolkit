@@ -15,6 +15,8 @@ comfyui-logs.txt
 comfyui*.log
 openclaw*.log
 .pytest_cache
+pytest-cache-files-*
+tmp*
 __pycache__
 *.pyc
 
@@ -24,3 +26,4 @@ openclaw/OPENCLAW_SECURE.md
 
 # Local dev (personal notes, full troubleshooting)
 context/
+.claude/scheduled_tasks.lock

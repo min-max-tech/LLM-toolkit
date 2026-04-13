@@ -1152,8 +1152,7 @@ function register(api) {
                 ? `Legacy fallback for MCP server "${serverName}" (${serverConfig.url}). Prefer direct flat tools like ${prefix}__tool_name when available; use this only when a flat tool is unavailable or you must discover the raw MCP tool name first.`
                 : `Primary MCP tool for server "${serverName}" (${serverConfig.url}). Use this for ALL tool operations — file reads, search, Discord messages, and every other MCP function. No flat tools are pre-registered; this is the only interface. Pass \`tool\` = the raw MCP tool name (no "${prefix}__" prefix) and \`args\` = an object.`,
             parameters: Type.Object({
-                tool: Type.Optional(Type.String({ description: `The raw MCP tool name to call on this server (e.g. "duckduckgo_web_search"). Run ${prefix}__discover first if unsure of the exact name.` })),
-                toolName: Type.Optional(Type.String({ description: `Alias for tool. Accepted to recover from model formatting drift.` })),
+                tool: Type.String({ description: `The raw MCP tool name to call on this server (e.g. "duckduckgo_web_search"). Run ${prefix}__discover first if unsure of the exact name.` }),
                 name: Type.Optional(Type.String({ description: `Alias for tool. Accepted to recover from model formatting drift.` })),
                 namespacedTool: Type.Optional(Type.String({ description: `Alias for tool. Accepted to recover from model formatting drift.` })),
                 args: Type.Optional(Type.Union([

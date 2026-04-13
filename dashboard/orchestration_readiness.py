@@ -98,7 +98,7 @@ def _probe_mcp_tools(url: str, timeout: float = 5.0) -> tuple[bool, int, str | N
             if session_id:
                 try:
                     client.request("DELETE", url, headers={"Mcp-Session-Id": session_id})
-                except Exception:
+                except (httpx.RequestError, httpx.HTTPStatusError):
                     pass
 
             if count == 0:

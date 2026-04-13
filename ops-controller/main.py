@@ -2,14 +2,17 @@
 from __future__ import annotations
 
 import asyncio
+import ipaddress
 import json
 import logging
 import os
 import re
+import socket
 import subprocess
 import threading
 from datetime import UTC, datetime
 from pathlib import Path
+from urllib.parse import urlparse
 
 import docker
 import httpx
@@ -647,6 +650,33 @@ def _run_model_download(url: str, category: str, filename: str, correlation_id: 
             _dl_status["done"] = True
 
 
+_MODEL_DOWNLOAD_ALLOWED_HOSTS = {
+    "huggingface.co", "hf-mirror.com", "cdn-lfs.huggingface.co",
+    "cdn-lfs-us-1.huggingface.co", "cdn-lfs-eu-1.huggingface.co",
+    "civitai.com", "github.com", "objects.githubusercontent.com",
+}
+
+
+def _validate_download_url(url: str) -> None:
+    """Block SSRF: only allow HTTPS to known model-hosting domains, reject private IPs."""
+    parsed = urlparse(url)
+    host = (parsed.hostname or "").lower()
+    if not host:
+        raise ValueError("Cannot parse hostname from URL")
+    if host not in _MODEL_DOWNLOAD_ALLOWED_HOSTS:
+        raise ValueError(
+            f"Host {host!r} not in allowed list. "
+            f"Allowed: {', '.join(sorted(_MODEL_DOWNLOAD_ALLOWED_HOSTS))}"
+        )
+    try:
+        for info in socket.getaddrinfo(host, None, socket.AF_UNSPEC, socket.SOCK_STREAM):
+            addr = ipaddress.ip_address(info[4][0])
+            if addr.is_private or addr.is_reserved or addr.is_loopback or addr.is_link_local:
+                raise ValueError(f"Host {host!r} resolves to private/reserved IP {addr}")
+    except socket.gaierror as exc:
+        raise ValueError(f"Cannot resolve host {host!r}: {exc}") from exc
+
+
 class ModelDownloadRequest(BaseModel):
     url: str
     category: str = ""
@@ -659,6 +689,10 @@ async def models_download(body: ModelDownloadRequest, request: Request, _: None 
     url = body.url.strip()
     if not url.startswith("https://"):
         raise HTTPException(status_code=400, detail="URL must start with https://")
+    try:
+        _validate_download_url(url)
+    except ValueError as e:
+        raise HTTPException(status_code=400, detail=str(e)) from e
     with _dl_lock:
         if _dl_status.get("running"):
             raise HTTPException(status_code=409, detail="A download is already in progress")

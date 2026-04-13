@@ -1,4 +1,5 @@
 """Backward-compatibility shim. New code should import from orchestration_db directly."""
+from __future__ import annotations
 
 from dashboard.orchestration_db import (  # noqa: F401
     JobState,

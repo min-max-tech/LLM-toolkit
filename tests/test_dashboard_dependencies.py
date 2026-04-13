@@ -1,4 +1,6 @@
 """Tests for GET /api/dependencies (M7)."""
+from __future__ import annotations
+
 import os
 import sys
 
@@ -12,10 +14,16 @@ from fastapi.testclient import TestClient
 def client(monkeypatch):
     import dashboard.app as dashboard_app
 
-    async def _stub_check(url: str):
+    from unittest.mock import AsyncMock, MagicMock
+
+    async def _stub_check(url: str, client=None):
         return (True, "")
 
     monkeypatch.setattr("dashboard.services_catalog._check_service", _stub_check)
+
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=MagicMock(status_code=200))
+    monkeypatch.setattr("dashboard.app._http_client", mock_client)
 
     sample = {
         "version": 1,
@@ -32,8 +40,10 @@ def client(monkeypatch):
             }
         ],
     }
-    # Patch where used — routes_hub binds probe_all at import time
-    monkeypatch.setattr("dashboard.routes_hub.probe_all", lambda: sample)
+    # Patch where used — probe_all is now async
+    async def _stub_probe_all(client=None):
+        return sample
+    monkeypatch.setattr("dashboard.routes_hub.probe_all", _stub_probe_all)
     return TestClient(dashboard_app.app)
 
 

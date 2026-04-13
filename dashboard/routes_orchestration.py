@@ -103,13 +103,16 @@ async def readiness():
 async def list_workflows_endpoint():
     templates = [{"id": tid, "kind": "template"} for tid in list_template_ids()]
     files: list[dict[str, str]] = []
-    if WORKFLOWS_DIR.is_dir():
-        for p in sorted(WORKFLOWS_DIR.rglob("*.json")):
-            if p.name.endswith(".meta.json"):
-                continue
-            rel = p.relative_to(WORKFLOWS_DIR)
-            wid = str(rel.with_suffix("")).replace("\\", "/")
-            files.append({"id": wid, "kind": "file"})
+    try:
+        if WORKFLOWS_DIR.is_dir():
+            for p in sorted(WORKFLOWS_DIR.rglob("*.json")):
+                if p.name.endswith(".meta.json"):
+                    continue
+                rel = p.relative_to(WORKFLOWS_DIR)
+                wid = str(rel.with_suffix("")).replace("\\", "/")
+                files.append({"id": wid, "kind": "file"})
+    except OSError as e:
+        logger.warning("Could not read workflows dir: %s", e)
     return {"templates": templates, "workflow_files": files, "workflows_dir": str(WORKFLOWS_DIR)}
 
 
@@ -349,14 +352,17 @@ async def list_outputs():
     if not COMFYUI_OUTPUT_DIR.is_dir():
         return {"outputs": [], "output_dir": str(COMFYUI_OUTPUT_DIR)}
     files = []
-    for p in sorted(COMFYUI_OUTPUT_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
-        if p.is_file():
-            files.append({
-                "filename": p.name,
-                "size_bytes": p.stat().st_size,
-                "modified_at": p.stat().st_mtime,
-                "suffix": p.suffix,
-            })
+    try:
+        for p in sorted(COMFYUI_OUTPUT_DIR.iterdir(), key=lambda x: x.stat().st_mtime, reverse=True):
+            if p.is_file():
+                files.append({
+                    "filename": p.name,
+                    "size_bytes": p.stat().st_size,
+                    "modified_at": p.stat().st_mtime,
+                    "suffix": p.suffix,
+                })
+    except OSError as e:
+        logger.warning("Could not read output dir: %s", e)
     return {"outputs": files[:200], "output_dir": str(COMFYUI_OUTPUT_DIR)}
 
 

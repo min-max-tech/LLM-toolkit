@@ -5,7 +5,6 @@ from pathlib import Path
 
 from openclaw.scripts import add_mcp_plugin_config
 
-
 REPO_ROOT = Path(__file__).resolve().parents[1]
 OPENCLAW_CONFIG = REPO_ROOT / "data" / "openclaw" / "openclaw.json"
 WORKSPACE_AGENTS = REPO_ROOT / "data" / "openclaw" / "workspace" / "AGENTS.md"
@@ -18,7 +17,7 @@ def test_openclaw_bridge_runtime_contract_is_stable() -> None:
     assert providers[0]["contextWindow"] == 256000
 
     bridge = config["plugins"]["entries"]["openclaw-mcp-bridge"]["config"]
-    assert bridge["flatTools"] is False
+    assert bridge["flatTools"] is True
     assert bridge["injectSchemas"] is False
 
     local_tools = bridge["servers"]["local-tools"]
@@ -75,7 +74,7 @@ def test_openclaw_sync_script_preserves_selective_bridge_contract() -> None:
     assert hook_modified is True
 
     config = data["plugins"]["entries"]["openclaw-mcp-bridge"]["config"]
-    assert config["flatTools"] is False
+    assert config["flatTools"] is True
     assert config["injectSchemas"] is False
     assert config["servers"]["gateway"]["url"] == add_mcp_plugin_config._mcp_url
 

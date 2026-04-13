@@ -224,6 +224,12 @@ services:
       context: .
       dockerfile: worker/Dockerfile
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD", "test", "-f", "/tmp/worker.heartbeat"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       dashboard:
         condition: service_healthy
@@ -234,7 +240,7 @@ services:
       - COMFYUI_URL=http://comfyui:8188
       - COMFYUI_WORKFLOWS_DIR=/comfyui-workflows
       - COMFYUI_OUTPUT_DIR=/comfyui-output
-      - WORKER_POLL_INTERVAL_SEC=2
+      - WORKER_POLL_INTERVAL_SEC=${WORKER_POLL_INTERVAL_SEC:-0.5}
       - WORKER_CONCURRENCY=${WORKER_CONCURRENCY:-2}
       - WORKER_SCHEDULE_CHECK_SEC=30
       - WORKER_MAX_JOB_RETRIES=2
@@ -402,6 +408,12 @@ services:
     image: ordo-ai-stack-comfyui-mcp:latest
     pull_policy: build
     restart: unless-stopped
+    healthcheck:
+      test: ["CMD-SHELL", "python3 -c \"import socket; s=socket.create_connection(('127.0.0.1',9000),2); s.close()\""]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
     depends_on:
       comfyui:
         condition: service_healthy

@@ -65,9 +65,10 @@ def _db_path(data_dir: Path) -> Path:
 
 
 def _connect(data_dir: Path) -> sqlite3.Connection:
-    conn = sqlite3.connect(str(_db_path(data_dir)), timeout=10, check_same_thread=False)
+    conn = sqlite3.connect(str(_db_path(data_dir)), timeout=30, check_same_thread=False)
     conn.row_factory = sqlite3.Row
     conn.execute("PRAGMA journal_mode=WAL")
+    conn.execute("PRAGMA synchronous=NORMAL")
     conn.execute("PRAGMA foreign_keys=ON")
     return conn
 
@@ -129,6 +130,13 @@ CREATE TABLE IF NOT EXISTS schedules (
     next_run_at TEXT,
     created_at TEXT NOT NULL
 );
+
+-- Performance indexes for hot polling paths (worker + dashboard)
+CREATE INDEX IF NOT EXISTS idx_jobs_state_created ON jobs(state, created_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_pending ON publish_outbox(delivered_at, attempts, next_retry_at);
+CREATE INDEX IF NOT EXISTS idx_outbox_job_id ON publish_outbox(job_id);
+CREATE INDEX IF NOT EXISTS idx_schedules_due ON schedules(enabled, next_run_at);
+CREATE INDEX IF NOT EXISTS idx_wf_versions_lookup ON workflow_versions(workflow_id, version);
 """
 
 
@@ -146,7 +154,7 @@ def _migrate_json_store(data_dir: Path) -> None:
         return
     try:
         raw = json.loads(legacy.read_text(encoding="utf-8"))
-    except Exception:
+    except (json.JSONDecodeError, OSError):
         return
     with _connect(data_dir) as conn:
         count = conn.execute("SELECT COUNT(*) FROM jobs").fetchone()[0]
@@ -188,13 +196,13 @@ def _row_to_job(row: sqlite3.Row) -> OrchestrationJob:
     if row["outputs_json"]:
         try:
             outputs = json.loads(row["outputs_json"])
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             pass
     extra: dict = {}
     if row["extra_json"]:
         try:
             extra = json.loads(row["extra_json"])
-        except Exception:
+        except (json.JSONDecodeError, TypeError):
             pass
     return OrchestrationJob(
         job_id=row["job_id"],
@@ -505,7 +513,7 @@ def get_workflow_version(
     d = dict(row)
     try:
         d["compiled_json"] = json.loads(d["compiled_json"])
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         pass
     return d
 
@@ -532,7 +540,7 @@ def get_promoted_workflow(data_dir: Path, workflow_id: str) -> dict[str, Any] | 
     d = dict(row)
     try:
         d["compiled_json"] = json.loads(d["compiled_json"])
-    except Exception:
+    except (json.JSONDecodeError, TypeError):
         pass
     return d
 
@@ -579,7 +587,7 @@ def create_schedule(
     try:
         from croniter import croniter
         next_run = croniter(cron_expr).get_next(datetime).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-    except Exception:
+    except (ImportError, ValueError, KeyError):
         next_run = None
     with _connect(data_dir) as conn:
         conn.execute(
@@ -649,7 +657,7 @@ def tick_schedule(data_dir: Path, schedule_id: str, cron_expr: str) -> None:
     try:
         from croniter import croniter
         next_run = croniter(cron_expr).get_next(datetime).replace(tzinfo=UTC).isoformat().replace("+00:00", "Z")
-    except Exception:
+    except (ImportError, ValueError, KeyError):
         next_run = None
     with _connect(data_dir) as conn:
         conn.execute(

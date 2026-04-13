@@ -8,7 +8,7 @@ requires-python = ">=3.12"
 [tool.ruff]
 target-version = "py312"
 line-length = 120
-src = ["dashboard", "tests", "model-gateway", "ops-controller", "rag-ingestion", "scripts"]
+src = ["dashboard", "tests", "model-gateway", "ops-controller", "rag-ingestion", "scripts", "worker"]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP"]
@@ -20,3 +20,6 @@ ignore = ["E501"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["dashboard"]
+
+[tool.pytest.ini_options]
+tmp_path_retention_policy = "none"

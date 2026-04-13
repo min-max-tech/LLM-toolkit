@@ -7,9 +7,8 @@
       "name": "Model Gateway",
       "category": "inference",
       "openclaw_critical": true,
-      "check_url": "http://model-gateway:11435/health",
-      "ready_url": "http://model-gateway:11435/ready",
-      "hint": "OpenAI-compatible API. OpenClaw uses models.providers.gateway → this service."
+      "check_url": "http://model-gateway:11435/health/liveliness",
+      "hint": "OpenAI-compatible API proxy (LiteLLM). Routes inference from OpenClaw, Open WebUI, and n8n to llama.cpp."
     },
     {
       "id": "llamacpp",

@@ -15,16 +15,20 @@ router = APIRouter(prefix="/api", tags=["hub"])
 @router.get("/services")
 async def services():
     """Service links and live health status."""
-    results = []
-    for svc in SERVICES:
-        ok, err = await _check_service(svc["check"]) if svc.get("check") else (None, "")
-        results.append({
+    from dashboard.app import _get_http_client
+    client = _get_http_client()
+
+    async def _probe(svc: dict) -> dict:
+        ok, err = await _check_service(svc["check"], client) if svc.get("check") else (None, "")
+        return {
             **{k: v for k, v in svc.items() if k != "check"},
             "ok": ok,
             "error": err if not ok else None,
             "hint": svc.get("hint", ""),
-        })
-    return {"services": results}
+        }
+
+    results = await asyncio.gather(*[_probe(s) for s in SERVICES])
+    return {"services": list(results)}
 
 
 @router.get("/auth/config")
@@ -38,15 +42,20 @@ async def auth_config():
 @router.get("/health")
 async def health():
     """Aggregated platform health. Returns ok=true when all services are reachable."""
-    results = []
-    for svc in SERVICES:
-        ok, err = await _check_service(svc["check"]) if svc.get("check") else (None, "")
-        results.append({"id": svc["id"], "ok": ok, "error": err})
+    from dashboard.app import _get_http_client
+    client = _get_http_client()
+
+    async def _probe(svc: dict) -> dict:
+        ok, err = await _check_service(svc["check"], client) if svc.get("check") else (None, "")
+        return {"id": svc["id"], "ok": ok, "error": err}
+
+    results = await asyncio.gather(*[_probe(s) for s in SERVICES])
     all_ok = all(r["ok"] for r in results if r["ok"] is not None)
-    return {"ok": all_ok, "services": results}
+    return {"ok": all_ok, "services": list(results)}
 
 
 @router.get("/dependencies")
 async def dependencies():
     """Canonical dependency registry with live probes (M7). No auth required."""
-    return await asyncio.to_thread(probe_all)
+    from dashboard.app import _get_http_client
+    return await probe_all(_get_http_client())

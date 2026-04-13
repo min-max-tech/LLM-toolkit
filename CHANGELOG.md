@@ -6,11 +6,69 @@ All notable changes to this project are documented here. The format is loosely b
 
 ### Added
 
-- **Work summary note - OpenClaw / Primus remediation work:** [`docs/openclaw-primus-work-summary-2026-04-05.md`](docs/openclaw-primus-work-summary-2026-04-05.md) summarizes the recent local work across bridge hardening, flat-tool defaults, dynamic ComfyUI workflow guidance, compaction/runtime investigation, transcript-aware recovery, status/continue reply rules, and the remaining unresolved failure classes.
+- **Global exception handler:** Unhandled exceptions in API endpoints now return `{"detail": "Internal server error"}` instead of raw Python tracebacks with internal paths and variable values. Full traceback is logged server-side.
 
-- **Investigation note â€” Primus compaction/runtime failures:** [`docs/openclaw-primus-compaction-investigation-2026-04-05.md`](docs/openclaw-primus-compaction-investigation-2026-04-05.md) captures the recent Primus failure pattern with local evidence and external references: OpenClaw compaction/context docs, MCP tool-result sequencing requirements, analogous post-tool synthesis failures, contaminated compaction summaries, empty assistant replies, and the absence of new ComfyUI audio outputs.
+- **Test coverage expansion (session 2):** Added 10 new tests covering `/api/services`, `/api/ollama/library`, `/api/throughput/record` (3 cases), `/api/throughput/stats`, `/api/throughput/service-usage`, `/api/auth/config`, and global exception handler (total: 220 tests).
+
+- **GPU Compute Pressure dashboard section:** New `#compute-pressure` section shows per-service VRAM allocation (stacked bar), live process rows, and LLM throughput degradation score. Backend: `GET /api/hardware/gpu-processes` (pynvml + psutil with `pid: host`). Frontend: 3-second polling, color-coded service segments, degradation thresholds (≥85% nominal, 60–84% degraded, <60% starved).
+
+- **SSRF protection on model downloads:** `POST /models/download` now validates URLs against a domain allowlist (HuggingFace, Civitai, GitHub) and blocks private/reserved IP ranges. Prevents server-side request forgery via crafted model URLs.
+
+- **Worker graceful shutdown:** Worker process now handles SIGTERM/SIGINT, drains in-flight jobs (120s timeout), and exits cleanly. Prevents job corruption when Docker stops the container.
+
+- **Test coverage expansion:** Added 88 new tests across 7 test files: ops-controller auth enforcement (26 tests), dashboard auth middleware (18 tests), text sanitizers (16 tests), orchestration outbox/callback (10 tests), ComfyUI API client (9 tests), SSRF validation (5 tests), and model download URL blocking.
 
 ### Changed
+
+- **Parallel service and dependency probes:** `/api/services`, `/api/health`, and `/api/dependencies` now run all HTTP probes concurrently via `asyncio.gather()` instead of sequentially. Dependency probes converted from synchronous httpx to async. All probes reuse the shared connection-pooled HTTP client.
+
+- **Model Gateway health probe:** Changed from `/health` (returns 401, requires auth) to `/health/liveliness` (unauthenticated) in both `dependency_registry.json` and `services_catalog.py`. Removed stale `ready_url` (`/ready` returned 404). Updated description text.
+
+- **comfyui-mcp healthcheck:** Changed from HTTP GET to `/mcp` (returned 406 and terminated the MCP server) to a TCP socket check on port 9000.
+
+- **Pull endpoint race condition fix:** `/api/ollama/pull` and `/api/comfyui/pull` set `running=True` while holding `_state_lock` before spawning the background thread, closing a TOCTOU race where concurrent requests could bypass the "already running" guard.
+
+- **Orchestration endpoint error handling:** `/api/orchestration/workflows` and `/api/orchestration/outputs` wrapped in `try/except OSError` so filesystem failures return empty lists instead of 500 tracebacks.
+
+- **SQLite durability:** Orchestration DB now uses `PRAGMA synchronous=NORMAL` (was implicit default `FULL` on non-WAL, but `NORMAL` is recommended for WAL mode) and increased `busy_timeout` from 10s to 30s for better contention handling.
+
+- **Worker shutdown WAL checkpoint:** Worker now runs a final `checkpoint_wal()` after draining in-flight jobs during shutdown, ensuring all writes are flushed to the main DB file before exit.
+
+- **Dashboard WCAG AA contrast:** `--muted` color bumped from `#4d5468` (2.73:1 contrast ratio) to `#6e7694` (4.60:1) to pass WCAG AA minimum of 4.5:1 for normal text on dark backgrounds.
+
+- **Auth modal accessibility:** Added Escape key to close, focus trap cycling between input and button, and keyboard event handling.
+
+- **Dashboard UI polish:** Dependencies table simplified (removed empty Ready/OpenClaw columns, added Latency column). Logs viewer popup themed to match dashboard. Toasts now click-to-dismiss (5s auto). Nav link "Throughput" renamed to "Telemetry" to match section heading. Ops button loading state uses opacity fade instead of spinning.
+
+- **Frontend auth consistency:** `refreshHardware` and compute pressure used raw `fetch()` bypassing auth headers; switched to `api()` wrapper.
+
+- **Async I/O performance:** Moved all synchronous file reads/writes in async dashboard handlers to `asyncio.to_thread()` via `_read_json_async`/`_write_json_async` helpers. Prevents event-loop blocking during OpenClaw config operations.
+
+- **HTTP connection pooling:** Replaced 8 per-request `AsyncClient(timeout=...)` context managers with a persistent `httpx.AsyncClient` managed in the app lifespan. Eliminates TCP handshake overhead on every API call to model-gateway, ops-controller, Qdrant, and MCP gateway.
+
+- **Worker poll interval:** Reduced default `WORKER_POLL_INTERVAL_SEC` from 2s to 0.5s, cutting average job pickup latency by 75%.
+
+- **Frontend polling efficiency:** Added `visibilitychange`-aware polling — all `setInterval` timers (3s compute pressure, 5s hardware, 15s refresh) pause when the tab is hidden and resume on focus. Added `debounce(200ms)` to model search input.
+
+- **Exception handling tightened:** Replaced 17 bare `except Exception:` handlers across orchestration_db.py, rag-ingestion/ingest.py, comfyui-mcp, and orchestration-mcp with specific exception types (`json.JSONDecodeError`, `ValueError`, `OSError`, `ImportError`).
+
+- **AGENTS.md compliance:** Added missing `from __future__ import annotations` to 11 Python files (tests, comfyui-mcp).
+
+- **CI path filter:** Added `rag-ingestion/**` to orchestration-stack-e2E path-gated filter.
+
+- **Docker hardening:** Worker and orchestration-mcp Dockerfiles now run as non-root `appuser`. Worker Dockerfile upgraded from Python 3.11 to 3.12 for consistency.
+
+- **Exception handling:** Replaced bare `except Exception: pass/continue` patterns in ComfyUI queue polling (dashboard) and history polling (worker) with specific exception types and debug logging.
+
+- **Hygiene:** Added `pytest-cache-files-*` and `tmp*` to `.gitignore`. Configured `tmp_path_retention_policy = "none"` in pyproject.toml to prevent temp directory buildup.
+
+- **Docker health checks:** Added healthcheck directives for worker (heartbeat file) and comfyui-mcp (process liveness) in docker-compose.yml. Worker poll interval now configurable via `WORKER_POLL_INTERVAL_SEC` env var (default 0.5s).
+
+- **Config validation:** Dashboard port settings (`OPENCLAW_GATEWAY_PORT`, etc.) now validated at startup with warnings for invalid values and browser-blocked IRC port range (6666-6669).
+
+- **Work summary note - OpenClaw / Primus remediation work:** [`docs/openclaw-primus-work-summary-2026-04-05.md`](docs/openclaw-primus-work-summary-2026-04-05.md) summarizes the recent local work across bridge hardening, flat-tool defaults, dynamic ComfyUI workflow guidance, compaction/runtime investigation, transcript-aware recovery, status/continue reply rules, and the remaining unresolved failure classes.
+
+- **Investigation note — Primus compaction/runtime failures:** [`docs/openclaw-primus-compaction-investigation-2026-04-05.md`](docs/openclaw-primus-compaction-investigation-2026-04-05.md) captures the recent Primus failure pattern with local evidence and external references: OpenClaw compaction/context docs, MCP tool-result sequencing requirements, analogous post-tool synthesis failures, contaminated compaction summaries, empty assistant replies, and the absence of new ComfyUI audio outputs.
 
 - **OpenClaw / Primus remediation summary:** Recent local work now spans three coordinated areas: MCP bridge hardening for local models, a shift from built-in media templates toward dynamic ComfyUI workflow authoring, and runtime guidance/recovery changes aimed at post-tool and post-compaction stability. The new summary note documents the implemented scope and distinguishes the improved failure classes from the ones still unresolved.
 
@@ -30,21 +88,15 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **OpenClaw runtime bootstrap pressure:** Runtime workspace guidance was shortened so the most important OpenClaw rules are more likely to survive bootstrap truncation. This reduces one source of degraded resumed turns in local-model sessions, even though empty assistant completions and task-path drift are still being observed in later transcripts.
 
-### Changed
-
 - **Project identity:** Repository and stack renamed from **AI-toolkit** to **Ordo AI Stack** (technical slug **`ordo-ai-stack`**). Docker Compose **`name`**, image tags (**`ordo-ai-stack-*`**), explicit networks (**`ordo-ai-stack-frontend`** / **`ordo-ai-stack-backend`**), CLI entrypoints (**`./ordo-ai-stack`**, **`.\ordo-ai-stack.ps1`**, **`.\ordo-ai-stack.cmd`**), and **`ORDO_AI_STACK_ROOT`** ( **`scripts/validate_openclaw_config.py`** still accepts **`AI_TOOLKIT_ROOT`** ) are updated. **Rebuild** images after pull: `docker compose build` or full init (`ordo-ai-stack initialize`). Old **`ai-toolkit*`** images/networks can be removed once containers are recreated.
 
 - **ComfyUI (GPU):** **`COMFYUI_CLI_ARGS`** in **`.env`** drives **`CLI_ARGS`** (defaults: **`--normalvram`** for GPU **`overrides/compute.yml`**, **`--cpu`** for base compose). **`scripts/detect_hardware.py`** appends **`COMFYUI_CLI_ARGS=--disable-xformers --normalvram --enable-manager`** when missing on NVIDIA/AMD/Intel. Juno **`ltx-video`**: **ImageResizeKJv2** **`cpu` → `cuda`**. OOM: set **`--lowvram`** in **`COMFYUI_CLI_ARGS`** and **`docker compose restart comfyui`**.
 - **ComfyUI container RAM cap (GPU):** **`comfyui_memory_limit()`** in **`scripts/detect_hardware.py`** now targets **~42%** of host RAM (floor **32G**, cap **96G**) instead of **25%** / **48G** max — avoids Linux **OOM killer** (**`Killed`** in **`docker logs`** after **`Requested to load VideoVAE`**) on LTX workflows. Override with **`COMFYUI_MEMORY_LIMIT`** in **`.env`**.
 - **ComfyUI / LTX Gemma `cudaErrorInvalidValue`:** NVIDIA **`overrides/compute.yml`** — **`PYTORCH_CUDA_ALLOC_CONF`** is **`${PYTORCH_CUDA_ALLOC_CONF:-expandable_segments:True,pinned_use_cuda_host_register:True}`** so **`.env`** can set **`PYTORCH_CUDA_ALLOC_CONF=expandable_segments:True`** (omit pinned) when **`sd1_clip.py`** / **`lt.py`** fails on **`torch.cat(...).to(intermediate_device())`**. **TROUBLESHOOTING** documents **`--gpu-only`** as an alternative.
 
-### Fixed
-
 - **MCP gateway — ComfyUI missing from `tools/list`:** With **`--servers`** set, the gateway merges **catalog** files for MCP server definitions and does **not** apply **`--additional-registry`** (registry.yaml) for that purpose. **`gateway-wrapper.sh`** now passes **`registry-custom.docker.yaml`** as **`--additional-catalog`**. The fragment uses the catalog top-level key **`registry:`** (not **`servers:`**) and a proper **`comfyui`** entry (**`type`**, **`title`**, **`description`**, **`env`**). Tavily/DuckDuckGo overrides were removed from the custom file (online catalog + compose env).
 
 - **OpenClaw workspace paths:** Runtime workspace root is the mount root — role docs are **`agents/<name>.md`** (e.g. **`agents/docker-ops.md`**), not **`workspace/agents/…`**. **`TOOLS.md`**, **`AGENTS.md`**, **`docker-ops.md`**, **TROUBLESHOOTING**, and **`.example`** templates updated so agents stop **`read`**/`ENOENT` on **`/app/agents/`** — addresses chat where **all** **`gateway__comfyui__*`** tools were missing and **`gateway__call`** JSON for **`comfyui__pull_comfyui_models`** was documented.
-
-### Added
 
 - **MCP gateway — `MCP_GATEWAY_VERBOSE`:** **`mcp/gateway/gateway-wrapper.sh`** passes **`--verbose`** to **`docker/mcp-gateway`** when **`MCP_GATEWAY_VERBOSE=1`**. **`TROUBLESHOOTING.md`** documents **`mcp-gateway` listing only 30 tools** when ComfyUI MCP never spawns — root cause of **`gateway__comfyui__*` Tool not found** in OpenClaw.
 
@@ -58,13 +110,9 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **MCP Tavily (replaces Playwright):** **`registry-custom.yaml`** registers **`mcp/tavily`** with **`TAVILY_API_KEY`** injected from root **`.env`** (see **`gateway-wrapper.sh`**). Default **`servers.txt`** / **`MCP_GATEWAY_SERVERS`**: **`duckduckgo,n8n,tavily,comfyui`**. Removed **`mcp/playwright`** image build and **`playwright-mcp-image`** compose service.
 
-### Fixed
-
 - **Model Gateway:** `GET /v1/models` no longer lists each Ollama model twice (`name` and `ollama/name`). Only the canonical id is returned (same id the gateway forwards to Ollama), so Open WebUI / OpenClaw pickers do not show duplicate HF models.
 
 - **Model Gateway:** Stopped appending placeholder `claude-sonnet-*` model ids to `GET /v1/models` whenever `CLAUDE_CODE_LOCAL_MODEL` was set — they polluted Open WebUI / OpenClaw “active models.” Remapping in `/v1/messages` is unchanged. Opt back in with **`CLAUDE_CODE_ADVERTISE_ALIASES=1`** in `.env` if a client strictly validates the model list.
-
-### Added
 
 - **Docs — MCP hardening + OpenClaw operations:** [`mcp/docs/openclaw-hardening-and-operations.md`](mcp/docs/openclaw-hardening-and-operations.md) — defense-in-depth vs forked bridge; two-layer model (MCP gateway vs dashboard/ops-controller); ComfyUI workflows/models/nodes/monitoring; optional future “dashboard MCP adapter.”
 
@@ -87,13 +135,9 @@ All notable changes to this project are documented here. The format is loosely b
 - **OpenClaw channel secrets:** `merge_gateway_config.py` rewrites Discord and Telegram bot tokens to OpenClaw SecretRef form when `DISCORD_TOKEN` / `DISCORD_BOT_TOKEN` or `TELEGRAM_BOT_TOKEN` is set in `.env`, so tokens need not live as plaintext in `openclaw.json`. `openclaw-gateway` receives `TELEGRAM_BOT_TOKEN` from the environment.
 - **Housekeeping:** This changelog; PRD milestone updates for M6 (partial, non-auth) and resolved open questions where features already exist (CI, audit rotation, M7 spine).
 
-### Fixed
-
 - **OpenClaw gateway (official image):** Compose no longer passes **`gateway`** as the only command (Docker’s **`node`** entrypoint treated it as **`/app/gateway`** and crashed with **`MODULE_NOT_FOUND`**). **`openclaw-gateway`** and **`openclaw-plugin-install`** now run **`node /app/dist/index.js …`** like [upstream `docker-compose.yml`](https://github.com/openclaw/openclaw/blob/main/docker-compose.yml).
 
 - **openclaw-mcp-bridge (fork):** **`registerFlatMcpTools`** no longer marks registration “done” when **zero** MCP tools were discovered (e.g. **mcp-gateway** still starting). Retries on **`session_start`** up to **12** attempts, then logs and stops. Reduces **`Tool not found` for `gateway__comfyui__run_workflow`** when flat tools never registered.
-
-### Changed
 
 - **OpenClaw Docker image:** Default compose image is now the official **`ghcr.io/openclaw/openclaw:2026.3.23`** ([release](https://github.com/openclaw/openclaw/releases/tag/v2026.3.23), [package](https://github.com/openclaw/openclaw/pkgs/container/openclaw)) instead of **`ghcr.io/phioranex/openclaw-docker:latest`**. Override with **`OPENCLAW_IMAGE`** in `.env`.
 

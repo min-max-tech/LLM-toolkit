@@ -26,7 +26,7 @@ def _comfy_get(path: str, timeout: int = 30) -> dict:
         r = requests.get(url, timeout=timeout)
         try:
             data = r.json()
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             return {"ok": False, "error": f"Non-JSON response: {r.text[:500]}"}
         if r.status_code >= 400:
             if isinstance(data, dict):
@@ -49,7 +49,7 @@ def _comfy_post(path: str, body: dict[str, Any] | None = None, timeout: int = 30
         r = requests.post(url, json=body or {}, timeout=timeout)
         try:
             data = r.json()
-        except Exception:
+        except (ValueError, UnicodeDecodeError):
             if r.status_code < 400:
                 return {"ok": True, "detail": r.text[:500] if r.text else "success"}
             return {"ok": False, "error": r.text[:500]}

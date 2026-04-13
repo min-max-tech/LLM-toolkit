@@ -1,4 +1,6 @@
 """Contract tests for dashboard GET /api/rag/status."""
+from __future__ import annotations
+
 import os
 import sys
 
@@ -19,12 +21,10 @@ def client():
     mock_resp.json.return_value = {
         "result": {"points_count": 42, "status": "green"},
     }
-    mock_inner = AsyncMock()
-    mock_inner.get = AsyncMock(return_value=mock_resp)
-    mock_inner.__aenter__ = AsyncMock(return_value=mock_inner)
-    mock_inner.__aexit__ = AsyncMock(return_value=None)
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
 
-    with patch.object(dashboard_app, "AsyncClient", return_value=mock_inner):
+    with patch.object(dashboard_app, "_get_http_client", return_value=mock_client):
         yield TestClient(dashboard_app.app)
 
 
@@ -45,12 +45,10 @@ def test_rag_status_empty_collection_404():
 
     mock_resp = MagicMock()
     mock_resp.status_code = 404
-    mock_inner = AsyncMock()
-    mock_inner.get = AsyncMock(return_value=mock_resp)
-    mock_inner.__aenter__ = AsyncMock(return_value=mock_inner)
-    mock_inner.__aexit__ = AsyncMock(return_value=None)
+    mock_client = MagicMock()
+    mock_client.get = AsyncMock(return_value=mock_resp)
 
-    with patch.object(dashboard_app, "AsyncClient", return_value=mock_inner):
+    with patch.object(dashboard_app, "_get_http_client", return_value=mock_client):
         c = TestClient(dashboard_app.app)
         r = c.get("/api/rag/status")
     assert r.status_code == 200

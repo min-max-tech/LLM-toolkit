@@ -1,6 +1,8 @@
-FROM python:3.11-slim
+FROM python:3.12-slim
 
 WORKDIR /app
+
+RUN useradd -m -u 1000 appuser
 
 # Install worker + dashboard dependencies
 COPY dashboard/requirements.txt /tmp/dashboard-requirements.txt
@@ -11,4 +13,5 @@ RUN pip install --no-cache-dir -r /tmp/dashboard-requirements.txt -r /tmp/worker
 COPY dashboard/ /app/dashboard/
 COPY worker/worker.py /app/worker.py
 
+USER appuser
 CMD ["python", "/app/worker.py"]

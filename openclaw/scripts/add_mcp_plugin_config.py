@@ -39,7 +39,7 @@ MCP_PLUGIN_CONFIG = {
             },
         },
         "debug": False,
-        "flatTools": False,
+        "flatTools": True,
         "injectSchemas": False,
     },
 }
@@ -134,9 +134,9 @@ def normalize_mcp_bridge_servers(data: dict) -> bool:
                 local_tools[key] = copy.deepcopy(value)
                 modified = True
 
-    # Keep the bridge in selective mode: direct file reads through local-tools, everything else via gateway__call.
-    if cfg.get("flatTools") is not False:
-        cfg["flatTools"] = False
+    # Enable flat tools so direct tool names are registered alongside gateway__call.
+    if cfg.get("flatTools") is not True:
+        cfg["flatTools"] = True
         modified = True
     # Keep prompt context compact by discovering tools on demand instead of injecting full schemas.
     if cfg.get("injectSchemas") is not False:

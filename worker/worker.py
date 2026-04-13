@@ -10,6 +10,7 @@ import concurrent.futures
 import json
 import logging
 import os
+import signal
 import sys
 import time
 from pathlib import Path
@@ -30,13 +31,13 @@ from dashboard.orchestration_db import (
     get_job,
     get_pending_outbox,
     list_jobs,
+    load_store,
     mark_outbox_delivered,
     record_outbox_attempt,
     recover_stale_running_jobs,
     tick_schedule,
     update_job,
     vacuum_db,
-    load_store,
 )
 from dashboard.param_placeholders import apply_param_placeholders
 from dashboard.text_sanitizers import sanitize_workflow_id
@@ -53,13 +54,14 @@ logger = logging.getLogger("worker")
 DATA_DIR = Path(os.environ.get("DASHBOARD_DATA_PATH", "/data/dashboard")).resolve()
 COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
 WORKFLOWS_DIR = Path(os.environ.get("COMFYUI_WORKFLOWS_DIR", "/comfyui-workflows")).resolve()
-WORKER_POLL_SEC = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "2"))
+WORKER_POLL_SEC = float(os.environ.get("WORKER_POLL_INTERVAL_SEC", "0.5"))
 WORKER_CONCURRENCY = max(1, int(os.environ.get("WORKER_CONCURRENCY", "1")))
 SCHEDULE_CHECK_SEC = float(os.environ.get("WORKER_SCHEDULE_CHECK_SEC", "30"))
 WAL_CHECKPOINT_SEC = float(os.environ.get("WORKER_WAL_CHECKPOINT_SEC", "300"))
 VACUUM_SEC = float(os.environ.get("WORKER_VACUUM_SEC", "86400"))
 MAX_RETRIES = int(os.environ.get("WORKER_MAX_JOB_RETRIES", "2"))
 PUBLISH_MAX_ATTEMPTS = int(os.environ.get("WORKER_PUBLISH_MAX_ATTEMPTS", "5"))
+HEARTBEAT_PATH = Path("/tmp/worker.heartbeat")
 
 
 # ── ComfyUI HTTP (inline; no async needed in worker) ─────────────────────────
@@ -85,8 +87,8 @@ def _comfyui_wait_outputs(prompt_id: str, timeout: int = 600) -> dict[str, Any]:
             entry = history.get(prompt_id, {})
             if entry.get("outputs"):
                 return entry
-        except Exception:
-            pass
+        except (httpx.RequestError, httpx.HTTPStatusError, json.JSONDecodeError) as exc:
+            logger.debug("ComfyUI history poll for %s: %s", prompt_id, exc)
         time.sleep(3)
     raise TimeoutError(f"ComfyUI did not finish prompt {prompt_id} within {timeout}s")
 
@@ -238,7 +240,17 @@ def fire_due_schedules() -> None:
 
 # ── Main loop ─────────────────────────────────────────────────────────────────
 
+_shutdown_requested = False
+
+
+def _handle_shutdown(signum: int, _frame: Any) -> None:
+    global _shutdown_requested  # noqa: PLW0603
+    logger.info("Received signal %s — draining in-flight jobs before exit", signal.Signals(signum).name)
+    _shutdown_requested = True
+
+
 def main() -> None:
+    global _shutdown_requested  # noqa: PLW0603
     logger.info(
         "Worker starting. DATA_DIR=%s COMFYUI_URL=%s CONCURRENCY=%s",
         DATA_DIR,
@@ -246,6 +258,9 @@ def main() -> None:
         WORKER_CONCURRENCY,
     )
     load_store(DATA_DIR)
+
+    signal.signal(signal.SIGTERM, _handle_shutdown)
+    signal.signal(signal.SIGINT, _handle_shutdown)
 
     recovered = recover_stale_running_jobs(DATA_DIR)
     if recovered:
@@ -257,7 +272,7 @@ def main() -> None:
     with concurrent.futures.ThreadPoolExecutor(max_workers=WORKER_CONCURRENCY) as pool:
         inflight: dict[concurrent.futures.Future[None], str] = {}
 
-        while True:
+        while not _shutdown_requested:
             done = [future for future in inflight if future.done()]
             for future in done:
                 jid = inflight.pop(future, "")
@@ -296,7 +311,27 @@ def main() -> None:
                 pool.submit(vacuum_db, DATA_DIR)
                 last_vacuum = time.time()
 
+            HEARTBEAT_PATH.write_text(str(int(time.time())), encoding="utf-8")
             time.sleep(WORKER_POLL_SEC)
+
+        # Drain in-flight jobs before exiting
+        if inflight:
+            logger.info("Waiting for %d in-flight job(s) to finish...", len(inflight))
+            for future in concurrent.futures.as_completed(inflight, timeout=120):
+                jid = inflight.get(future, "")
+                try:
+                    future.result()
+                except Exception:
+                    logger.exception("Job %s failed during shutdown drain", jid)
+            logger.info("All in-flight jobs drained.")
+
+        # Final WAL checkpoint — ensure all writes are flushed to the main DB file
+        try:
+            checkpoint_wal(DATA_DIR)
+        except Exception as exc:
+            logger.error("Final WAL checkpoint failed: %s", exc)
+
+    logger.info("Worker shut down gracefully.")
 
 
 if __name__ == "__main__":
