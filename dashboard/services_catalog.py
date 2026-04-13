@@ -42,7 +42,7 @@ SERVICES = [
     {"id": "n8n", "name": "N8N", "port": 5678, "url": "http://localhost:5678", "check": "http://n8n:5678",
      "hint": "Check: docker compose logs n8n"},
     {"id": "openclaw", "name": "OpenClaw", "port": int(_OPENCLAW_GATEWAY_PORT),
-     "url": f"http://localhost:{_OPENCLAW_GATEWAY_PORT}/?token={_OPENCLAW_GATEWAY_TOKEN}" if _OPENCLAW_GATEWAY_TOKEN else f"http://localhost:{_OPENCLAW_GATEWAY_PORT}",
+     "url": f"http://localhost:{_OPENCLAW_GATEWAY_PORT}",
      "check": f"http://openclaw-gateway:{_OPENCLAW_GATEWAY_INTERNAL_PORT}/",
      "hint": (
          f"Control UI: port {_OPENCLAW_GATEWAY_PORT} with ?token=. "

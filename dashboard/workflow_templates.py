@@ -26,7 +26,12 @@ def list_template_ids() -> list[str]:
 
 
 def load_template(template_id: str) -> dict[str, Any]:
-    path = _templates_dir() / f"{template_id}.json"
+    root = _templates_dir()
+    path = (root / f"{template_id}.json").resolve()
+    try:
+        path.relative_to(root.resolve())
+    except ValueError as e:
+        raise ValueError(f"Invalid template_id: {template_id}") from e
     if not path.is_file():
         raise FileNotFoundError(f"Unknown template: {template_id}")
     return json.loads(path.read_text(encoding="utf-8"))

@@ -26,6 +26,10 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **ca-certificates preserved in ops-controller:** `apt-mark manual ca-certificates` prevents auto-removal when curl is purged, ensuring Python HTTPS calls work at runtime.
 
+- **Token leak in services catalog:** `OPENCLAW_GATEWAY_TOKEN` was embedded in the URL returned by the unauthenticated `/api/services` endpoint, leaking the auth token to any client. The token is now stripped from the public URL.
+
+- **Path traversal in workflow templates:** `load_template()` accepted template IDs containing `../`, allowing reads outside the templates directory. Now validates the resolved path stays within the templates root.
+
 ### Fixed
 
 - **`ttft_ms` always zero in service-usage:** `/api/throughput/service-usage` was building per-service dicts without `ttft_ms`, so the `last_ttft_ms` stat always reported `0.0`. Now correctly propagated from the raw samples.
@@ -45,6 +49,12 @@ All notable changes to this project are documented here. The format is loosely b
 - **Throughput state corruption on crash:** `_save_throughput_state()` wrote directly to `throughput.json`; a crash mid-write produced truncated JSON, losing all historical data on next load. Now uses atomic write-then-rename.
 
 - **Job state machine enforcement:** `update_job` now validates state transitions against a defined state machine, preventing invalid regressions (e.g. `published -> queued`). Invalid transitions are logged and silently ignored.
+
+- **Refresh button stuck in loading state:** `refresh()` did not clear the loading spinner on error; wrapped in try/finally so the button always recovers.
+
+- **loadComfyuiPacks crash on error response:** Missing `r.ok` check caused `.json()` to parse an error body and produce confusing UI. Now returns early on non-OK responses.
+
+- **loadMcpServers crash on error response:** Same missing `r.ok` guard; added early return on non-OK responses.
 
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 

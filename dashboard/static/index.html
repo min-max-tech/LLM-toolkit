@@ -1554,6 +1554,7 @@
     async function loadMcpServers() {
       try {
         const r = await api('/api/mcp/servers');
+        if (!r.ok) return;
         const d = await r.json();
         mcpEnabled = d.enabled || [];
         mcpCatalog = d.catalog || [];
@@ -2265,7 +2266,9 @@
     async function loadComfyuiPacks() {
       const el = document.getElementById('comfyui-packs');
       try {
-        const d = await api('/api/comfyui/packs').then(r => r.json());
+        const r = await api('/api/comfyui/packs');
+        if (!r.ok) return;
+        const d = await r.json();
         if (!d.ok || !Object.keys(d.packs || {}).length) {
           el.innerHTML = '<div class="empty" style="font-size:var(--text-sm);">No packs available.</div>';
           return;
@@ -2631,10 +2634,13 @@
     async function refresh() {
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
-      if (!ollamaLibrary.length) await loadOllamaLibrary();
-      await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers()]);
-      await Promise.all([loadThroughputStats(), loadThroughputServiceUsage(), loadPerfKPIs()]);
-      btn.classList.remove('loading');
+      try {
+        if (!ollamaLibrary.length) await loadOllamaLibrary();
+        await Promise.all([loadServices(), loadDependencies(), loadRagStatus(), loadOllamaModels(), loadComfyuiModels(), loadComfyuiPacks(), loadMcpServers()]);
+        await Promise.all([loadThroughputStats(), loadThroughputServiceUsage(), loadPerfKPIs()]);
+      } finally {
+        btn.classList.remove('loading');
+      }
     }
 
     document.getElementById('mcp-add-select')?.addEventListener('change', function() {
