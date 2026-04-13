@@ -84,6 +84,14 @@ All notable changes to this project are documented here. The format is loosely b
 
 - **Regression tests for security fixes:** Added tests for token leak prevention in `/api/services`, `PublishCallbackBody` invalid status rejection (422), and `load_template` path traversal prevention.
 
+- **ComfyUI pull output unbounded memory growth:** `_run_comfyui_pull_subprocess` appended every stdout line to a list and re-joined on each line, causing O(n²) memory for long-running pulls (up to 2 hours). Now caps output to the last 50 lines.
+
+- **Param placeholder double-underscore mismatch:** `_normalize_name` replaced each non-alnum char with `_` without collapsing, so `PARAM_INT_my--value` produced `my__value` which never matched user param `my_value`. Now collapses consecutive underscores.
+
+- **SSE multi-line data parsing crash:** `_probe_mcp_tools` only took the first `data:` line from SSE responses; multi-line payloads caused `json.JSONDecodeError`. Now concatenates all `data:` lines before parsing.
+
+- **Non-atomic .env write in ops-controller:** `env_set` endpoint wrote directly to `.env`; a crash mid-write would corrupt the file, breaking all service restarts. Now uses write-to-temp + `os.replace` for crash safety.
+
 - **Docker client leak in ops-controller:** `_docker_client()` created a new Docker SDK client (and HTTP connection pool) on every API call. Now caches a singleton, preventing file descriptor exhaustion under load.
 
 - **Worker cancellation during ComfyUI polling:** `_comfyui_wait_outputs` now checks job state each poll iteration, allowing cancellation to take effect within 3 seconds instead of waiting up to 600 seconds for the full timeout.

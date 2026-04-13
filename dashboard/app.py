@@ -635,9 +635,11 @@ def _run_comfyui_pull_subprocess(packs: str | None = None):
             text=True,
             cwd=str(SCRIPTS_DIR.parent),
         )
-        output_lines = []
+        output_lines: list[str] = []
         for line in proc.stdout:
             output_lines.append(line)
+            if len(output_lines) > 50:
+                output_lines = output_lines[-50:]
             with _state_lock:
                 _comfyui_status["output"] = "".join(output_lines)
         proc.wait(timeout=7200)

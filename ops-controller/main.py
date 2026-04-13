@@ -412,7 +412,9 @@ async def env_set(body: EnvSetBody, request: Request, _: None = Depends(verify_t
         content = re.sub(pattern, f"{body.key}={body.value}", content, flags=re.MULTILINE)
     else:
         content = content.rstrip("\n") + f"\n{body.key}={body.value}\n"
-    env_path.write_text(content, encoding="utf-8")
+    tmp_path = env_path.with_suffix(".tmp")
+    tmp_path.write_text(content, encoding="utf-8")
+    os.replace(str(tmp_path), str(env_path))
     _audit("env_set", body.key, "ok", f"len={len(body.value)}", correlation_id=_correlation_id(request))
     return {"ok": True, "key": body.key}
 

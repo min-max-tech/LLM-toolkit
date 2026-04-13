@@ -84,10 +84,12 @@ def _probe_mcp_tools(url: str, timeout: float = 5.0) -> tuple[bool, int, str | N
             # Parse SSE if the response is event-stream
             body_text = tools_r.text
             if body_text.startswith("event:") or body_text.startswith("data:"):
+                data_parts = []
                 for line in body_text.splitlines():
                     if line.startswith("data: "):
-                        body_text = line[6:]
-                        break
+                        data_parts.append(line[6:])
+                if data_parts:
+                    body_text = "\n".join(data_parts)
 
             import json as _json
             data = _json.loads(body_text)

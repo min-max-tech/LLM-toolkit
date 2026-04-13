@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import copy
 import random
+import re
 from typing import Any
 
 PLACEHOLDER_PREFIX = "PARAM_"
@@ -71,7 +72,7 @@ def _parse_placeholder(value: Any) -> tuple[str, type, str] | None:
 
 def _normalize_name(raw: str) -> str:
     cleaned = [(char.lower() if char.isalnum() else "_") for char in raw.strip()]
-    normalized = "".join(cleaned).strip("_")
+    normalized = re.sub(r"_+", "_", "".join(cleaned)).strip("_")
     return normalized or "param"
 
 
