@@ -60,7 +60,7 @@ The scripts update the config file and the gateway reloads automatically.
 
 | Server | Purpose |
 |--------|---------|
-| `duckduckgo` | **Web search** — **`duckduckgo__search`** / **`gateway__duckduckgo__search`**. |
+| `duckduckgo` | **Web search** — **`gateway__search`**. |
 | `n8n` | Workflow automation. Set `N8N_API_KEY` in `.env` for full access. |
 | `tavily` | **[Tavily](https://app.tavily.com)** — **`tavily_search`**, **`tavily_extract`**, **`tavily_crawl`**, **`tavily_map`**, **`tavily_research`**. Requires **`TAVILY_API_KEY`** in root **`.env`** (compose passes it into **`mcp-gateway`**; the catalog server **`mcp/tavily`** resolves secrets like upstream). Image: **`mcp/tavily`** ([catalog](https://hub.docker.com/mcp/server/tavily)). |
 | `comfyui` | Image/audio/video via ComfyUI (custom registry). **`list_workflows`**, **`run_workflow`**, per-workflow tools, **`install_custom_node_requirements`**, **`restart_comfyui`**. OpenClaw + n8n parity: [**mcp/docs/comfyui-openclaw.md**](docs/comfyui-openclaw.md). Registry template: **`mcp/gateway/registry-custom.yaml`**; entrypoint: **`mcp/gateway/gateway-wrapper.sh`**. |

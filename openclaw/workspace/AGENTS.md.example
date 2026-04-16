@@ -55,10 +55,10 @@ On a multi-step request, the first tool call of the turn MUST write `tasks/activ
 
 Use **one** MCP gateway URL (`servers.gateway`). Two calling patterns:
 
-1. **`gateway__call`** with `{"tool": "<server>__<toolname>", "args": {...}}`
-2. **Flat tools** like `gateway__duckduckgo__search` when already exposed
+1. **Flat tools** like `gateway__tavily_search`, `gateway__search` (preferred)
+2. **`gateway__call`** as fallback with `{"tool": "<toolname>", "args": {...}}`
 
-**Never** double-prefix: `gateway__gateway__...` is invalid. Inside `gateway__call`, the `tool` value has no `gateway__` prefix.
+**Never** double-prefix: `gateway__gateway__...` is invalid.
 
 ## Cron Jobs
 

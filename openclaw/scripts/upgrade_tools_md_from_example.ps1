@@ -23,7 +23,7 @@ if (-not (Test-Path $dest)) {
     $need = $true
 } else {
     $raw = Get-Content $dest -Raw -ErrorAction SilentlyContinue
-    if ($raw -notmatch 'gateway__duckduckgo__search') {
+    if ($raw -notmatch 'gateway__tavily_search') {
         $need = $true
     }
 }

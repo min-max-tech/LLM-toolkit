@@ -4,7 +4,7 @@
       "image": "mcp/duckduckgo",
       "scopes": ["search"],
       "allow_clients": ["*"],
-      "description": "Web search (DuckDuckGo) — gateway__duckduckgo__search"
+      "description": "Web search (DuckDuckGo) — gateway__search"
     },
     "n8n": {
       "image": "mcp/n8n",

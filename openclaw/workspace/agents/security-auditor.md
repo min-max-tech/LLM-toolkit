@@ -76,7 +76,7 @@ Security changes require explicit user approval. Present the fix as a diff or ex
 ## Tool allowlist for this role
 
 - `exec` — read-only (grep, cat, ls, git status, env)
-- `gateway__call` with: `fetch__fetch_content` (check CVE databases), `duckduckgo__search`
+- `gateway__fetch_content` (check CVE databases), `gateway__search`
 - Dashboard API: GET only
 
 **Do not** modify files, apply patches, or change configurations while in this role. Findings only.

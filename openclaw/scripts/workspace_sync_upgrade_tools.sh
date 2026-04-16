@@ -11,7 +11,7 @@ DEST="/workspace/TOOLS.md"
 need=0
 if [ ! -f "$DEST" ]; then
   need=1
-elif ! grep -q 'gateway__duckduckgo__search' "$DEST" 2>/dev/null; then
+elif ! grep -q 'gateway__tavily_search' "$DEST" 2>/dev/null; then
   need=1
 fi
 if [ "$need" -eq 1 ]; then

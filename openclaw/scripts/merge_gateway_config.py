@@ -712,7 +712,7 @@ def main() -> int:
         agents_defaults["bootstrapTotalMaxChars"] = OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS
         modified = True
 
-    # Native web_search (Brave, etc.): keep disabled — use MCP gateway__call + duckduckgo__search.
+    # Native web_search (Brave, etc.): keep disabled — use MCP gateway__tavily_search / gateway__search.
     # Opt-in: OPENCLAW_NATIVE_WEB_SEARCH=1 skips forcing false (configure provider + keys per OpenClaw docs).
     if os.environ.get("OPENCLAW_NATIVE_WEB_SEARCH", "").strip() != "1":
         tools = data.setdefault("tools", {})

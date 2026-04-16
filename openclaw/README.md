@@ -53,7 +53,7 @@ Use the token from `.env` when prompted.
 
 ### 5. Access the UI
 
-With the **main** `docker-compose.yml`, the web Control UI is on the **gateway** port (default **6680**). Open **`http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>`** (token from `.env`). In Settings → Model, choose a model from the **gateway** provider (e.g. `gateway/ollama/deepseek-r1:7b`) — this routes through the Model Gateway so dashboard monitoring shows performance. MCP tools (web search, etc.) from the gateway at `http://mcp-gateway:8811/mcp` are exposed via a **forked** **openclaw-mcp-bridge** (see [`extensions/openclaw-mcp-bridge/README-ORDO-AI-STACK.md`](extensions/openclaw-mcp-bridge/README-ORDO-AI-STACK.md)) — namespaced tools such as `gateway__duckduckgo__search` are registered as first-class OpenClaw tools, not only `gateway__call`. **Do not use :6682** for this UI — that port is the browser/CDP bridge only.
+With the **main** `docker-compose.yml`, the web Control UI is on the **gateway** port (default **6680**). Open **`http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>`** (token from `.env`). In Settings → Model, choose a model from the **gateway** provider (e.g. `gateway/ollama/deepseek-r1:7b`) — this routes through the Model Gateway so dashboard monitoring shows performance. MCP tools (web search, etc.) from the gateway at `http://mcp-gateway:8811/mcp` are exposed via a **forked** **openclaw-mcp-bridge** (see [`extensions/openclaw-mcp-bridge/README-ORDO-AI-STACK.md`](extensions/openclaw-mcp-bridge/README-ORDO-AI-STACK.md)) — flat tools such as `gateway__tavily_search` are registered as first-class OpenClaw tools, not only `gateway__call`. **Do not use :6682** for this UI — that port is the browser/CDP bridge only.
 
 If you use **`overrides/openclaw-secure.yml`**, the mapped gateway port is typically **18789** on localhost — see [OPENCLAW_SECURE.md.example](OPENCLAW_SECURE.md.example).
 
@@ -95,7 +95,7 @@ Sub-agents read **AGENTS.md** and **TOOLS.md**, not `SOUL.md` — put **non-nego
 
 ### Native `web_search` (Brave, etc.)
 
-The template **`openclaw.json.example`** sets **`tools.web.search.enabled: false`** so OpenClaw does not expose native **`web_search`**. Use the MCP gateway: **`gateway__call`** with **`duckduckgo__search`** for web search (see **`TOOLS.md`**). To opt into built-in search, see [OpenClaw web tools](https://docs.openclaw.ai/tools/web) and set **`enabled: true`** plus a provider API key.
+The template **`openclaw.json.example`** sets **`tools.web.search.enabled: false`** so OpenClaw does not expose native **`web_search`**. Use the MCP gateway: **`gateway__tavily_search`** / **`gateway__search`** for web search (see **`TOOLS.md`**). To opt into built-in search, see [OpenClaw web tools](https://docs.openclaw.ai/tools/web) and set **`enabled: true`** plus a provider API key.
 
 ## Discord (default channel)
 

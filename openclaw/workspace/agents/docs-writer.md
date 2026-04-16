@@ -66,6 +66,6 @@ Never include commands you haven't traced to source.
 
 - Read files (all workspace, source, existing docs)
 - `exec` — read-only (ls, cat, grep to verify commands)
-- `gateway__call` with: `fetch__fetch_content`, `duckduckgo__search` (for external references)
+- `gateway__fetch_content`, `gateway__search` (for external references)
 
 **Do not** apply code changes while in this role. Docs only.

@@ -1,9 +1,9 @@
 # TOOLS.md
 
-**MCP:** Use direct `local-tools__read_file` for workspace files when available. Use `gateway__call` for gateway-hosted MCP tools. Pass `tool` = raw MCP tool name (no `gateway__` prefix), `args` = object. Example: `gateway__call({"tool": "tavily_search", "args": {"query": "..."}})`.
+**MCP (primary):** `servers.gateway` → `http://mcp-gateway:8811/mcp`. Use flat `gateway__<toolname>` tools. `gateway__call` is available as fallback. Never use `gateway__gateway__...`.
 Use the runtime tool interface with structured arguments. Do not print literal tool-call text like `gateway__call({...})`, `call:gateway__call{...}`, or `<|tool_call|>...` in the assistant message.
 
-**Search:** `gateway__call({"tool": "tavily_search", ...})`. Fallback: `gateway__call({"tool": "duckduckgo_web_search", ...})`. Do not use native `web_search`.
+**Search:** Prefer `gateway__tavily_search`. Fallback: `gateway__search`. Do not use native `web_search`.
 
 **Session Startup:** Read workspace files before greeting. Required steps:
 ```
@@ -52,6 +52,6 @@ Compose workflows from scratch or use saved templates:
 | n8n | `http://n8n:5678` |
 | OpenClaw UI | `http://openclaw-gateway:6680` |
 
-**Discord:** `gateway__call({"tool": "message", "args": {"to": "channel:<id>", "message": "..."}})`.
+**Discord:** `gateway__message` with `to: "channel:<id>"`.
 
-**Model pulls:** `gateway__call({"tool": "pull_comfyui_models", ...})`. Runbook in `agents/stack-ops.md`.
+**Model pulls:** `gateway__pull_comfyui_models`. Runbook in `agents/stack-ops.md`.
