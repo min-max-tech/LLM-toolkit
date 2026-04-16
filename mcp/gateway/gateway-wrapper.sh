@@ -36,7 +36,8 @@ resolve_registry_custom() {
   if command -v sed >/dev/null 2>&1; then
     sed -e "s|PLACEHOLDER_OPS_CONTROLLER_TOKEN|${OPS_CONTROLLER_TOKEN:-}|g" \
         -e "s|PLACEHOLDER_TAVILY_API_KEY|${TAVILY_API_KEY:-}|g" \
-        -e "s|PLACEHOLDER_DASHBOARD_AUTH_TOKEN|${DASHBOARD_AUTH_TOKEN:-}|g" "$src" >"$dst"
+        -e "s|PLACEHOLDER_DASHBOARD_AUTH_TOKEN|${DASHBOARD_AUTH_TOKEN:-}|g" \
+        -e "s|PLACEHOLDER_COMFY_MCP_DEFAULT_MODEL|${COMFY_MCP_DEFAULT_MODEL:-flux1-schnell-fp8.safetensors}|g" "$src" >"$dst"
   else
     cp "$src" "$dst"
   fi

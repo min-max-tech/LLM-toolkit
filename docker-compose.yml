@@ -517,6 +517,7 @@ services:
       - N8N_API_KEY=${N8N_API_KEY:-}
       # ComfyUI MCP (custom registry) — passed to spawned comfyui container
       - COMFYUI_URL=http://comfyui:8188
+      - COMFY_MCP_DEFAULT_MODEL=${COMFY_MCP_DEFAULT_MODEL:-flux1-schnell-fp8.safetensors}
       - OPS_CONTROLLER_URL=http://ops-controller:9000
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
       # Injected into registry-custom.yaml for orchestration MCP (dashboard Bearer)
