@@ -67,8 +67,10 @@ def _env_positive_int(name: str, default: int) -> int:
 
 OPENCLAW_AGENT_TIMEOUT_SECONDS = _env_positive_int("OPENCLAW_AGENT_TIMEOUT_SECONDS", 3600)
 OPENCLAW_LLM_IDLE_TIMEOUT_SECONDS = _env_positive_int("OPENCLAW_LLM_IDLE_TIMEOUT_SECONDS", 900)
-OPENCLAW_BOOTSTRAP_MAX_CHARS = _env_positive_int("OPENCLAW_BOOTSTRAP_MAX_CHARS", 3000)
-OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS = _env_positive_int("OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS", 8000)
+# Bootstrap truncation: set high to avoid cutting AGENTS.md / TOOLS.md content.
+# Override via env vars if needed. OpenClaw may interpret 0 as "zero chars", not "unlimited".
+OPENCLAW_BOOTSTRAP_MAX_CHARS = _env_positive_int("OPENCLAW_BOOTSTRAP_MAX_CHARS", 50000)
+OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS = _env_positive_int("OPENCLAW_BOOTSTRAP_TOTAL_MAX_CHARS", 200000)
 if OPENCLAW_COMPACTION_MODE not in _ALLOWED_COMPACTION_MODES:
     OPENCLAW_COMPACTION_MODE = "safeguard"
 

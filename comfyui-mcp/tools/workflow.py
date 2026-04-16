@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import logging
 import os
+import re
 from typing import Any
 
 from mcp.server.fastmcp import FastMCP
@@ -20,6 +21,23 @@ logger = logging.getLogger("MCP_Server")
 _RESERVED_RUN_KEYS = frozenset(
     {"workflow_id", "overrides", "options", "return_inline_preview"}
 )
+
+
+def _sanitize_workflow_id(raw: str | None) -> str | None:
+    """Strip Gemma special-token artifacts and surrounding quotes from workflow IDs.
+
+    Handles the token-bleeding pattern where Gemma 4 leaks turn-separator tokens
+    (e.g. ``<|"|>``) into tool-call argument strings, producing values like
+    ``<|"|>mcp-api/generate_video<|"|>`` or simply ``"mcp-api/generate_video"``.
+    """
+    if not raw:
+        return None
+    # Replace <|X|> Gemma special tokens with the literal character X
+    cleaned = re.sub(r"<\|(.)\|>", r"\1", str(raw)).strip()
+    # Strip balanced surrounding quotes if present
+    if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ('"', "'", "`"):
+        cleaned = cleaned[1:-1].strip()
+    return cleaned or None
 
 
 def _merge_run_workflow_args(
@@ -36,11 +54,21 @@ def _merge_run_workflow_args(
             continue
         if v is not None:
             merged[k] = v
+    # Sanitize Gemma token-bleeding: strip <|X|> special tokens and balanced
+    # surrounding quotes from string override values before they reach ComfyUI.
+    for k, v in list(merged.items()):
+        if not isinstance(v, str):
+            continue
+        cleaned = re.sub(r"<\|(.)\|>", r"\1", v).strip()
+        if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ('"', "'", "`"):
+            cleaned = cleaned[1:-1].strip()
+        if cleaned != v:
+            merged[k] = cleaned
     if merged.get("style_prompt") is not None and merged.get("tags") is None:
         merged["tags"] = merged["style_prompt"]
     elif merged.get("tags") is not None and merged.get("style_prompt") is None:
         merged["style_prompt"] = merged["tags"]
-    wid = (workflow_id or "").strip() or None
+    wid = _sanitize_workflow_id(workflow_id)
     default_wf = os.environ.get("COMFY_MCP_DEFAULT_WORKFLOW_ID", "").strip() or None
     allow_default = os.environ.get("COMFY_MCP_ALLOW_DEFAULT_WORKFLOW_ID", "1").strip().lower() in (
         "1",

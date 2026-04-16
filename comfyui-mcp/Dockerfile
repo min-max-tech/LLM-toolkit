@@ -32,6 +32,10 @@ if "_bi.print" not in t:
     s.write_text(t)
 PY
 
+# Ordo AI Stack: remove upstream bundled workflows — agents compose their own via queue_prompt.
+# The upstream generate_image.json hardcodes v1-5-pruned-emaonly.ckpt which doesn't exist.
+RUN rm -f workflows/generate_image.json workflows/basic_api_test.json
+
 # Ordo AI Stack: accept flat run_workflow args + optional default workflow_id (see tools/workflow.py)
 COPY tools/workflow.py tools/workflow.py
 # Ordo AI Stack: catalog + overrides when workflow JSON uses literals (ComfyUI UI) instead of PARAM_ placeholders
