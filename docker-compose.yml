@@ -322,6 +322,7 @@ services:
     environment:
       - MODELS_DIR=/models
       - HF_TOKEN=${HF_TOKEN:-}
+      - CIVITAI_TOKEN=${CIVITAI_TOKEN:-}
       # Host: $env:COMFYUI_PACKS="flux1-dev-gguf" (PowerShell) — forwarded into the container
       - COMFYUI_PACKS=${COMFYUI_PACKS:-}
       - COMFYUI_QUANT=${COMFYUI_QUANT:-}
@@ -435,6 +436,7 @@ services:
       - COMFY_MCP_DEFAULT_WORKFLOW_ID=${COMFY_MCP_DEFAULT_WORKFLOW_ID:-mcp-api/generate_image}
       # Require explicit workflow_id for autonomous runs (no silent default) — set to 1 to allow legacy default.
       - COMFY_MCP_ALLOW_DEFAULT_WORKFLOW_ID=${COMFY_MCP_ALLOW_DEFAULT_WORKFLOW_ID:-0}
+      - COMFY_MCP_DEFAULT_MODEL=${COMFY_MCP_DEFAULT_MODEL:-flux1-schnell-fp8.safetensors}
       - OPS_CONTROLLER_URL=http://ops-controller:9000
       - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
     volumes:
