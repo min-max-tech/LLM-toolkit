@@ -377,7 +377,7 @@ _model_switch_lock = asyncio.Lock()
 
 @app.post("/api/active-model")
 async def set_active_model(req: PullRequest, request: Request):
-    """Unified: switch llamacpp model and keep Open WebUI + OpenClaw defaults in parity."""
+    """Switch the active llamacpp model. All consumers use the canonical 'local-chat' alias."""
     if _model_switch_lock.locked():
         raise HTTPException(status_code=409, detail="Model switch already in progress")
     async with _model_switch_lock:
@@ -397,7 +397,9 @@ async def _do_set_active_model(req: PullRequest, request: Request):
     results: dict = {}
     errors: list[str] = []
 
-    # 1. Switch LLAMACPP_MODEL + recreate llamacpp
+    # Switch LLAMACPP_MODEL + recreate llamacpp. Every consumer (OpenWebUI, OpenClaw,
+    # OpenClaude on remote devices) uses the canonical 'local-chat' alias from the
+    # model-gateway, so there's nothing else to update.
     code, data = await _ops_request(
         "POST", "/env/set", request=request,
         json={"key": "LLAMACPP_MODEL", "value": model, "confirm": True},
@@ -410,58 +412,6 @@ async def _do_set_active_model(req: PullRequest, request: Request):
     results["llamacpp_restarting"] = code2 in (200, 201, 202)
     if not results["llamacpp_restarting"]:
         errors.append("llamacpp recreate failed")
-
-    # 2. Update DEFAULT_MODEL + OPEN_WEBUI_DEFAULT_MODEL + recreate open-webui
-    open_webui_model = _open_webui_default_model(bare_name)
-    c_dm, _ = await _ops_request("POST", "/env/set", request=request,
-                       json={"key": "DEFAULT_MODEL", "value": bare_name, "confirm": True})
-    if c_dm not in (200, 201):
-        errors.append("DEFAULT_MODEL update failed")
-    c_owm, _ = await _ops_request("POST", "/env/set", request=request,
-                       json={"key": "OPEN_WEBUI_DEFAULT_MODEL", "value": open_webui_model, "confirm": True})
-    if c_owm not in (200, 201):
-        errors.append("OPEN_WEBUI_DEFAULT_MODEL update failed")
-    code3, _ = await _ops_request(
-        "POST", "/services/open-webui/recreate", request=request, json={"confirm": True}
-    )
-    results["open_webui_restarting"] = code3 in (200, 201, 202)
-    if not results["open_webui_restarting"]:
-        errors.append("open-webui recreate failed")
-
-    # 3. Update OpenClaw agents.defaults.model.primary + model list + restart openclaw-gateway
-    openclaw_model = model
-    if OPENCLAW_CONFIG_PATH.exists():
-        try:
-            cfg = await _read_json_async(OPENCLAW_CONFIG_PATH)
-            model_cfg = cfg.setdefault("agents", {}).setdefault("defaults", {}).setdefault("model", {})
-            model_cfg["primary"] = openclaw_model
-            model_cfg.setdefault("fallbacks", [])
-            # Keep gateway model list to only the active model — llamacpp is single-model
-            # Use bare_name (no .gguf) so the provider model ID matches agents.defaults.model.primary.
-            # Mismatch causes isolated cron sessions to abort immediately (model not found in provider list).
-            active_entry = _make_openclaw_model({"id": bare_name, "context_window": OPENCLAW_CONTEXT_WINDOW})
-            providers = cfg.setdefault("models", {}).setdefault("providers", {})
-            if "gateway" not in providers:
-                providers["gateway"] = {**_OPENCLAW_GATEWAY_BASE, "models": [active_entry]}
-            else:
-                gw = providers["gateway"]
-                if isinstance(gw, dict):
-                    for k, v in _OPENCLAW_GATEWAY_BASE.items():
-                        if k != "models":
-                            gw[k] = v
-                    gw["models"] = [active_entry]
-            await _write_json_async(OPENCLAW_CONFIG_PATH, cfg)
-            code4, _ = await _ops_request(
-                "POST", "/services/openclaw-gateway/restart", request=request, json={"confirm": True}
-            )
-            results["openclaw_restarting"] = code4 in (200, 201)
-            if not results["openclaw_restarting"]:
-                errors.append("openclaw-gateway restart failed")
-        except (OSError, json.JSONDecodeError, _httpx.RequestError) as exc:
-            results["openclaw_restarting"] = False
-            errors.append(f"openclaw config update failed: {exc}")
-    else:
-        results["openclaw_restarting"] = False
 
     all_ok = len(errors) == 0
     if errors:
