@@ -148,6 +148,7 @@ async def auth_middleware(request: Request, call_next):
         "/api/throughput/service-usage",
         "/api/rag/status",
         "/api/orchestration/readiness",
+        "/api/openclaude/preview",
     ):
         return await call_next(request)
     # /api/throughput/record: requires THROUGHPUT_RECORD_TOKEN when set (model-gateway internal; PRD §3.E)
