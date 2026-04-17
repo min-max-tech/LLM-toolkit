@@ -209,6 +209,23 @@ def _mem_from_stats(stats: dict) -> tuple[float, float]:
         return (0.0, 0.0)
 
 
+def _container_host_pids(container) -> list[int]:
+    """Host-visible PIDs for a running container via `docker top`. Returns [] on any failure."""
+    try:
+        info = container.top(ps_args="-eo pid,comm")
+    except Exception:
+        return []
+    procs = (info or {}).get("Processes") or []
+    pids: list[int] = []
+    for row in procs:
+        if not row:
+            continue
+        raw = str(row[0]).strip()
+        if raw.isdigit():
+            pids.append(int(raw))
+    return pids
+
+
 @app.get("/health")
 async def health():
     """Controller health. No auth required. Verifies Docker daemon reachable."""

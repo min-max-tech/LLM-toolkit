@@ -64,3 +64,36 @@ def test_mem_from_stats_cgroup_v1_fallback_to_cache():
 def test_mem_from_stats_empty():
     assert oc._mem_from_stats({}) == (0.0, 0.0)
     assert oc._mem_from_stats({"memory_stats": {}}) == (0.0, 0.0)
+
+
+def test_container_host_pids_parses_docker_top():
+    c = MagicMock()
+    c.top.return_value = {
+        "Titles": ["PID", "COMMAND"],
+        "Processes": [["1234", "python3"], ["5678", "llama-server"]],
+    }
+    assert oc._container_host_pids(c) == [1234, 5678]
+
+
+def test_container_host_pids_handles_empty_or_missing():
+    c = MagicMock()
+    c.top.return_value = {"Titles": ["PID", "COMMAND"], "Processes": None}
+    assert oc._container_host_pids(c) == []
+    c2 = MagicMock()
+    c2.top.return_value = {}
+    assert oc._container_host_pids(c2) == []
+
+
+def test_container_host_pids_swallows_exceptions():
+    c = MagicMock()
+    c.top.side_effect = RuntimeError("container not running")
+    assert oc._container_host_pids(c) == []
+
+
+def test_container_host_pids_skips_non_numeric_rows():
+    c = MagicMock()
+    c.top.return_value = {
+        "Titles": ["PID", "COMMAND"],
+        "Processes": [["1234", "python3"], ["bad", "x"], [], ["9999", "comfyui"]],
+    }
+    assert oc._container_host_pids(c) == [1234, 9999]
