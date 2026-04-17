@@ -1,0 +1,181 @@
+{
+  "update": {
+    "checkOnStart": false,
+    "auto": {
+      "enabled": false
+    }
+  },
+  "models": {
+    "providers": {
+      "gateway": {
+        "baseUrl": "http://model-gateway:11435/v1",
+        "apiKey": "local",
+        "api": "openai-responses",
+        "headers": {
+          "X-Service-Name": "openclaw"
+        },
+        "models": [
+          {
+            "id": "local-chat",
+            "name": "Local Chat (gateway alias)",
+            "reasoning": true,
+            "input": ["text"],
+            "cost": {"input": 0, "output": 0, "cacheRead": 0, "cacheWrite": 0},
+            "contextWindow": 65536,
+            "maxTokens": 8192
+          }
+        ]
+      }
+    }
+  },
+  "agents": {
+    "defaults": {
+      "compaction": {
+        "mode": "safeguard"
+      },
+      "elevatedDefault": "full",
+      "model": {
+        "primary": "gateway/local-chat",
+        "fallbacks": []
+      },
+      "timeoutSeconds": 3600,
+      "llm": {
+        "idleTimeoutSeconds": 3600
+      },
+      "bootstrapMaxChars": 50000,
+      "bootstrapTotalMaxChars": 200000
+    }
+  },
+  "tools": {
+    "deny": [
+      "browser"
+    ],
+    "web": {
+      "search": {
+        "enabled": false
+      }
+    },
+    "elevated": {
+      "enabled": true,
+      "allowFrom": {
+        "webchat": [
+          "*"
+        ],
+        "discord": [
+          "*"
+        ]
+      }
+    },
+    "exec": {
+      "host": "gateway",
+      "security": "full",
+      "ask": "off",
+      "timeoutSec": 30000
+    }
+  },
+  "commands": {
+    "native": "auto",
+    "nativeSkills": "auto",
+    "restart": true,
+    "ownerDisplay": "raw"
+  },
+  "hooks": {
+    "internal": {
+      "entries": {
+        "session-memory": {
+          "enabled": true,
+          "llmSlug": false
+        }
+      }
+    }
+  },
+  "channels": {
+    "discord": {
+      "enabled": true,
+      "token": {
+        "source": "env",
+        "provider": "default",
+        "id": "DISCORD_TOKEN"
+      },
+      "groupPolicy": "allowlist",
+      "guilds": {
+        "1482849024301076753": {
+          "requireMention": false
+        }
+      },
+      "streaming": "off",
+      "allowFrom": [
+        "233102015725699072"
+      ]
+    }
+  },
+  "gateway": {
+    "mode": "local",
+    "bind": "lan",
+    "controlUi": {
+      "allowedOrigins": [
+        "http://127.0.0.1:6680",
+        "http://127.0.0.1:6682",
+        "http://192.0.2.1:6680",
+        "http://192.0.2.1:6682",
+        "http://localhost:6680",
+        "http://localhost:6682"
+      ],
+      "dangerouslyAllowHostHeaderOriginFallback": true,
+      "dangerouslyDisableDeviceAuth": true
+    },
+    "auth": {
+      "mode": "token",
+      "token": "b65a877eae0b5e3cef0c913a266a7115aac1278ef5008e7a"
+    }
+  },
+  "plugins": {
+    "enabled": true,
+    "allow": [
+      "openclaw-mcp-bridge"
+    ],
+    "entries": {
+      "openclaw-mcp-bridge": {
+        "enabled": true,
+        "config": {
+          "servers": {
+            "gateway": {
+              "url": "http://mcp-gateway:8811/mcp",
+              "connectTimeoutMs": 10000,
+              "requestTimeoutMs": 900000
+            },
+            "blog": {
+              "url": "http://host.docker.internal:3500/mcp",
+              "apiKey": "dg90mFMX7YarWbG245CnOweiIVTR6xcl",
+              "connectTimeoutMs": 10000,
+              "requestTimeoutMs": 120000
+            },
+            "local-tools": {
+              "url": "stdio://local",
+              "transport": "stdio",
+              "command": "npx",
+              "args": [
+                "-y",
+                "@modelcontextprotocol/server-filesystem",
+                "/home/node/.openclaw/workspace"
+              ],
+              "toolPrefix": "local-tools",
+              "flatToolAllowlist": [
+                "read_file"
+              ],
+              "connectTimeoutMs": 10000,
+              "requestTimeoutMs": 30000
+            }
+          },
+          "debug": false,
+          "flatTools": true,
+          "injectSchemas": false
+        }
+      }
+    }
+  },
+  "meta": {
+    "lastTouchedVersion": "2026.4.1",
+    "lastTouchedAt": "2026-04-05T01:31:30.931Z"
+  }
+}
