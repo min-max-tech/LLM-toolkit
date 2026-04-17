@@ -193,6 +193,22 @@ def _cpu_pct_from_stats(stats: dict) -> float:
         return 0.0
 
 
+def _mem_from_stats(stats: dict) -> tuple[float, float]:
+    """Return (mem_gb, mem_pct). Subtracts inactive_file (cgroup v2) or cache (v1) like `docker stats`."""
+    try:
+        ms = stats["memory_stats"]
+        usage = int(ms.get("usage") or 0)
+        inner = ms.get("stats") or {}
+        sub = int(inner.get("inactive_file") or inner.get("cache") or 0)
+        used = max(0, usage - sub)
+        limit = int(ms.get("limit") or 0)
+        if limit <= 0:
+            return (round(used / 1e9, 2), 0.0)
+        return (round(used / 1e9, 2), round(used / limit * 100.0, 1))
+    except (KeyError, TypeError, ValueError):
+        return (0.0, 0.0)
+
+
 @app.get("/health")
 async def health():
     """Controller health. No auth required. Verifies Docker daemon reachable."""
