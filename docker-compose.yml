@@ -191,18 +191,8 @@ services:
       - THROUGHPUT_RECORD_TOKEN=${THROUGHPUT_RECORD_TOKEN:-}
       - HF_TOKEN=${HF_TOKEN:-}
       - COMFYUI_URL=http://comfyui:8188
-      # OpenClaw model management: dashboard reads/writes openclaw.json to sync models
       - MODEL_GATEWAY_URL=http://model-gateway:11435
-      # OpenClaw contextWindow in synced models. Default matches llama.cpp --ctx-size; override only if
-      # you intentionally want OpenClaw to compact earlier than the server hard cap.
       - LLAMACPP_CTX_SIZE=${LLAMACPP_CTX_SIZE:-262144}
-      - OPENCLAW_CONTEXT_WINDOW=${OPENCLAW_CONTEXT_WINDOW:-${LLAMACPP_CTX_SIZE:-262144}}
-      - OPENCLAW_CONFIG_PATH=/openclaw-config/openclaw.json
-      - OPENCLAW_GATEWAY_TOKEN=${OPENCLAW_GATEWAY_TOKEN:-}
-      - OPENCLAW_GATEWAY_PORT=${OPENCLAW_GATEWAY_PORT:-6680}
-      # Must match container listen port (see openclaw-gateway ports … :6680); not the host-mapped port.
-      - OPENCLAW_GATEWAY_INTERNAL_PORT=${OPENCLAW_GATEWAY_INTERNAL_PORT:-6680}
-      - OPENCLAW_UI_PORT=${OPENCLAW_UI_PORT:-6682}
       - DASHBOARD_DATA_PATH=/data/dashboard
       # n8n webhook for publish_enqueue (or pass per-request); n8n owns retries/OAuth
       - N8N_PUBLISH_WEBHOOK_URL=${N8N_PUBLISH_WEBHOOK_URL:-}
@@ -213,7 +203,6 @@ services:
       - ${BASE_PATH:-.}/scripts:/scripts:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/dashboard:/data/dashboard
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
-      - ${OPENCLAW_CONFIG_DIR:-${BASE_PATH:-.}/data/openclaw}:/openclaw-config
       - ${BASE_PATH:-.}/data/comfyui-storage/ComfyUI/user/default/workflows:/comfyui-workflows:ro
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/comfyui-output:/comfyui-output:ro
     networks:
@@ -413,7 +402,6 @@ services:
     restart: "no"
     command: ["true"]
 
-  # Long-running ComfyUI MCP (same image as gateway-spawned). OpenClaw uses **mcp-gateway:8811** only — see TOOLS.md.
   comfyui-mcp:
     image: ordo-ai-stack-comfyui-mcp:latest
     pull_policy: build
