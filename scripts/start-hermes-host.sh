@@ -65,6 +65,8 @@ export HERMES_HOME="${HERMES_HOME:-$REPO_ROOT/data/hermes}"
 mkdir -p "$HERMES_HOME"
 export OPENAI_API_BASE="http://localhost:${MODEL_GATEWAY_PORT:-11435}/v1"
 export OPENAI_API_KEY="${LITELLM_MASTER_KEY:-local}"
+# Hermes prints UTF-8 checkmarks (\u2713) in `config set`; Windows cp1252 console can't encode them.
+export PYTHONIOENCODING="${PYTHONIOENCODING:-utf-8}"
 
 # ── Phase 8: Persist Hermes endpoint config ──
 # Config keys discovered from vendor/hermes-agent/hermes_cli/config.py:
