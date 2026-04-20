@@ -1,0 +1,9 @@
+# Only Dockerfile + entrypoint.sh are needed in the build context.
+# Exclude everything else (markdown, editor files, etc.).
+*.md
+.git
+.gitignore
+__pycache__
+*.pyc
+*.swp
+*.bak

@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format is loosely b
 
 ## [Unreleased]
 
+### Changed
+- Hermes Agent migrated from host-mode install to Docker compose services (`hermes-gateway` + `hermes-dashboard`). One `docker compose up -d` now brings the whole stack online atomically. Auto-restart, `depends_on: service_healthy` coordination, internal-DNS health probe from the Ordo dashboard (`http://hermes-dashboard:9119/`). Deletes `scripts/start-hermes-host.sh` and the global `hermes` wrapper at `~/.local/bin/`. Operator runtime state at `data/hermes/` is preserved — Docker-network endpoints are re-seeded on each container start by the entrypoint.
+
 ### Removed
 - OpenClaw assistant-agent layer — all services (`openclaw-gateway`, `openclaw-ui-proxy`, `openclaw-workspace-sync`, `openclaw-config-sync`, `openclaw-plugin-install`, `openclaw-plugin-config`, `openclaw-cli`), the `wait-orchestration` barrier, `overrides/openclaw-*.yml`, the `openclaw/` tree, dashboard routes (`/api/openclaw/*`) and sync UI, ops-controller allowlist entry, env vars (`OPENCLAW_*`, orphaned `DISCORD_TOKEN`/`TELEGRAM_BOT_TOKEN`), and tests. Replaced by Hermes Agent (phase 1: 2026-04-18). Operator runtime data at `data/openclaw/` is left on disk — delete manually if desired.
 
