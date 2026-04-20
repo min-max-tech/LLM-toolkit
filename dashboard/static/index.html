@@ -727,9 +727,6 @@
       font-size: .75rem; color: var(--muted); margin-top: var(--space-2); line-height: 1.5;
     }
     .model-hub-dl-hint code { font-family: var(--font-mono); color: var(--fg-muted); }
-    .openclaw-sync-status {
-      font-size: .75rem; color: var(--fg-muted); margin-top: var(--space-2); min-height: 1.2em;
-    }
     .pull-row { display: flex; gap: var(--space-2); flex-wrap: wrap; }
     .quick-pills { display: flex; flex-wrap: wrap; gap: var(--space-1); margin-bottom: var(--space-3); }
     .pill {
@@ -1132,7 +1129,7 @@
 
     <section id="services-section">
       <h2>Services</h2>
-      <p class="section-desc">Click a service to open it. MCP Gateway provides shared tools for Open WebUI, N8N, Cursor, and OpenClaw.</p>
+      <p class="section-desc">Click a service to open it. MCP Gateway provides shared tools for Open WebUI, N8N, and Cursor.</p>
       <div class="status-summary" id="status-summary" style="display:none;" role="status" aria-live="polite"></div>
       <div class="services" id="services">
         <div class="skeleton skeleton-line" style="height:52px;width:100%;"></div>
@@ -1317,7 +1314,7 @@
 
     <section id="models-section">
       <h2>Model Hub</h2>
-      <p class="section-desc">Download from Hugging Face or any URL. GGUF pulls go to llama.cpp, diffusion files go to ComfyUI, and OpenClaw stays in sync.</p>
+      <p class="section-desc">Download from Hugging Face or any URL. GGUF pulls go to llama.cpp, diffusion files go to ComfyUI.</p>
 
       <!-- Unified download row -->
       <div class="model-panel model-hub-dl-panel">
@@ -1351,7 +1348,7 @@
             <div class="llm-active-label">Active Model</div>
             <div class="llm-active-row">
               <select id="llm-active-select" aria-label="Active model — all services will use this"></select>
-              <button id="llm-active-btn" title="Switch llama.cpp, Open WebUI, and OpenClaw to this model">Set Active</button>
+              <button id="llm-active-btn" title="Switch llama.cpp and Open WebUI to this model">Set Active</button>
             </div>
             <div id="llm-active-status" class="llm-active-status"></div>
           </div>
@@ -1386,12 +1383,6 @@
               <div class="progress-bar"><div class="fill" id="ollama-progress-bar" style="width:0%" role="progressbar" aria-valuemin="0" aria-valuemax="100" aria-valuenow="0"></div></div>
               <div class="log" id="ollama-log" role="log" aria-live="polite"></div>
             </div>
-          </div>
-          <div class="pull-area">
-            <div class="pull-row">
-              <button id="openclaw-sync-btn" class="secondary">Sync to OpenClaw</button>
-            </div>
-            <div id="openclaw-sync-status" class="openclaw-sync-status" aria-live="polite"></div>
           </div>
         </div>
         <div class="model-panel" id="comfyui-capability-panel">
@@ -1630,7 +1621,6 @@
       'mcp': '🔌',
       'comfyui': '🎨',
       'n8n': '⚡',
-      'openclaw': '🔑',
       'qdrant': '🗄',
     };
 
@@ -1650,7 +1640,7 @@
       return `http://${host}:${port}`;
     }
 
-    /** Prefer API `url` (paths + query e.g. OpenClaw ?token=) and match dashboard hostname. */
+    /** Prefer API `url` (paths + query) and match dashboard hostname. */
     function serviceOpenHref(s, host) {
       if (!s.url) return serviceUrl(host, s.port);
       try {
@@ -2723,29 +2713,6 @@
       });
     }());
 
-    document.getElementById('openclaw-sync-btn')?.addEventListener('click', async () => {
-      const btn = document.getElementById('openclaw-sync-btn');
-      const status = document.getElementById('openclaw-sync-status');
-      btn.disabled = true;
-      status.textContent = 'Syncing…';
-      try {
-        const r = await api('/api/openclaw/sync', { method: 'POST' });
-        const d = await r.json();
-        if (!r.ok) {
-          status.textContent = '✗ ' + (d.detail || 'Sync failed');
-          toast(d.detail || 'OpenClaw sync failed', 'error');
-        } else {
-          status.textContent = `✓ Synced ${d.synced_count} model${d.synced_count !== 1 ? 's' : ''}${d.openclaw_restarted ? ' — OpenClaw restarting' : ''}.`;
-          toast(`OpenClaw synced: ${d.synced_count} models`, 'success');
-        }
-      } catch (e) {
-        status.textContent = '✗ Error: ' + e.message;
-        toast('OpenClaw sync error', 'error');
-      } finally {
-        btn.disabled = false;
-      }
-    });
-
     async function refresh() {
       const btn = document.getElementById('refresh-btn');
       btn.classList.add('loading');
@@ -2843,7 +2810,7 @@
       const btn = document.getElementById('llm-active-btn');
       const model = sel?.value;
       if (!model) { statusEl.textContent = 'Select a model first.'; return; }
-      if (!confirm(`Set "${model}" as the active model?\n\nllama.cpp, Open WebUI, and OpenClaw will all be updated. The inference server will restart (~30–60 seconds).`)) return;
+      if (!confirm(`Set "${model}" as the active model?\n\nllama.cpp and Open WebUI will be updated. The inference server will restart (~30–60 seconds).`)) return;
       btn.disabled = true;
       btn.textContent = 'Switching…';
       statusEl.textContent = 'Services restarting…';
