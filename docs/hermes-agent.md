@@ -93,6 +93,74 @@ After `./scripts/start-hermes-host.sh`:
 - [ ] Ask Hermes to call a Tavily search or a ComfyUI tool — confirms MCP roundtrip.
 - [ ] Exit. Confirm `data/hermes/` now contains config/session files.
 
+## Discord gateway
+
+The Discord gateway is a persistent process that connects Hermes to Discord. It runs separately
+from the TUI and the web dashboard; one or both can be active.
+
+### One-time Discord Developer Portal setup
+
+1. Open https://discord.com/developers/applications and create a new application.
+2. **Bot → Token:** click *Reset Token*. Copy it — you won't see it again. This becomes
+   `DISCORD_BOT_TOKEN` in `.env`.
+3. **Bot → Privileged Gateway Intents:** enable **Message Content Intent** (required — without
+   this, the bot connects but receives empty message text) and **Server Members Intent**.
+4. **OAuth2 → URL Generator:** select scopes `bot` and `applications.commands`, and bot
+   permissions `274878286912` (View Channels, Send Messages, Read Message History, Embed Links,
+   Attach Files, Send Messages in Threads, Add Reactions). Copy the URL, open it, and invite the
+   bot to your server.
+5. **Get your user ID:** Discord → Settings → Advanced → **Developer Mode** on. Then right-click
+   your username → *Copy User ID*. This becomes `DISCORD_ALLOWED_USERS` in `.env`.
+
+### `.env` entries
+
+Add to `.env`:
+
+```
+DISCORD_BOT_TOKEN=<token-from-step-2>
+DISCORD_ALLOWED_USERS=<your-user-id-from-step-5>
+# Respond without @mention (OpenClaw-equivalent behavior):
+DISCORD_REQUIRE_MENTION=false
+```
+
+If you already had `DISCORD_TOKEN=...` in `.env` (from OpenClaw), the bootstrap script aliases
+it to `DISCORD_BOT_TOKEN` automatically — so you can just add `DISCORD_ALLOWED_USERS` and
+`DISCORD_REQUIRE_MENTION` and you're done.
+
+### Starting the gateway
+
+In a dedicated terminal (leave it running):
+
+```bash
+./scripts/start-hermes-host.sh --gateway
+```
+
+This runs `hermes gateway` with the env vars from `.env` exported. The process connects to
+Discord's WebSocket, joins as your bot, and routes DMs and allowed-channel messages to the
+Hermes agent using the same `local-chat` model and mcp-gateway tools.
+
+To stop: `Ctrl-C`.
+
+### Verifying
+
+- In Discord, your bot should show as online (green circle).
+- DM the bot or @-mention it in a permitted channel.
+- The bot reacts with 👀 while thinking and ✅ when it responds.
+- If the bot connects but doesn't reply, the most common cause is **Message Content Intent
+  disabled** in the Developer Portal.
+
+### Running dashboard + gateway at the same time
+
+The dashboard and gateway are two independent processes. Open two terminals and run:
+
+```bash
+./scripts/start-hermes-host.sh --dashboard    # terminal 1
+./scripts/start-hermes-host.sh --gateway      # terminal 2
+```
+
+Both use the same `data/hermes/` state, so sessions started on Discord appear in the dashboard
+and vice-versa.
+
 ## Refreshing the pin
 
 `HERMES_PINNED_SHA` is set near the top of `scripts/start-hermes-host.sh` (and may be overridden

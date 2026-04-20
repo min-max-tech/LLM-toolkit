@@ -22,11 +22,12 @@ LAUNCH_MODE="tui"
 for arg in "$@"; do
   case "$arg" in
     --dashboard)  LAUNCH_MODE="dashboard" ;;
+    --gateway)    LAUNCH_MODE="gateway" ;;   # Discord / Telegram / Slack messaging gateway
     --no-launch)  LAUNCH_MODE="none" ;;
     --tui)        LAUNCH_MODE="tui" ;;
     -h|--help)
       sed -n '2,8p' "$0"; exit 0 ;;
-    *) echo "Unknown arg: $arg (use --dashboard, --tui, --no-launch)"; exit 2 ;;
+    *) echo "Unknown arg: $arg (use --dashboard, --gateway, --tui, --no-launch)"; exit 2 ;;
   esac
 done
 
@@ -35,12 +36,23 @@ done
 # values with shell metacharacters (e.g. COMPOSE_FILE=docker-compose.yml;overrides/compute.yml,
 # where `;` is a command separator in bash). Docker Compose reads .env natively anyway.
 if [ -f .env ]; then
-  for key in MODEL_GATEWAY_PORT MCP_GATEWAY_PORT LITELLM_MASTER_KEY HERMES_HOME HERMES_PINNED_SHA HERMES_DASHBOARD_PORT; do
-    # Find the first assignment of this key; strip optional surrounding quotes.
+  _hermes_env_keys=(
+    MODEL_GATEWAY_PORT MCP_GATEWAY_PORT LITELLM_MASTER_KEY
+    HERMES_HOME HERMES_PINNED_SHA HERMES_DASHBOARD_PORT
+    DISCORD_BOT_TOKEN DISCORD_TOKEN DISCORD_ALLOWED_USERS DISCORD_ALLOWED_CHANNELS
+    DISCORD_ALLOWED_ROLES DISCORD_REQUIRE_MENTION DISCORD_FREE_RESPONSE_CHANNELS
+    DISCORD_HOME_CHANNEL DISCORD_AUTO_THREAD DISCORD_REACTIONS
+    TELEGRAM_BOT_TOKEN
+  )
+  for key in "${_hermes_env_keys[@]}"; do
     val=$(grep -E "^[[:space:]]*${key}=" .env | head -1 | cut -d= -f2- \
           | sed -e 's/^"\(.*\)"$/\1/' -e "s/^'\(.*\)'$/\1/")
     [ -n "$val" ] && export "$key=$val"
   done
+  # Legacy alias: OpenClaw used DISCORD_TOKEN; Hermes wants DISCORD_BOT_TOKEN.
+  if [ -z "${DISCORD_BOT_TOKEN:-}" ] && [ -n "${DISCORD_TOKEN:-}" ]; then
+    export DISCORD_BOT_TOKEN="$DISCORD_TOKEN"
+  fi
 fi
 
 # ── Phase 2: Ensure uv ──
@@ -169,6 +181,26 @@ case "$LAUNCH_MODE" in
     echo "==> Launching Hermes dashboard at http://localhost:$DASH_PORT/ ..."
     exec "$HERMES_BIN" dashboard --port "$DASH_PORT" --no-open
     ;;
+  gateway)
+    # Messaging gateway — Discord, Telegram, Slack. Persistent process; leave it running.
+    if [ -z "${DISCORD_BOT_TOKEN:-}" ] && [ -z "${TELEGRAM_BOT_TOKEN:-}" ]; then
+      echo "!! No messaging platform configured."
+      echo "   Set DISCORD_BOT_TOKEN (or legacy DISCORD_TOKEN) and DISCORD_ALLOWED_USERS"
+      echo "   in .env — see the 'Hermes Discord Gateway' block in .env.example."
+      exit 2
+    fi
+    if [ -n "${DISCORD_BOT_TOKEN:-}" ] && [ -z "${DISCORD_ALLOWED_USERS:-}" ]; then
+      echo "!! DISCORD_BOT_TOKEN is set but DISCORD_ALLOWED_USERS is empty."
+      echo "   Without it the bot denies all users by default. Set it in .env"
+      echo "   (your Discord user ID from Settings → Advanced → Developer Mode)."
+      exit 2
+    fi
+    echo "==> Launching Hermes messaging gateway..."
+    [ -n "${DISCORD_BOT_TOKEN:-}" ] && echo "    Discord: enabled (users: ${DISCORD_ALLOWED_USERS:-<NONE>})"
+    [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && echo "    Telegram: enabled"
+    echo "    This is a persistent process. Ctrl+C to stop."
+    exec "$HERMES_BIN" gateway
+    ;;
   tui)
     echo "==> Launching Hermes CLI (HERMES_HOME=$HERMES_HOME)..."
     echo "    TUI requires a Windows console or POSIX terminal. Git Bash will crash"
@@ -177,7 +209,8 @@ case "$LAUNCH_MODE" in
     ;;
   none)
     echo "==> Setup complete. Launch manually:"
-    echo "    $HERMES_BIN                  # TUI (WSL2)"
-    echo "    $HERMES_BIN dashboard        # Web UI"
+    echo "    hermes                       # TUI (WSL2)"
+    echo "    hermes dashboard             # Web UI at http://localhost:9119"
+    echo "    hermes gateway               # Discord/Telegram gateway (needs DISCORD_BOT_TOKEN + DISCORD_ALLOWED_USERS)"
     ;;
 esac
