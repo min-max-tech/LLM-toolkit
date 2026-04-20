@@ -2315,6 +2315,7 @@
 
     async function loadComfyuiModels() {
       const el = document.getElementById('comfyui-models');
+      if (!el) return;  // UI element removed; fetch not needed.
       try {
         const r = await api('/api/comfyui/models');
         const d = await r.json();
@@ -2370,6 +2371,7 @@
 
     async function loadComfyuiPacks() {
       const el = document.getElementById('comfyui-packs');
+      if (!el) return;  // UI element removed; fetch not needed.
       try {
         const r = await api('/api/comfyui/packs');
         if (!r.ok) return;
