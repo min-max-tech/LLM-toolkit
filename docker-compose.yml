@@ -625,6 +625,92 @@ services:
     networks:
       - backend
 
+  hermes-gateway:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    image: ordo-ai-stack-hermes:latest
+    pull_policy: build
+    restart: unless-stopped
+    depends_on:
+      model-gateway:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
+      - PYTHONIOENCODING=utf-8
+      # Accept both DISCORD_BOT_TOKEN (Hermes-native) and legacy DISCORD_TOKEN (OpenClaw era).
+      - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-${DISCORD_TOKEN:-}}
+      - DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS:-}
+      - DISCORD_ALLOWED_CHANNELS=${DISCORD_ALLOWED_CHANNELS:-}
+      - DISCORD_ALLOWED_ROLES=${DISCORD_ALLOWED_ROLES:-}
+      - DISCORD_REQUIRE_MENTION=${DISCORD_REQUIRE_MENTION:-true}
+      - DISCORD_FREE_RESPONSE_CHANNELS=${DISCORD_FREE_RESPONSE_CHANNELS:-}
+      - DISCORD_HOME_CHANNEL=${DISCORD_HOME_CHANNEL:-}
+      - DISCORD_AUTO_THREAD=${DISCORD_AUTO_THREAD:-true}
+      - DISCORD_REACTIONS=${DISCORD_REACTIONS:-true}
+      - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
+    volumes:
+      - ${BASE_PATH:-.}:/workspace:rw
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/hermes:/home/hermes/.hermes:rw
+    healthcheck:
+      # gateway.pid appears once Hermes has registered messaging platforms.
+      test: ["CMD-SHELL", "test -f /home/hermes/.hermes/gateway.pid"]
+      start_period: 60s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - frontend
+      - backend
+    command: ["hermes", "gateway"]
+
+  hermes-dashboard:
+    build:
+      context: ./hermes
+      dockerfile: Dockerfile
+    image: ordo-ai-stack-hermes:latest
+    pull_policy: build
+    restart: unless-stopped
+    depends_on:
+      model-gateway:
+        condition: service_healthy
+      mcp-gateway:
+        condition: service_healthy
+      dashboard:
+        condition: service_healthy
+    environment:
+      - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
+      - PYTHONIOENCODING=utf-8
+    volumes:
+      - ${BASE_PATH:-.}:/workspace:rw
+      - ${DATA_PATH:-${BASE_PATH:-.}/data}/hermes:/home/hermes/.hermes:rw
+    ports:
+      - "${HERMES_DASHBOARD_PORT:-9119}:9119"
+    healthcheck:
+      test: ["CMD", "curl", "-sf", "http://localhost:9119/"]
+      start_period: 30s
+      interval: 30s
+      timeout: 5s
+      retries: 3
+    logging:
+      driver: json-file
+      options:
+        max-size: "10m"
+        max-file: "3"
+    networks:
+      - frontend
+      - backend
+    command: ["hermes", "dashboard", "--port", "9119", "--host", "0.0.0.0", "--no-open"]
+
 networks:
   frontend:
     name: ordo-ai-stack-frontend
