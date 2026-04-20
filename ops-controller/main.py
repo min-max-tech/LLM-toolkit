@@ -32,7 +32,7 @@ AUDIT_LOG_MAX_BYTES = int(os.environ.get("AUDIT_LOG_MAX_BYTES", "10485760"))  # 
 # Services we allow operations on (allowlist)
 ALLOWED_SERVICES = {
     "llamacpp", "llamacpp-embed", "dashboard", "open-webui", "model-gateway", "mcp-gateway",
-    "comfyui", "n8n", "openclaw-gateway", "qdrant",
+    "comfyui", "n8n", "qdrant",
 }
 
 # .env keys we allow updating via the API
