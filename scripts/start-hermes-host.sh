@@ -195,6 +195,12 @@ case "$LAUNCH_MODE" in
       echo "   (your Discord user ID from Settings → Advanced → Developer Mode)."
       exit 2
     fi
+    # Pre-clean stale PID file. Hermes's get_running_pid() does an `os.kill(pid, 0)`
+    # existence check; on Windows a dead-PID lookup raises OSError(WinError 87) which
+    # escapes the `except (ProcessLookupError, PermissionError)` and crashes the CLI
+    # before it can start. If the PID file references a dead process, just remove it.
+    # (If there's actually a running gateway we'd notice: start would fail on port bind.)
+    rm -f "$HERMES_HOME/gateway.pid"
     echo "==> Launching Hermes messaging gateway..."
     [ -n "${DISCORD_BOT_TOKEN:-}" ] && echo "    Discord: enabled (users: ${DISCORD_ALLOWED_USERS:-<NONE>})"
     [ -n "${TELEGRAM_BOT_TOKEN:-}" ] && echo "    Telegram: enabled"
