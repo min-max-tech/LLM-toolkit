@@ -60,17 +60,6 @@ rm -rf vendor/hermes-agent data/hermes
 - **`hermes-agent` clone**: First run clones from GitHub. Pin to a specific SHA via
   `HERMES_PINNED_SHA` in `.env` to freeze upstream.
 
-## Relationship to OpenClaw
-
-Hermes and OpenClaw share the same model-gateway and cannot run simultaneously cleanly.
-`scripts/start-hermes-host.sh` defensively stops any in-flight `openclaw-gateway` /
-`openclaw-ui-proxy` containers and any host-mode `openclaw gateway` process before launching.
-
-OpenClaw files, services, and `data/openclaw/` remain in the repo untouched during phase 1. They
-are the safety net: if Hermes does not pan out, `./scripts/start-openclaw-host.sh` is still there.
-
-Phase 2 (separate spec and plan) decommissions OpenClaw once Hermes is validated.
-
 ## Configuration keys
 
 The bootstrap script calls `hermes config set` to persist these (discovered from
@@ -119,3 +108,7 @@ git log --oneline origin/main -20
 Update `HERMES_PINNED_SHA` in the script (or `.env`), re-run the bootstrap. If the new version
 changes config key names, inspect `vendor/hermes-agent/hermes_cli/config.py` and update Phase 8
 of the script accordingly.
+
+---
+
+> **Note:** The stack previously used OpenClaw as its assistant-agent layer. It was decommissioned on 2026-04-20 — see `CHANGELOG.md` for the removal entry.
