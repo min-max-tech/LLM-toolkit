@@ -10,7 +10,9 @@ logger = logging.getLogger(__name__)
 DASHBOARD_AUTH_TOKEN: str = os.environ.get("DASHBOARD_AUTH_TOKEN", "").strip()
 AUTH_REQUIRED: bool = bool(DASHBOARD_AUTH_TOKEN)
 
-# Blocked port range: browsers refuse connections to 6666-6669 (IRC)
+# Blocked port range: browsers refuse connections to 6666-6669 (IRC).
+# Kept as a stack-wide safety utility even without current callers — any future
+# service that accepts a port via env var should route through `_validated_port`.
 _BLOCKED_PORTS = set(range(6666, 6670))
 
 
@@ -23,10 +25,3 @@ def _validated_port(name: str, default: str) -> str:
     if int(raw) in _BLOCKED_PORTS:
         logger.warning("%s=%s is in the browser-blocked IRC range (6666-6669) — connections will fail", name, raw)
     return raw
-
-
-OPENCLAW_GATEWAY_PORT: str = _validated_port("OPENCLAW_GATEWAY_PORT", "6680")
-OPENCLAW_GATEWAY_INTERNAL_PORT: str = _validated_port("OPENCLAW_GATEWAY_INTERNAL_PORT", "6680")
-OPENCLAW_UI_PORT: str = _validated_port("OPENCLAW_UI_PORT", "6682")
-OPENCLAW_GATEWAY_TOKEN: str = os.environ.get("OPENCLAW_GATEWAY_TOKEN", "")
-OPENCLAW_CONFIG_PATH: Path = Path(os.environ.get("OPENCLAW_CONFIG_PATH", "/openclaw-config/openclaw.json"))

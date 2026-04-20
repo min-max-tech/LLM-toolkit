@@ -4,6 +4,9 @@ All notable changes to this project are documented here. The format is loosely b
 
 ## [Unreleased]
 
+### Removed
+- OpenClaw assistant-agent layer — all services (`openclaw-gateway`, `openclaw-ui-proxy`, `openclaw-workspace-sync`, `openclaw-config-sync`, `openclaw-plugin-install`, `openclaw-plugin-config`, `openclaw-cli`), the `wait-orchestration` barrier, `overrides/openclaw-*.yml`, the `openclaw/` tree, dashboard routes (`/api/openclaw/*`) and sync UI, ops-controller allowlist entry, env vars (`OPENCLAW_*`, orphaned `DISCORD_TOKEN`/`TELEGRAM_BOT_TOKEN`), and tests. Replaced by Hermes Agent (phase 1: 2026-04-18). Operator runtime data at `data/openclaw/` is left on disk — delete manually if desired.
+
 ### Changed
 - **Compute Pressure overhaul:** `COMPUTE PRESSURE` panel now shows CPU%, RAM%, and (where applicable) VRAM% per toolkit service, sorted by current pressure so the hog is always on top. New ops-controller endpoint `/stats/services` merges `docker stats` with NVML per-PID VRAM. Dashboard proxies via `/api/hardware/service-pressure` (no auth, same pattern as `/api/hardware`). On Windows/WSL2 where per-PID VRAM is unavailable, panel falls back to a single aggregate GPU row. Replaces `/api/hardware/gpu-processes` and the PID-labeling heuristic.
 
