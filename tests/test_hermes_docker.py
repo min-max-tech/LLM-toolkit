@@ -90,6 +90,14 @@ def test_dashboard_command_binds_all_interfaces():
     assert "--no-open" in joined, f"must use --no-open: {cmd}"
 
 
+def test_gateway_healthcheck_uses_state_file():
+    """Docker-mode doesn't create gateway.pid; use gateway_state.json instead."""
+    svc = _compose_services()["hermes-gateway"]
+    test_cmd = (svc.get("healthcheck") or {}).get("test") or []
+    joined = " ".join(test_cmd) if isinstance(test_cmd, list) else str(test_cmd)
+    assert "gateway_state.json" in joined, f"healthcheck must check gateway_state.json: {test_cmd}"
+
+
 def test_dockerfile_exists_and_multistage():
     assert DOCKERFILE.is_file(), f"{DOCKERFILE} missing"
     src = DOCKERFILE.read_text(encoding="utf-8")

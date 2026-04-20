@@ -657,8 +657,9 @@ services:
       - ${BASE_PATH:-.}:/workspace:rw
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/hermes:/home/hermes/.hermes:rw
     healthcheck:
-      # gateway.pid appears once Hermes has registered messaging platforms.
-      test: ["CMD-SHELL", "test -f /home/hermes/.hermes/gateway.pid"]
+      # gateway_state.json is written by `hermes gateway` on startup (Docker-mode
+      # doesn't create a gateway.pid — that's only for systemd/launchd installs).
+      test: ["CMD-SHELL", "test -f /home/hermes/.hermes/gateway_state.json"]
       start_period: 60s
       interval: 30s
       timeout: 5s
