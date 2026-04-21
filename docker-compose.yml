@@ -648,6 +648,12 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
       - PYTHONIOENCODING=utf-8
+      # 24h — effectively "never timeout". Hermes's run_agent.py:6606 reads
+      # HERMES_STREAM_STALE_TIMEOUT (env-only, not a config key) with default 180s,
+      # which kills streaming responses mid-flight on slow local-model turns.
+      # Agent-level gateway_timeout (1800s) is the real upper bound; this just
+      # keeps the streaming stale-detector from firing first.
+      - HERMES_STREAM_STALE_TIMEOUT=86400
       # Accept both DISCORD_BOT_TOKEN (Hermes-native) and legacy DISCORD_TOKEN (OpenClaw era).
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-${DISCORD_TOKEN:-}}
       - DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS:-}
@@ -705,6 +711,8 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
       - PYTHONIOENCODING=utf-8
+      # 24h — see hermes-gateway for rationale. Dashboard streams chat too.
+      - HERMES_STREAM_STALE_TIMEOUT=86400
       # Point Hermes at the pre-built SPA (Dockerfile stage 1). Without this env var,
       # `hermes dashboard` tries to rebuild from web/ source, which requires npm (not
       # present in the runtime image).
