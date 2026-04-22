@@ -23,8 +23,23 @@ HERMES_BIN=/opt/hermes-agent/.venv/bin/hermes
 
 # Bump timeouts for local model. Hermes's default 180s stale-timeout aborts
 # prefill on long contexts (22k+ tokens on a dense local model = many minutes).
-# 900s covers realistic worst case without masking a truly dead connection.
-"$HERMES_BIN" config set providers.custom.stale_timeout_seconds   900 >/dev/null
-"$HERMES_BIN" config set providers.custom.request_timeout_seconds 900 >/dev/null
+# 1800s = 30 min. Safety net only — with --reasoning-format deepseek (set in .env via
+# LLAMACPP_EXTRA_ARGS) llama-server streams chunks during thinking and this timeout
+# should never fire on healthy turns. If it does fire on real workloads, the model
+# server is wedged, not slow.
+"$HERMES_BIN" config set providers.custom.stale_timeout_seconds   1800 >/dev/null
+"$HERMES_BIN" config set providers.custom.request_timeout_seconds 1800 >/dev/null
+
+# Push-through: seed an opinionated SOUL.md and enable the bundled plugin once.
+# Sentinel ensures user toggles via `hermes plugins enable/disable` are respected
+# on subsequent starts. See docs/hermes-agent.md and the design spec for details.
+SEED_MARK="$HERMES_HOME/.ordo-push-through-seeded"
+if [ ! -f "$SEED_MARK" ]; then
+  if [ ! -f "$HERMES_HOME/SOUL.md" ] || [ ! -s "$HERMES_HOME/SOUL.md" ]; then
+    cp /opt/ordo-seed/SOUL.md "$HERMES_HOME/SOUL.md"
+  fi
+  "$HERMES_BIN" plugins enable push-through >/dev/null 2>&1 || true
+  touch "$SEED_MARK"
+fi
 
 exec "$@"

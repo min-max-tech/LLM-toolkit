@@ -27,6 +27,7 @@ openclaw/OPENCLAW_SECURE.md
 # Local dev (personal notes, full troubleshooting)
 context/
 .claude/scheduled_tasks.lock
+cp_test_output.log
 
 # Hermes Agent (host-mode install + local state; see docs/hermes-agent.md)
 vendor/hermes-agent/

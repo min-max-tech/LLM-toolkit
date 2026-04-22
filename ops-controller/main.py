@@ -11,6 +11,7 @@ import re
 import socket
 import subprocess
 import threading
+import time
 from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlparse
@@ -76,6 +77,35 @@ _gguf_pull_lock = threading.Lock()
 _gguf_pull_status: dict = {
     "running": False, "output": "", "done": True, "success": None,
     "repos": "",
+}
+
+# ComfyUI ↔ llamacpp VRAM serialization guardian.
+# When enabled, a background thread polls ComfyUI's queue. Non-empty queue → stop
+# the target service (llamacpp) to free VRAM for ComfyUI workflows. Queue drained
+# for COMFYUI_DRAIN_SECONDS → start the target again. Prevents the OOM-spillover
+# state where both services share the 32GB 5090 and decode collapses to <1 tok/s.
+#
+# Tradeoff: in-flight Hermes requests during a ComfyUI workflow will fail with
+# APIConnectionError. Hermes session state is preserved in its database, so
+# conversation history survives — only the one killed turn is lost.
+COMFYUI_URL = os.environ.get("COMFYUI_URL", "http://comfyui:8188").rstrip("/")
+COMFYUI_SERIALIZE_LLAMACPP = os.environ.get("COMFYUI_SERIALIZE_LLAMACPP", "0").strip().lower() in ("1", "true", "yes", "on")
+COMFYUI_QUEUE_POLL_SECONDS = float(os.environ.get("COMFYUI_QUEUE_POLL_SECONDS", "2"))
+COMFYUI_DRAIN_SECONDS = float(os.environ.get("COMFYUI_DRAIN_SECONDS", "20"))
+COMFYUI_GUARDIAN_TARGET = os.environ.get("COMFYUI_GUARDIAN_TARGET", "llamacpp")
+
+_guardian_lock = threading.Lock()
+_guardian_status: dict = {
+    "enabled": COMFYUI_SERIALIZE_LLAMACPP,
+    "state": "disabled",  # disabled | idle | paused | draining | error
+    "target": COMFYUI_GUARDIAN_TARGET,
+    "comfyui_url": COMFYUI_URL,
+    "poll_seconds": COMFYUI_QUEUE_POLL_SECONDS,
+    "drain_seconds": COMFYUI_DRAIN_SECONDS,
+    "comfyui_queue": {"running": 0, "pending": 0, "reachable": False},
+    "last_transition": None,
+    "last_error": "",
+    "paused_by_us": False,
 }
 
 
@@ -1138,3 +1168,147 @@ async def models_gguf_pull_status(_: None = Depends(verify_token)):
     """Poll GGUF pull progress. Auth required."""
     with _gguf_pull_lock:
         return dict(_gguf_pull_status)
+
+
+# --- ComfyUI guardian --------------------------------------------------------
+
+def _comfyui_queue_depth() -> tuple[int, int] | None:
+    """Return (running, pending) from ComfyUI /queue, or None if unreachable."""
+    try:
+        r = httpx.get(f"{COMFYUI_URL}/queue", timeout=3.0)
+        r.raise_for_status()
+        data = r.json()
+        return (len(data.get("queue_running") or []), len(data.get("queue_pending") or []))
+    except Exception as e:
+        logger.debug("ComfyUI queue poll failed: %s", e)
+        return None
+
+
+def _guardian_transition(new_state: str, error: str = "") -> None:
+    with _guardian_lock:
+        _guardian_status["state"] = new_state
+        _guardian_status["last_transition"] = datetime.now(UTC).isoformat().replace("+00:00", "Z")
+        if error:
+            _guardian_status["last_error"] = error[:200]
+
+
+def _guardian_loop() -> None:
+    """Poll ComfyUI queue; stop the target service when non-empty, start after drain."""
+    target = COMFYUI_GUARDIAN_TARGET
+    drain_started: float | None = None
+    _guardian_transition("idle")
+    print(f"[guardian] loop started target={target}", flush=True)
+
+    while True:
+        try:
+            depth = _comfyui_queue_depth()
+            if depth is None:
+                with _guardian_lock:
+                    _guardian_status["comfyui_queue"] = {"running": 0, "pending": 0, "reachable": False}
+                time.sleep(COMFYUI_QUEUE_POLL_SECONDS)
+                continue
+
+            running, pending = depth
+            busy = (running + pending) > 0
+            with _guardian_lock:
+                _guardian_status["comfyui_queue"] = {"running": running, "pending": pending, "reachable": True}
+                state = _guardian_status["state"]
+                paused_by_us = _guardian_status["paused_by_us"]
+
+            if busy and state == "idle":
+                containers = _containers_for_service(target)
+                if not containers:
+                    print(f"[guardian] ERROR: no container for service={target}", flush=True)
+                    _guardian_transition("error", f"no container for {target}")
+                else:
+                    running_containers = [c for c in containers if c.status == "running"]
+                    if running_containers:
+                        print(f"[guardian] PAUSE {target} (queue running={running} pending={pending})", flush=True)
+                        errs: list[str] = []
+                        for c in running_containers:
+                            try:
+                                c.stop(timeout=30)
+                            except Exception as e:
+                                errs.append(str(e))
+                        if errs:
+                            print(f"[guardian] PAUSE ERROR: {'; '.join(errs)[:200]}", flush=True)
+                            _audit("guardian_pause", target, "error", "; ".join(errs)[:200])
+                            _guardian_transition("error", "; ".join(errs))
+                        else:
+                            print(f"[guardian] {target} stopped", flush=True)
+                            _audit("guardian_pause", target, "ok", f"queue running={running} pending={pending}")
+                            with _guardian_lock:
+                                _guardian_status["paused_by_us"] = True
+                            _guardian_transition("paused")
+                    else:
+                        # Already stopped by something else — we won't auto-resume it
+                        with _guardian_lock:
+                            _guardian_status["paused_by_us"] = False
+                        _guardian_transition("paused")
+
+            elif busy and state == "draining":
+                drain_started = None
+                _guardian_transition("paused")
+
+            elif not busy and state == "paused":
+                drain_started = time.monotonic()
+                _guardian_transition("draining")
+
+            elif not busy and state == "draining":
+                if drain_started is not None and (time.monotonic() - drain_started) >= COMFYUI_DRAIN_SECONDS:
+                    if paused_by_us:
+                        print(f"[guardian] RESUME {target} (drain elapsed)", flush=True)
+                        containers = _containers_for_service(target)
+                        errs = []
+                        for c in containers:
+                            try:
+                                c.start()
+                            except Exception as e:
+                                errs.append(str(e))
+                        if errs:
+                            print(f"[guardian] RESUME ERROR: {'; '.join(errs)[:200]}", flush=True)
+                            _audit("guardian_resume", target, "error", "; ".join(errs)[:200])
+                            _guardian_transition("error", "; ".join(errs))
+                            drain_started = None
+                            time.sleep(COMFYUI_QUEUE_POLL_SECONDS)
+                            continue
+                        print(f"[guardian] {target} started", flush=True)
+                        _audit("guardian_resume", target, "ok", "drain_elapsed")
+                    with _guardian_lock:
+                        _guardian_status["paused_by_us"] = False
+                    drain_started = None
+                    _guardian_transition("idle")
+
+            elif state == "error":
+                # Try to recover: if queue is empty and we didn't pause, reset to idle
+                if not busy:
+                    _guardian_transition("idle")
+                # else stay in error until queue drains
+
+        except Exception as e:  # noqa: BLE001
+            logger.exception("guardian: loop iteration failed")
+            _guardian_transition("error", str(e))
+
+        time.sleep(COMFYUI_QUEUE_POLL_SECONDS)
+
+
+@app.get("/guardian/status")
+async def guardian_status(_: None = Depends(verify_token)):
+    """Return current ComfyUI-guardian state. Auth required."""
+    with _guardian_lock:
+        return dict(_guardian_status)
+
+
+# Start the guardian thread at module import. Doing it here instead of via
+# @app.on_event("startup") (deprecated in recent FastAPI) guarantees the thread
+# spawns regardless of the app lifecycle and surfaces errors immediately.
+if COMFYUI_SERIALIZE_LLAMACPP:
+    print(
+        f"[guardian] ENABLED target={COMFYUI_GUARDIAN_TARGET} "
+        f"poll={COMFYUI_QUEUE_POLL_SECONDS}s drain={COMFYUI_DRAIN_SECONDS}s "
+        f"comfyui={COMFYUI_URL}",
+        flush=True,
+    )
+    threading.Thread(target=_guardian_loop, daemon=True, name="comfyui-guardian").start()
+else:
+    print("[guardian] disabled (set COMFYUI_SERIALIZE_LLAMACPP=1 to enable)", flush=True)

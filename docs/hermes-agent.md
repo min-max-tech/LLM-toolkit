@@ -85,6 +85,36 @@ mcp_servers:
 
 Any other keys you add manually (skills, memory providers, display preferences) are preserved across restarts — the entrypoint only touches the five keys above.
 
+## Execute-don't-propose behavior (push-through)
+
+The image ships a small bundled plugin called `push-through` and seeds an opinionated `SOUL.md` on first run. Together they push the agent toward Claude Code-style behavior: execute via tools, never return a plan for approval, only stop when the work is verifiably done.
+
+Persistent state lives in the named Docker volume `ordo-ai-stack_hermes-data`, mounted at `/home/hermes/.hermes` inside the container. The host `data/hermes/` directory is stale leftover from before the volume migration (commit `5bd23fd`) — do not edit it expecting Hermes to see your changes.
+
+First-run seeding is gated by `/home/hermes/.hermes/.ordo-push-through-seeded`. After that sentinel exists, the entrypoint never re-seeds — your toggles stick.
+
+To turn the nudge off:
+
+```bash
+docker compose exec hermes-gateway hermes plugins disable push-through
+```
+
+To opt back in:
+
+```bash
+docker compose exec hermes-gateway hermes plugins enable push-through
+```
+
+To replace your existing `SOUL.md` with the shipped opinionated default (one-liner — also reuses the seed inside the image):
+
+```bash
+docker compose exec hermes-gateway sh -c "cp /opt/ordo-seed/SOUL.md /home/hermes/.hermes/SOUL.md"
+```
+
+If `hermes plugins enable push-through` returns non-zero on container start (older Hermes builds), the seeding block swallows the error and writes the sentinel anyway — enable manually with the command above.
+
+Design rationale and known limitations: `docs/superpowers/specs/2026-04-21-hermes-push-through-design.md`.
+
 ## Updating Hermes
 
 The Hermes upstream SHA is pinned in `hermes/Dockerfile` as `ARG HERMES_PINNED_SHA=...`. To upgrade:

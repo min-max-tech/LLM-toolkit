@@ -21,7 +21,6 @@ services:
               count: all
               capabilities: ['gpu']
   dashboard:
-    pid: host
     deploy:
       resources:
         reservations:

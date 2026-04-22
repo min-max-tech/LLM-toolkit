@@ -128,6 +128,12 @@ services:
       - COMPOSE_FILE=${COMPOSE_FILE:-docker-compose.yml}
       - DEFAULT_MODEL=${DEFAULT_MODEL:-}
       - COMFYUI_MODELS_DIR=/models/comfyui
+      # ComfyUI ↔ llamacpp VRAM serialization guardian (see ops-controller/main.py)
+      - COMFYUI_URL=http://comfyui:8188
+      - COMFYUI_SERIALIZE_LLAMACPP=${COMFYUI_SERIALIZE_LLAMACPP:-0}
+      - COMFYUI_QUEUE_POLL_SECONDS=${COMFYUI_QUEUE_POLL_SECONDS:-2}
+      - COMFYUI_DRAIN_SECONDS=${COMFYUI_DRAIN_SECONDS:-20}
+      - COMFYUI_GUARDIAN_TARGET=${COMFYUI_GUARDIAN_TARGET:-llamacpp}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${BASE_PATH:-.}:/workspace
@@ -667,11 +673,16 @@ services:
       - TELEGRAM_BOT_TOKEN=${TELEGRAM_BOT_TOKEN:-}
     volumes:
       - ${BASE_PATH:-.}:/workspace:rw
-      # Named Docker volume — Windows Docker Desktop bind mounts (9p/virtiofs)
-      # don't support SQLite WAL/DELETE journaling reliably. A named volume lives
-      # on the Linux VM's ext4 filesystem where SQLite works normally.
-      # Inspect with: docker run --rm -v ordo-ai-stack_hermes-data:/d alpine ls /d
-      - hermes-data:/home/hermes/.hermes
+      # Bind-mount: data lives at host path data/hermes/ for direct host visibility.
+      # Windows Docker Desktop note: bind mounts have SQLite journaling quirks —
+      # the Dockerfile patches journal_mode WAL→DELETE which mitigates most issues.
+      # If "database is locked" errors appear, revert to a named volume (see the
+      # volumes: block at the bottom of this file for the rollback path).
+      - ${BASE_PATH:-.}/data/hermes:/home/hermes/.hermes
+      # Mount C:\dev (parent of AI-toolkit) as /projects so Hermes can read/write
+      # files across all dev repos, not just AI-toolkit. /workspace stays scoped
+      # to the AI-toolkit project root.
+      - ${BASE_PATH:-.}/..:/projects:rw
       # Docker socket — lets Hermes manage the stack via `docker`, `docker exec`,
       # `docker compose`. Requires group_add:["0"] above so the non-root hermes
       # user can read the socket (root:root mode 660 on Docker Desktop).
@@ -719,11 +730,9 @@ services:
       - HERMES_WEB_DIST=/opt/hermes-agent/hermes_cli/web_dist
     volumes:
       - ${BASE_PATH:-.}:/workspace:rw
-      # Named Docker volume — Windows Docker Desktop bind mounts (9p/virtiofs)
-      # don't support SQLite WAL/DELETE journaling reliably. A named volume lives
-      # on the Linux VM's ext4 filesystem where SQLite works normally.
-      # Inspect with: docker run --rm -v ordo-ai-stack_hermes-data:/d alpine ls /d
-      - hermes-data:/home/hermes/.hermes
+      # Bind-mount + /projects: see hermes-gateway above for rationale and rollback notes.
+      - ${BASE_PATH:-.}/data/hermes:/home/hermes/.hermes
+      - ${BASE_PATH:-.}/..:/projects:rw
     ports:
       - "${HERMES_DASHBOARD_PORT:-9119}:9119"
     healthcheck:
@@ -744,12 +753,12 @@ services:
     # port mapping gates external access; internal Docker network is trusted.
     command: ["hermes", "dashboard", "--port", "9119", "--host", "0.0.0.0", "--no-open", "--insecure"]
 
-volumes:
-  # Persistent SQLite + config + sessions for Hermes Agent.
-  # Named volume (not bind mount) because Windows Docker Desktop's bind mount
-  # filesystem breaks SQLite journal operations. Inspect with:
-  #   docker run --rm -v ordo-ai-stack_hermes-data:/d alpine ls /d
-  hermes-data:
+volumes: {}
+# Hermes data is now bind-mounted from data/hermes/ (see hermes-gateway/dashboard above).
+# The legacy `ordo-ai-stack_hermes-data` named volume still exists in Docker for
+# rollback. To revert: re-add `hermes-data:` here, then switch the hermes services'
+# data mount back from `${BASE_PATH:-.}/data/hermes:/home/hermes/.hermes` to
+# `hermes-data:/home/hermes/.hermes` and `docker compose up -d`.
 
 networks:
   frontend:
