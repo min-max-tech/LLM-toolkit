@@ -7,7 +7,7 @@ Thanks for contributing to Ordo AI Stack.
 This repo is public. **Never commit**:
 
 - **`.env`** — contains API keys, tokens, paths. Use `.env.example` as a template.
-- **`data/`** — contains user-specific config (OpenClaw gateway token, Discord guild/user IDs, session data, MCP config). Gitignored.
+- **`data/`** — contains user-specific runtime state (Hermes session data, Discord guild/user IDs, MCP config). Gitignored.
 - **`models/`** — model files. Gitignored.
 - **`overrides/compute.yml`** — hardware-specific. Gitignored.
 

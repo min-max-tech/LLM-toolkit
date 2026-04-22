@@ -1,17 +1,17 @@
 # Repository Guidelines
 
 ## Project Structure & Module Organization
-Core Python services live in `dashboard/`, `model-gateway/`, `ops-controller/`, `orchestration-mcp/`, and `comfyui-mcp/`. Docker and environment entry points are at the repo root: `docker-compose.yml`, `compose.ps1`, `compose`, `ordo-ai-stack.ps1`, and `ordo-ai-stack`. Tests are centralized in `tests/`, with fixtures under `tests/fixtures/`. Operational scripts live in `scripts/`, documentation in `docs/`, generated runtime data in `data/`, and local model assets in `models/`. Treat `overrides/compute.yml` as machine-specific generated output — do not edit it for persistent changes; use a separate override file instead.
+Core Python services live in `dashboard/`, `model-gateway/`, `ops-controller/`, `orchestration-mcp/`, and `comfyui-mcp/`. Docker and environment entry points are at the repo root: `docker-compose.yml`, `compose.ps1`, `compose`. Tests are centralized in `tests/`, with fixtures under `tests/fixtures/`. Operational scripts live in `scripts/`, documentation in `docs/`, generated runtime data in `data/`, and local model assets in `models/`. Treat `overrides/compute.yml` as machine-specific generated output — do not edit it for persistent changes; use a separate override file instead.
 
 ## Build, Test, and Development Commands
 Install Python test dependencies with `pip install -r tests/requirements.txt`.
 
 - `python -m pytest tests/ -v`: run the full Python test suite.
 - `python -m pytest tests/ -q`: quiet run used for CI checks.
-- `python -m ruff check dashboard tests model-gateway ops-controller rag-ingestion scripts comfyui-mcp orchestration-mcp`: run lint checks used in CI.
+- `python -m ruff check dashboard tests model-gateway ops-controller rag-ingestion scripts comfyui-mcp orchestration-mcp worker`: run lint checks used in CI.
 - `make test`, `make lint`, `make smoke-test`: Linux/macOS shortcuts for the core workflows.
 - `.\compose.ps1 up -d` or `./compose up -d`: bring up the stack with hardware detection.
-- `.\ordo-ai-stack.ps1 initialize` or `./ordo-ai-stack initialize`: full bootstrap, including directory setup and container rebuilds.
+- `.\compose.ps1 up -d --build --force-recreate` or `./compose up -d --build --force-recreate`: full bring-up with hardware detection and rebuild.
 - `docker compose build <service> && docker compose up -d <service>`: rebuild and hot-swap a single service.
 
 ## Coding Style & Naming Conventions
@@ -35,13 +35,6 @@ The dashboard frontend is a single vanilla JS/HTML file — no build step, no fr
 
 ## Testing Guidelines
 Add or update `pytest` coverage for every behavior change. Prefer focused unit tests near related coverage — e.g., `tests/test_dashboard_gpu_processes.py` for GPU process endpoint changes. Use `fastapi.testclient.TestClient` for endpoint tests. Mock external dependencies (pynvml, httpx, docker) with `unittest.mock.patch` or pytest `monkeypatch`. Use fixtures from `tests/fixtures/` when possible.
-
-### Contract Test Pattern
-When a config value or behavior must be enforced across redeployments, add it to two places:
-1. A normalizer function in `openclaw/scripts/add_mcp_plugin_config.py` (see `normalize_internal_hooks`, `normalize_llm_idle_timeout` for examples).
-2. An assertion in `tests/test_openclaw_runtime_contract.py` for both the live config file and the normalizer function.
-
-This ensures the value is re-enforced any time `openclaw-config-sync` runs.
 
 ## Commit & Pull Request Guidelines
 Recent history uses Conventional Commit prefixes such as `feat:`. Continue with `feat:`, `fix:`, `docs:`, `refactor:`, or `test:` followed by a short imperative summary. Use `feat(service):` scope when the change is isolated to one service (e.g., `feat(dashboard):`, `fix(bridge):`). Pull requests should describe the user-visible change, list validation performed, link related issues, and include screenshots only when UI behavior in `dashboard/` changes.

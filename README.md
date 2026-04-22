@@ -6,7 +6,7 @@
  \___/|_|  \__,_|\___/
 
 ──────────────────────────────────────────────────
-Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation (n8n), and OpenClaw — with a unified dashboard.
+Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), and automation (n8n) — with a unified dashboard.
 ```
 
 <!--
@@ -16,11 +16,11 @@ Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation 
 
 ## Overview
 
-**Ordo AI Stack** packages a **local-first** stack: llama.cpp-backed models behind an **OpenAI-compatible** LiteLLM model gateway, **Open WebUI** for chat, **ComfyUI** for diffusion workflows, **n8n** for workflows, **OpenClaw** as an optional assistant layer, and an **MCP gateway** for shared tools. A **dashboard** provides a single place to inspect dependencies, pull models, and (with tokens set) control parts of the stack.
+**Ordo AI Stack** packages a **local-first** stack: llama.cpp-backed models behind an **OpenAI-compatible** LiteLLM model gateway, **Open WebUI** for chat, **ComfyUI** for diffusion workflows, **n8n** for workflows, and an **MCP gateway** for shared tools. A **dashboard** provides a single place to inspect dependencies, pull models, and (with tokens set) control parts of the stack.
 
 **Who it is for:** Operators running the stack on their own machine or LAN; contributors changing Python services, tests, and Compose definitions.
 
-**Docs:** [Getting started](docs/GETTING_STARTED.md) · [Configuration](docs/configuration.md) · [Docker runtime](docs/docker-runtime.md) · [Data](docs/data.md) · [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md) · [Architecture index](docs/architecture/README.md) · [PRD](docs/Product%20Requirements%20Document.md) · [Hermes Agent](docs/hermes-agent.md)
+**Docs:** [Getting started](docs/GETTING_STARTED.md) · [Configuration](docs/configuration.md) · [Data](docs/data.md) · [Hermes Agent](docs/hermes-agent.md) · [PRD index](docs/product%20requirements%20docs/index.md)
 
 ## Features
 
@@ -29,7 +29,6 @@ Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation 
 - **Open WebUI** (**3000**) — chat UI.
 - **ComfyUI** (**8188**) — workflows; large optional model downloads on demand.
 - **n8n** (**5678**) — automation.
-- **OpenClaw** (**6680** control UI; **6682** browser bridge) — optional; requires `OPENCLAW_GATEWAY_TOKEN`.
 - **MCP gateway** (**8811**) — shared MCP tools for connected clients.
 - **Ops controller** (internal **9000**; no host port by default) — compose lifecycle from the dashboard when `OPS_CONTROLLER_TOKEN` is set.
 - **GPU profiles** — `scripts/detect_hardware.py` generates `overrides/compute.yml` (gitignored) for NVIDIA / AMD / Intel / CPU paths.
@@ -48,25 +47,23 @@ Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation 
 
    Set at least **`BASE_PATH`** to the repo root (see comments in [`.env.example`](.env.example)). Optional: **`DATA_PATH`**, tokens, and model lists.
 
-3. **Full bootstrap** (directories, hardware detection, workspace seeds, then `docker compose up -d --build --force-recreate`):
+3. **Full bring-up** — the `compose` wrapper runs hardware detection, then builds and starts the stack:
 
    **Windows (PowerShell):**
 
    ```powershell
-   cd C:\path\to\ordo-ai-stack
-   .\ordo-ai-stack.ps1 initialize
+   .\compose.ps1 up -d --build --force-recreate
    ```
 
    **Linux / macOS:**
 
    ```bash
-   cd ~/path/to/ordo-ai-stack
-   ./ordo-ai-stack initialize
+   ./compose up -d --build --force-recreate
    ```
 
 4. Open the **dashboard** at [http://localhost:8080](http://localhost:8080) and **Open WebUI** at [http://localhost:3000](http://localhost:3000).
 
-**Lighter bring-up** (no forced rebuild/recreate; runs hardware detection via the `compose` wrapper):
+**Lighter bring-up** (no forced rebuild/recreate; still runs hardware detection):
 
 ```powershell
 .\compose.ps1 up -d
@@ -76,7 +73,7 @@ Docker Compose stack for local LLMs, chat UI, image/video (ComfyUI), automation 
 ./compose up -d
 ```
 
-**CPU-only / minimal services:** after init, bring up a subset, e.g. `ollama`, `dashboard`, `open-webui` — see [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
+**CPU-only / minimal services:** bring up a subset after init, e.g. `./compose up -d ollama dashboard open-webui`.
 
 ## Installation
 
@@ -97,7 +94,6 @@ Primary reference: **[`.env.example`](.env.example)** (copy to `.env`).
 |------|----------------------|
 | Paths | `BASE_PATH`, `DATA_PATH` |
 | Models | `MODELS`, `DEFAULT_MODEL` |
-| OpenClaw | `OPENCLAW_GATEWAY_TOKEN`, optional Discord/Telegram tokens |
 | Security / APIs | `DASHBOARD_AUTH_TOKEN`, `OPS_CONTROLLER_TOKEN`, `WEBUI_AUTH`, `HF_TOKEN`, `GITHUB_PERSONAL_ACCESS_TOKEN` |
 | MCP | `MCP_GATEWAY_SERVERS` |
 | Compute | `COMPUTE_MODE`, `COMPOSE_FILE` (see comments for `overrides/*.yml`) |
@@ -107,21 +103,16 @@ Auto-generated: **`overrides/compute.yml`** (from hardware detection). Do not co
 
 ## Usage
 
-- **Daily restart / full rebuild:** same as Quickstart step 3 (`ordo-ai-stack initialize`).
+- **Daily restart / full rebuild:** same as Quickstart step 3.
 - **On-demand one-off containers:**
 
   ```bash
   ./compose run --rm model-puller
   ./compose run --rm comfyui-model-puller
-  ./compose run --rm openclaw-cli onboard
-  ./compose --profile openclaw-cli run --rm openclaw-cli
   ```
-
-  Host `openclaw` installs are wired to the local `model-gateway` by `./scripts/ensure_dirs.sh` or `.\scripts\ensure_dirs.ps1`, so the CLI uses local models by default after setup.
 
 - **RAG:** `docker compose --profile rag up -d` and ingest paths per [Getting started — RAG](docs/GETTING_STARTED.md#rag-documents-in-chat).
 - **MCP clients:** connect to `http://localhost:8811/mcp` (see [mcp/README.md](mcp/README.md)).
-- **OpenClaw control UI:** `http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>` — see [openclaw/README.md](openclaw/README.md) and [openclaw/OPENCLAW_SECURE.md](openclaw/OPENCLAW_SECURE.md).
 
 ### Dashboard
 
@@ -144,37 +135,37 @@ Large optional downloads on demand; first run can take a long time. Pull via the
 ### Security
 
 - **Open WebUI:** set `WEBUI_AUTH=True` when exposing the stack beyond localhost.
-- **OpenClaw:** requires `OPENCLAW_GATEWAY_TOKEN`; for restricted access see [openclaw/OPENCLAW_SECURE.md](openclaw/OPENCLAW_SECURE.md) and `overrides/openclaw-secure.yml`.
+- **Dashboard:** set `DASHBOARD_AUTH_TOKEN` when the dashboard is reachable beyond localhost.
 - **Ops controller:** requires `OPS_CONTROLLER_TOKEN` for dashboard-driven lifecycle and installs.
 - Never commit `.env`. Full notes: [SECURITY.md](SECURITY.md).
 
 ### GPU / compute
 
-Hardware detection writes **`overrides/compute.yml`**. The `compose` wrapper runs detection before commands. **No GPU:** minimal stack and CPU paths — [Troubleshooting](docs/runbooks/TROUBLESHOOTING.md).
+Hardware detection writes **`overrides/compute.yml`**. The `compose` wrapper runs detection before commands. **No GPU:** use a minimal service set (`./compose up -d ollama dashboard open-webui`); ComfyUI will be slower.
 
 ### Architecture
 
 ```
-User → Dashboard / Open WebUI / N8N / OpenClaw
+User → Dashboard / Open WebUI / N8N
          │
          ├── Model Gateway (:11435) → LiteLLM → llama.cpp
          ├── MCP Gateway (:8811) → shared tools
          └── Ops Controller (:9000) → Docker Compose lifecycle
 ```
 
-Local-first, OpenAI-compatible endpoint; dashboard does not mount `docker.sock`. Details: [Product Requirements Document](docs/Product%20Requirements%20Document.md).
+Local-first, OpenAI-compatible endpoint; dashboard does not mount `docker.sock`. Details: [PRD index](docs/product%20requirements%20docs/index.md).
 
 ### Data
 
-Bind mounts only. Set **`BASE_PATH`** (and optionally **`DATA_PATH`**). Ollama blobs under **`models/ollama`**. See [docs/data.md](docs/data.md) and [docs/docker-runtime.md](docs/docker-runtime.md).
+Bind mounts only. Set **`BASE_PATH`** (and optionally **`DATA_PATH`**). Ollama blobs under **`models/ollama`**. See [docs/data.md](docs/data.md).
 
 ### MCP (Model Context Protocol)
 
 [MCP Gateway](mcp/) — configure servers with `MCP_GATEWAY_SERVERS` in `.env`. Endpoint: `http://localhost:8811/mcp`. See [mcp/README.md](mcp/README.md).
 
-### OpenClaw
+### Hermes Agent
 
-[openclaw/](openclaw/) is integrated in the main compose. Workspace: **`data/openclaw/workspace/`** (`MEMORY.md`, `TOOLS.md`, `SOUL.md`, `AGENTS.md`, `USER.md`). If **`MEMORY.md`** is not writable or **`TOOLS.md`** is stale, run **`scripts/fix_openclaw_workspace_permissions.ps1`** or **`./scripts/fix_openclaw_workspace_permissions.sh`**, then restart **`openclaw-gateway`**. See [docs/configuration.md](docs/configuration.md) and [Troubleshooting — OpenClaw workspace](docs/runbooks/TROUBLESHOOTING.md#openclaw-workspace--eacces--permission-denied-on-memorymd-or-other-md).
+Hermes Agent runs as two compose services (`hermes-gateway` + `hermes-dashboard`) with persistent state under `data/hermes/`. Setup and upgrade notes: [docs/hermes-agent.md](docs/hermes-agent.md).
 
 ## Development
 
@@ -186,13 +177,7 @@ Bind mounts only. Set **`BASE_PATH`** (and optionally **`DATA_PATH`**). Ollama b
 ```bash
 pip install -r tests/requirements.txt
 python -m pytest tests/ -v
-python -m ruff check dashboard tests model-gateway ops-controller rag-ingestion scripts
-```
-
-**OpenClaw config check** (example fixture path used in CI):
-
-```bash
-python scripts/validate_openclaw_config.py tests/fixtures/openclaw_valid.json
+python -m ruff check dashboard tests model-gateway ops-controller rag-ingestion scripts comfyui-mcp orchestration-mcp worker
 ```
 
 **Health / diagnostics:**
@@ -205,7 +190,7 @@ python scripts/validate_openclaw_config.py tests/fixtures/openclaw_valid.json
 ./scripts/doctor.sh
 ```
 
-Optional: `DOCTOR_DEPS_TIMEOUT_SEC`; `DASHBOARD_AUTH_TOKEN` from `.env` when probing the dashboard. See [Troubleshooting — Quick Diagnostics](docs/runbooks/TROUBLESHOOTING.md).
+Optional: `DOCTOR_DEPS_TIMEOUT_SEC`; `DASHBOARD_AUTH_TOKEN` from `.env` when probing the dashboard.
 
 **Smoke (Docker required):**
 
@@ -218,17 +203,14 @@ Optional: `DOCTOR_DEPS_TIMEOUT_SEC`; `DASHBOARD_AUTH_TOKEN` from `.env` when pro
 # or: make smoke-test
 ```
 
-**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): TruffleHog secret scan; **pytest** + **ruff**; OpenClaw fixture validation; **`docker compose config`**; optional **compose smoke** via workflow dispatch.
+**CI** ([`.github/workflows/ci.yml`](.github/workflows/ci.yml)): TruffleHog secret scan; **pytest** + **ruff**; **`docker compose config`**; optional **compose smoke** via workflow dispatch.
 
 ## Troubleshooting
 
 1. **Services won’t start or images are stale** — Rebuild affected images and recreate, e.g. `docker compose build dashboard model-gateway` (or the `compose` wrapper), then `up -d`. Doctor **WARN** on missing `/api/dependencies` or `/ready` often indicates an old image.
 2. **Doctor warns on Ollama (11434) or MCP (8811)** — Expected if those ports are not published; use `overrides/ollama-expose.yml` / `overrides/mcp-expose.yml` or set `DOCTOR_STRICT=1` only when you intend strict probes (see doctor script comments in repo).
 3. **No GPU** — Use a minimal service set or CPU-oriented overrides; ComfyUI will be slower.
-4. **OpenClaw workspace `EACCES` or stale `TOOLS.md`** — Run `scripts/fix_openclaw_workspace_permissions.ps1` or `./scripts/fix_openclaw_workspace_permissions.sh`, then restart `openclaw-gateway` — [Troubleshooting — OpenClaw](docs/runbooks/TROUBLESHOOTING.md#openclaw-workspace--eacces--permission-denied-on-memorymd-or-other-md).
-5. **Exposing to a network** — Enable **Open WebUI** auth (`WEBUI_AUTH=True`), protect **OpenClaw** with the gateway token, and harden **n8n** — see [SECURITY.md](SECURITY.md).
-
-More: [docs/runbooks/TROUBLESHOOTING.md](docs/runbooks/TROUBLESHOOTING.md) · [BACKUP_RESTORE.md](docs/runbooks/BACKUP_RESTORE.md) · [UPGRADE.md](docs/runbooks/UPGRADE.md)
+4. **Exposing to a network** — Enable **Open WebUI** auth (`WEBUI_AUTH=True`), set `DASHBOARD_AUTH_TOKEN`, and harden **n8n** — see [SECURITY.md](SECURITY.md).
 
 ## Roadmap
 
