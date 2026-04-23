@@ -4,8 +4,7 @@
 A web-based control plane that provides a single pane of glass for:
 - Managing Docker-Compose services (start/stop/restart, logs)
 - Pulling and configuring AI models (Ollama, vLLM, etc.)
-- Viewing workspace and memory state (MEMORY.md, SOUL.md)
-- Interacting with the OpenClaw assistant layer via its Control UI
+- Viewing dependency health and throughput stats
 - Executing MCP tool calls from any browser (via the MCP Gateway)
 
 ## API Reference
@@ -51,13 +50,10 @@ A web-based control plane that provides a single pane of glass for:
 
 - **Docker Lifecycle** – Calls the Ops Controller API (`/services/{id}/start|stop|restart`) using the `OPS_CONTROLLER_TOKEN` from `.env`. The UI never mounts `docker.sock`; it uses the controller as a secure proxy.
 - **Model Management** – Lists available models, triggers `model-puller` containers, and shows pull progress. Stores model choices in the dashboard data directory (`data/dashboard/`, bind-mounted as `/data/dashboard` in the container).
-- **Workspace Viewer** – Renders the Markdown workspace (`data/openclaw/workspace/`) with syntax highlighting and live editing. If bind-mount permissions break writes, use `scripts/fix_openclaw_workspace_permissions.ps1` or `scripts/fix_openclaw_workspace_permissions.sh`, then restart `openclaw-gateway`.
-- **OpenClaw Integration** – Loads the Control UI (served at `/openclaw`) which uses `gateway__call` RPC to talk to the OpenClaw service. The UI forwards user intents (e.g., "list devices") to the CLI.
 - **MCP Gateway Explorer** – Provides a tab to list registered MCP servers, invoke tools, and view tool output (via `gateway__call`). Uses the unified model-gateway for AI calls.
 
 ## Security Model
 - All mutating UI actions require the `DASHBOARD_AUTH_TOKEN` (read from `.env`). The UI validates the token and includes it in the `Authorization: Bearer …` header for all Ops Controller calls.
-- Token for model-gateway calls uses `OPENCLAW_GATEWAY_TOKEN` from `.env` (injected via compose environment).
 
 ## Non-Goals
 - Direct end-user chat UI. The chat UI lives in Open WebUI; the dashboard is for *operations*.
@@ -67,17 +63,16 @@ A web-based control plane that provides a single pane of glass for:
 - `docker compose` (v2) installed on the host.
 - `OPERATIONS` environment variables:
   - `OPS_CONTROLLER_TOKEN` – auth for the Ops Controller.
-  - `OPENCLAW_GATEWAY_TOKEN` – for all model-gateway calls.
   - `DASHBOARD_AUTH_TOKEN` – for UI-to-controller auth.
 - The `dashboard` service itself (Python/Flask app with static HTML frontend) runs inside the Ordo AI Stack.
 
 ## Typical Use Flow
 1. Open `http://localhost:8080`.
 2. Authenticate with the `DASHBOARD_AUTH_TOKEN`.
-3. Use the "Services" tab to stop the `openclaw-gateway` if a token issue is suspected.
-4. Navigate to the "OpenClaw" tab, click "List devices" – the UI calls `gateway__call` which runs `openclaw\scripts\run-cli.ps1 devices list` and shows the result.
+3. Use the "Services" tab to stop or restart a service if an issue is suspected.
+4. Pull a new Ollama or ComfyUI model from the relevant tab.
 5. In the "MCP" tab, add a new tool server (e.g., a custom web search provider) by clicking "Add" and filling the JSON manifest.
 
 ---
 
-**See also:** [OpenClaw Assistant Layer](component-openclaw.md) and [Orchestration Layer](component-orchestration-layer.md).
+**See also:** [Orchestration Layer](component-orchestration-layer.md).
