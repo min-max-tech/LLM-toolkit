@@ -52,7 +52,7 @@ DISCORD_ALLOWED_USERS=<your-user-id-from-step-5>
 DISCORD_REQUIRE_MENTION=false
 ```
 
-The compose file aliases legacy `DISCORD_TOKEN` to `DISCORD_BOT_TOKEN` automatically, so if you already had `DISCORD_TOKEN=` (e.g. from OpenClaw), you don't need to rename it.
+The compose file aliases legacy `DISCORD_TOKEN` to `DISCORD_BOT_TOKEN` automatically, so existing `DISCORD_TOKEN=` values in `.env` continue to work without renaming.
 
 After editing `.env`:
 
@@ -149,6 +149,3 @@ rm -rf data/hermes/*
 docker compose up -d
 ```
 
----
-
-> **Note:** The stack previously used OpenClaw as its assistant-agent layer. It was decommissioned on 2026-04-20 — see `CHANGELOG.md` for the removal entry.

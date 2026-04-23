@@ -1,194 +1,140 @@
 # Configuration Quick Reference
 
-This document provides a central reference for environment variables, config keys, and OpenClaw workspace setup.
+Short reference for the env vars, MCP config, and compute overrides you'll touch most often. `.env.example` is the canonical list; this page highlights the common ones and how they interact.
 
 ## Environment Variables
 
-Copy `.env.example` to `.env` and configure the following:
+Copy `.env.example` to `.env` and set at least `BASE_PATH`. Everything else has sensible defaults.
 
 ### Required
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `BASE_PATH` | `.` | Repository root path (use forward slashes on Windows, e.g., `C:/dev/AI-toolkit`) |
-| `OPENCLAW_GATEWAY_TOKEN` | *(empty)* | **OpenClaw gateway authentication token** (required for OpenClaw integration) |
+| `BASE_PATH` | `.` | Repository root (forward slashes on Windows, e.g. `C:/dev/AI-toolkit`) |
 
-### Optional
+### Commonly set
 
 | Variable | Default | Purpose |
 |---|---|---|
 | `DATA_PATH` | `${BASE_PATH}/data` | Override data directory location |
-| `MODELS` | `qwen3:8b,deepseek-r1:7b,deepseek-coder:6.7b,nomic-embed-text` | Comma-separated Ollama models to pull on first start |
-| `DEFAULT_MODEL` | `jaahas/qwen3.5-uncensored:27b` | Default model used across dashboard, Open WebUI, OpenClaw |
-| `DISCORD_TOKEN` | *(empty)* | Discord bot token (maps to `DISCORD_BOT_TOKEN` in openclaw-gateway) |
-| `TELEGRAM_BOT_TOKEN` | *(empty)* | Telegram bot token |
-| `OPS_CONTROLLER_TOKEN` | *(empty)* | Ops controller Bearer token (generate: `openssl rand -hex 32`) |
-| `DASHBOARD_AUTH_TOKEN` | *(empty)* | Dashboard API Bearer token |
-| `HF_TOKEN` | *(empty)* | Hugging Face token for gated model downloads (ComfyUI Manager and ops-controller pulls) |
-| `GITHUB_PERSONAL_ACCESS_TOKEN` | *(empty)* | GitHub personal access token for GitHub MCP server; also passed to the **`comfyui`** container as **`GITHUB_TOKEN`** for Manager API rate limits |
-| `N8N_API_KEY` | *(empty)* | n8n MCP server API key (Settings → API in n8n UI) |
-| `EMBED_MODEL` | `nomic-embed-text` | RAG embedding model (must exist in Ollama) |
-| `OPENCLAW_SKIP_TOOLS_MD_UPGRADE` | `0` | Set to `1` to skip auto-upgrade of `TOOLS.md` in workspace |
+| `DEFAULT_MODEL` | `local-chat` | Canonical model alias used by Open WebUI, Hermes, and LiteLLM |
+| `MODELS` | *(see `.env.example`)* | Comma-separated Ollama models to pull on first start |
+| `OPS_CONTROLLER_TOKEN` | *(empty)* | Required for dashboard-driven service lifecycle (`openssl rand -hex 32`) |
+| `DASHBOARD_AUTH_TOKEN` | *(empty)* | Optional Bearer auth on dashboard `/api/*` |
+| `HF_TOKEN` | *(empty)* | Hugging Face token for gated model downloads |
+| `GITHUB_PERSONAL_ACCESS_TOKEN` | *(empty)* | GitHub MCP server token; also passed to `comfyui` as `GITHUB_TOKEN` for Manager API |
+| `TAVILY_API_KEY` | *(empty)* | Required if the `tavily` MCP server is enabled |
 | `COMPUTE_MODE` | *(auto-detected)* | Override GPU type: `nvidia`, `amd`, `intel`, `cpu` |
 
-**Important:** `OPENCLAW_GATEWAY_TOKEN` is used for OpenClaw authentication, NOT `DASHBOARD_AUTH_TOKEN`. These are separate tokens for different services.
+### Hermes Agent
 
-### RAG (--profile rag)
+See [hermes-agent.md](hermes-agent.md) for the full setup flow.
 
 | Variable | Default | Purpose |
 |---|---|---|
-| `EMBED_MODEL` | `nomic-embed-text` | Embedding model (must be pulled in Ollama) |
-| `RAG_COLLECTION` | `documents` | Qdrant collection name (must match Open WebUI / ingestion) |
-| `RAG_CHUNK_SIZE` | `400` | Chunk size in tokens for rag-ingestion |
+| `HERMES_DASHBOARD_PORT` | `9119` | Host port for the Hermes dashboard |
+| `DISCORD_BOT_TOKEN` | *(empty)* | Discord bot token. Legacy `DISCORD_TOKEN` is aliased automatically. |
+| `DISCORD_ALLOWED_USERS` | *(empty)* | Comma-separated Discord user IDs authorized to DM / invoke the bot. Required for Discord use. |
+| `DISCORD_ALLOWED_CHANNELS` | *(empty)* | Comma-separated channel IDs where the bot may respond. Optional. |
+| `DISCORD_REQUIRE_MENTION` | `true` | Require `@bot` mention to respond. |
+
+### RAG (`--profile rag`)
+
+| Variable | Default | Purpose |
+|---|---|---|
+| `EMBED_MODEL` | `nomic-embed-text-v1.5.Q4_K_M.gguf` | Embedding model used by `rag-ingestion` and Open WebUI |
+| `RAG_COLLECTION` | `documents` | Qdrant collection (must match Open WebUI / ingestion) |
+| `RAG_CHUNK_SIZE` | `400` | Chunk size in tokens |
 | `RAG_CHUNK_OVERLAP` | `50` | Chunk overlap in tokens |
-
-## OpenClaw Workspace Files
-
-The OpenClaw agent workspace lives at `data/openclaw/workspace/`. These files are persistent across container restarts:
-
-| File | Description |
-|---|---|
-| `SOUL.md` | Core agent identity and purpose |
-| `AGENTS.md` | Agent policy; **lead with non-negotiables** (MCP tool names, Discord = delivery truth for cron, ~2000-char posts) |
-| `TOOLS.md` | **Short canonical** URLs + MCP invocation + cron/Discord + failure table |
-| `MEMORY.md` | **Persistent memory** (survives restarts, key file for agent continuity) |
-| `USER.md` | User profile and preferences |
-| `IDENTITY.md` | Agent identity |
-| `HEARTBEAT.md` | Agent activity log |
-
-### OpenClaw Config (openclaw.json)
-
-The file `data/openclaw/openclaw.json` is auto-generated by `openclaw-config-sync` and contains:
-
-```json
-{
-  "models": [...],
-  "plugins": [...],
-  "channels": {
-    "discord": {"token": "..."},
-    "telegram": {"token": "..."}
-  },
-  "tools": {
-    "web": {"search": {"enabled": false}}
-  }
-}
-```
-
-**Note:** The `OPENCLAW_GATEWAY_TOKEN` from `.env` is written here by the config sync container on startup.
-
-## Re-run OpenClaw sync (manual)
-
-Compose **service names** (there is **no** `openclaw-merge-config` or `openclaw-ensure-workspace` — those names are wrong):
-
-| Service | Role |
-|---|---|
-| `openclaw-config-sync` | Runs `merge_gateway_config.py` → merges model list + tokens into `openclaw.json` |
-| `openclaw-workspace-sync` | Seeds/copies workspace `*.md`, upgrades `TOOLS.md` stub, `chown` for uid 1000 |
-| `openclaw-plugin-config` | Ensures `openclaw-mcp-bridge` npm package + plugin entry in `openclaw.json` |
-| `openclaw-plugin-install` | Optional; **profile `openclaw-setup`** — `plugins install openclaw-mcp-bridge` |
-
-From the repo root, after editing `.env` or `data/mcp/servers.txt`:
-
-```bash
-docker compose run --rm openclaw-config-sync
-docker compose run --rm openclaw-workspace-sync
-docker compose run --rm openclaw-plugin-config
-docker compose up -d openclaw-gateway
-```
-
-**Windows (Git Bash):** MSYS may rewrite paths in `docker compose exec … /home/node/...`. Prefer **PowerShell** for exec, or set `MSYS_NO_PATHCONV=1` for that command. To inspect config on the host instead: `type data\openclaw\openclaw.json` (or `Get-Content`).
-
-**Search “Tool not found” for `gateway__duckduckgo__search`:** That is an **invalid OpenClaw tool id**. Use **`gateway__call`** with inner `tool: "duckduckgo__search"` — see [TROUBLESHOOTING — MCP tools](runbooks/TROUBLESHOOTING.md#mcp-tools--tool-not-found--mcp-session-id--missing_brave_api_key) and [openclaw/workspace/TOOLS.md.example](../openclaw/workspace/TOOLS.md.example).
+| `QDRANT_PORT` | `6333` | Qdrant host port (change if something else already uses 6333) |
 
 ## MCP Server Configuration
 
-Repo templates live under **`mcp/gateway/`** and **`mcp/docs/`**; runtime files are in **`data/mcp/`** (bind-mounted into the gateway). See [mcp/README.md](../mcp/README.md).
+Repo templates live under `mcp/gateway/`; runtime files are in `data/mcp/` (bind-mounted into the gateway). See [mcp/README.md](../mcp/README.md).
 
-MCP servers are configured in `data/mcp/servers.txt` (one server per line) and `data/mcp/registry.json` (metadata, allow_clients, rate limits).
+Enabled servers are listed in `data/mcp/servers.txt` (one per line). Metadata, per-server `allow_clients`, and rate limits live in `data/mcp/registry.json`.
 
-Default MCP servers: `duckduckgo`, `n8n`, `tavily`, `comfyui` (set `TAVILY_API_KEY` for Tavily)
+Default servers: `duckduckgo`, `n8n`, `tavily`, `comfyui` (Tavily requires `TAVILY_API_KEY`). Override with `MCP_GATEWAY_SERVERS` in `.env`:
 
-Override with `MCP_GATEWAY_SERVERS` in `.env`:
 ```
-MCP_GATEWAY_SERVERS=duckduckgo,github
+MCP_GATEWAY_SERVERS=duckduckgo,github-official
 ```
+
+Edits to `servers.txt` trigger a gateway reload within ~10 seconds — no container restart needed.
 
 ## Compute Configuration
 
-Hardware detection is auto-run by `scripts/detect_hardware.py` and generates `overrides/compute.yml`.
+`scripts/detect_hardware.py` runs via the `compose` wrapper and writes `overrides/compute.yml` (gitignored). It's re-detected every time you invoke `./compose`.
 
-To override manually, set `COMPUTE_MODE` in `.env`:
-```
-COMPUTE_MODE=nvidia  # or amd, intel, cpu
-```
+To override manually, set `COMPUTE_MODE` and `COMPOSE_FILE` in `.env`:
 
-Then update `COMPOSE_FILE` in `.env`:
 ```
+COMPUTE_MODE=nvidia
 COMPOSE_FILE=docker-compose.yml;overrides/compute.yml
 ```
 
-**ComfyUI `CLI_ARGS`:** Set `COMFYUI_CLI_ARGS` in `.env` (or accept the default from `scripts/detect_hardware.py`) so GPU runs use **`--normalvram`** — e.g. `--disable-xformers --normalvram --enable-manager`. The compose base default without this variable is **`--cpu --enable-manager`**; `overrides/compute.yml` supplies a GPU default when unset.
+**ComfyUI `CLI_ARGS`:** Set `COMFYUI_CLI_ARGS` in `.env`, or accept the default that `detect_hardware.py` supplies (GPU stacks get `--normalvram` so text encoders stay on GPU). Without the var, the compose base default is `--cpu --enable-manager`.
 
 ## Data Persistence Rules
 
-| Directory | Purpose | Persists Across Restarts? |
-|---|---|---|
-| `data/openclaw/workspace/` | Agent workspace (MEMORY.md, TOOLS.md, etc.) | ✅ Yes |
-| `data/openclaw/extensions/` | OpenClaw plugins (Docker volume) | ✅ Yes |
-| `data/openclaw/` | OpenClaw config (openclaw.json) | ✅ Yes |
-| `models/ollama/` | Ollama model blobs | ✅ Yes |
-| `models/comfyui/` | ComfyUI model weights | ✅ Yes |
-| `data/qdrant/` | Qdrant vector DB storage | ✅ Yes |
-| `data/rag-input/` | RAG input files | ✅ Yes |
-| `data/ops-controller/` | Audit logs | ✅ Yes |
-| `data/mcp/` | MCP server config | ✅ Yes |
-| `data/dashboard/` | Dashboard throughput/benchmark data | ✅ Yes |
-| `/tmp` (inside containers) | Ephemeral cache | ❌ No (tmpfs) |
+All `data/` and `models/` directories are bind-mounted and persist across container restarts.
 
-**All `data/` and `models/` directories are bind-mounted and persist across container restarts.**
+| Directory | Purpose |
+|---|---|
+| `data/hermes/` | Hermes agent runtime state (sessions, per-user allowlists) |
+| `data/qdrant/` | Qdrant vector DB storage |
+| `data/rag-input/` | Drop files here for `rag-ingestion` |
+| `data/ops-controller/` | Audit logs |
+| `data/mcp/` | `servers.txt`, `registry.json`, `registry-custom.yaml` |
+| `data/dashboard/` | Dashboard throughput / benchmark data |
+| `data/comfyui-storage/` | ComfyUI outputs, custom nodes, local configs |
+| `models/ollama/` | Ollama model blobs |
+| `models/gguf/` | llama.cpp GGUF files |
+| `models/comfyui/` | ComfyUI checkpoints, LoRAs, VAEs, encoders |
+
+`/tmp` inside containers is tmpfs; nothing there survives a restart.
 
 ## Network Ports
 
-| Service | Port | Description |
+| Service | Host port | Description |
 |---|---|---|
-| Dashboard | `8080` | Dashboard API and control center |
-| Model Gateway | `11435` | OpenAI-compatible model endpoint |
+| Dashboard | `8080` | Dashboard API + control center |
 | Open WebUI | `3000` | Chat interface |
-| ComfyUI | `8188` | Image/audio/video generation |
+| Model Gateway | `11435` | OpenAI-compatible model endpoint (LiteLLM in front of llama.cpp) |
+| ComfyUI | `8188` | Image / audio / video generation |
 | n8n | `5678` | Workflow automation |
-| OpenClaw Control UI | `6680` | **Main OpenClaw UI** (append `/?token=<OPENCLAW_GATEWAY_TOKEN>`) |
-| OpenClaw CDP Bridge | `6682` | Browser/CDP bridge only (not the main UI) |
-| Qdrant | `6333` | Vector database (RAG profile) |
-| Ollama | `11434` | Ollama API (backend-only by default; expose via `overrides/ollama-expose.yml`) |
-| MCP Gateway | `8811` | MCP Gateway (backend-only; expose via `overrides/mcp-expose.yml`) |
-
-**Note:** OpenClaw Control UI is at `:6680`, not `:6682`. The `:6682` port is for the browser/CDP bridge only.
+| Hermes dashboard | `9119` | Overridable via `HERMES_DASHBOARD_PORT` |
+| MCP Gateway | `8811` | Published on host so external clients (Cursor, Claude Desktop) can reach it |
+| Ollama | `11434` | **Backend-only by default.** Expose via `overrides/ollama-expose.yml` |
+| Qdrant | `6333` | RAG profile only |
+| Ops Controller | internal `9000` | Not published on the host |
 
 ## Audit Log Schema
 
-The audit log (`data/ops-controller/audit.log`) is JSONL format, append-only:
+`data/ops-controller/audit.log` is JSONL, append-only, one event per line:
 
 ```json
 {"timestamp":"2026-03-22T10:00:00Z","action":"model_pulled","model":"qwen3:8b","status":"success"}
 {"timestamp":"2026-03-22T10:01:00Z","action":"service_started","service":"ollama","status":"success"}
 ```
 
-## Example .env Configuration
+## Minimal `.env`
 
 ```
-# Required
 BASE_PATH=.
-OPENCLAW_GATEWAY_TOKEN=your-token-here
 
 # Models
 MODELS=qwen3:8b,deepseek-r1:7b,nomic-embed-text
-DEFAULT_MODEL=jaahas/qwen3.5-uncensored:27b
+DEFAULT_MODEL=local-chat
 
-# Optional tokens
-DISCORD_TOKEN=discord-bot-token-here
-HF_TOKEN=huggingface-token-here
+# Ops
 OPS_CONTROLLER_TOKEN=ops-controller-token-here
+DASHBOARD_AUTH_TOKEN=dashboard-token-here
+
+# Optional
+HF_TOKEN=
+GITHUB_PERSONAL_ACCESS_TOKEN=
 
 # RAG
-EMBED_MODEL=nomic-embed-text
+EMBED_MODEL=nomic-embed-text-v1.5.Q4_K_M.gguf
 ```

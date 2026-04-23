@@ -29,11 +29,7 @@ No GPU required for chat (Ollama runs on CPU, slower but works).
 
 Alternatively: `docker compose up -d` — same services without the full bootstrap/rebuild step (use the `compose` wrapper if you want auto hardware detection).
 
-**OpenClaw Control UI:** `http://localhost:6680/?token=<OPENCLAW_GATEWAY_TOKEN>`.
-
-**Important:** Use `OPENCLAW_GATEWAY_TOKEN` (not `DASHBOARD_AUTH_TOKEN`) for OpenClaw authentication. See [configuration.md](configuration.md) for the full environment variable reference.
-
-**Note on ports:** Port `:6680` is the main OpenClaw Control UI. Port `:6682` is the browser/CDP bridge only (used internally, not the main UI). If `docker compose` fails on OpenClaw services, see [TROUBLESHOOTING — OpenClaw](runbooks/TROUBLESHOOTING.md#openclaw) for log commands.
+**Hermes dashboard:** `http://localhost:9119/` (or whatever `HERMES_DASHBOARD_PORT` is set to). See [hermes-agent.md](hermes-agent.md) for setup and Discord configuration.
 
 ### RAG (documents in chat)
 
@@ -50,7 +46,7 @@ Use local files as context in **Open WebUI** via Qdrant + the `rag-ingestion` se
 
 Env knobs (optional, in `.env`): `EMBED_MODEL`, `RAG_COLLECTION`, `RAG_CHUNK_SIZE`, `RAG_CHUNK_OVERLAP` — see `.env.example` **RAG** section. The dashboard **RAG** section shows Qdrant collection point count when the stack can reach Qdrant. See the PRD **WS6: RAG Pipeline** for the full picture.
 
-**Optional — [Agentic Design Patterns](https://github.com/Mathews-Tom/Agentic-Design-Patterns) (MIT book text):** clone or copy the `.md` tree into `data/rag-input/` (for example `git clone --depth 1 https://github.com/Mathews-Tom/Agentic-Design-Patterns.git data/rag-input/agentic-design-patterns`), then run the steps above so `rag-ingestion` can index it. The companion **`agents/agentic-design-patterns.md`** in the OpenClaw workspace is a stack mapping only, not a substitute for the book.
+**Optional — [Agentic Design Patterns](https://github.com/Mathews-Tom/Agentic-Design-Patterns) (MIT book text):** clone or copy the `.md` tree into `data/rag-input/` (for example `git clone --depth 1 https://github.com/Mathews-Tom/Agentic-Design-Patterns.git data/rag-input/agentic-design-patterns`), then run the steps above so `rag-ingestion` can index it.
 
 ### Direct Ollama (Cursor, CLI)
 
@@ -68,7 +64,7 @@ Use vLLM as an additional model provider (e.g. for Llama, Mistral via Hugging Fa
    `docker compose -f docker-compose.yml -f overrides/vllm.yml --profile vllm up -d`
 2. Set in `.env`: `VLLM_URL=http://vllm:8000`
 3. Restart model-gateway: `docker compose restart model-gateway`
-4. In clients (Open WebUI, OpenClaw), choose models with prefix `vllm/<model-id>` (e.g. `vllm/meta-llama/Llama-3.2-3B-Instruct`).
+4. In clients (Open WebUI, Hermes), choose models with prefix `vllm/<model-id>` (e.g. `vllm/meta-llama/Llama-3.2-3B-Instruct`).
 
 See [overrides/vllm.yml](../overrides/vllm.yml) for `VLLM_MODEL` and resource limits.
 
@@ -85,9 +81,8 @@ Traffic is encrypted by Tailscale (WireGuard). No TLS at the app layer needed fo
 
 ## Next steps
 
-- [Configuration](configuration.md) — environment variables and OpenClaw workspace setup
-- [Docker Runtime](docker-runtime.md) — core workspace, volumes, and image details
+- [Configuration](configuration.md) — environment variables and service setup
 - [Data](data.md) — data schemas, lifecycle, and persistence rules
-- [Architecture & PRD](Product%20Requirements%20Document.md) — platform design and components
-- [Troubleshooting](runbooks/TROUBLESHOOTING.md) — common issues and fixes
+- [Hermes Agent](hermes-agent.md) — agent setup, Discord wiring, upgrade notes
+- [PRD index](product%20requirements%20docs/index.md) — platform design and components
 - [MCP Gateway](../mcp/README.md) — web search, GitHub, etc.
