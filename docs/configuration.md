@@ -48,6 +48,60 @@ See [hermes-agent.md](hermes-agent.md) for the full setup flow.
 | `RAG_CHUNK_OVERLAP` | `50` | Chunk overlap in tokens |
 | `QDRANT_PORT` | `6333` | Qdrant host port (change if something else already uses 6333) |
 
+## TurboQuant KV-Cache (llama.cpp)
+
+The `llamacpp` service runs a custom build from the [AmesianX/TurboQuant](https://github.com/AmesianX/TurboQuant) fork, produced by `llamacpp/Dockerfile` and pinned to a specific commit. On top of mainline's KV-cache quant types (`q4_0`, `q8_0`, etc.) it adds two TurboQuant variants: `turbo3` (3.5 bpw, neutral quality vs fp16) and `turbo2` (2.5 bpw, marginal quality dip for much smaller KV).
+
+### Which type should I pick?
+
+| Type | bpw | Per-token KV | Quality | When to use |
+|---|---|---|---|---|
+| `turbo3` | 3.5 | ~117 KiB | Neutral vs fp16 | Safe default when upgrading from `q4_0`; strictly better quality at smaller size. |
+| `turbo2` | 2.5 | ~83 KiB | Marginal dip | When you need maximum KV headroom and accept small quality cost (e.g. fitting long context entirely in VRAM). |
+| `q4_0` | ~4.5 | ~150 KiB | Small ppl loss | Mainline fallback if you revert `LLAMACPP_IMAGE` to upstream. |
+
+Per-token sizes assume Gemma-4-31B-class architecture; multiply by `LLAMACPP_CTX_SIZE` for total KV memory.
+
+### Enabling it
+
+Set in `.env`:
+
+```
+LLAMACPP_ENABLE_KV_CACHE_QUANTIZATION=1
+LLAMACPP_KV_CACHE_TYPE_K=turbo2   # or turbo3
+LLAMACPP_KV_CACHE_TYPE_V=turbo2   # matching K and V is recommended
+```
+
+Then `docker compose build llamacpp && docker compose up -d llamacpp`. First build takes ~25–35 min (compiles CUDA kernels for Blackwell sm_120); subsequent builds reuse the buildx layer cache.
+
+### Non-negotiable: Flash Attention
+
+TurboQuant kernels silently corrupt output without Flash Attention. The shell wrapper at `scripts/llamacpp/run-llama-server.sh` appends `--flash-attn on` automatically whenever `LLAMACPP_KV_CACHE_TYPE_K` or `LLAMACPP_KV_CACHE_TYPE_V` starts with `turbo`, overriding any `LLAMACPP_FLASH_ATTN=auto|off`. Do not try to disable this.
+
+### VRAM sizing cheat sheet
+
+Single-GPU budget = VRAM - driver overhead (~1.5 GB) - weights - compute buffer (~1.5 GB). Divide by per-token KV size for max on-GPU context.
+
+Example on 32 GB 5090 with a 19 GB Q4_K_M 31B model (10 GB KV budget):
+
+| KV type | Max context fully on GPU |
+|---|---|
+| fp16 | ~20k |
+| q8_0 | ~38k |
+| q4_0 | ~72k |
+| turbo3 | ~92k |
+| turbo2 | ~128k |
+
+### Rollback to upstream
+
+In `.env`:
+```
+LLAMACPP_IMAGE=ghcr.io/ggml-org/llama.cpp:server-cuda
+LLAMACPP_KV_CACHE_TYPE_K=q4_0
+LLAMACPP_KV_CACHE_TYPE_V=q4_0
+```
+`docker compose up -d llamacpp`. No code changes required.
+
 ## MCP Server Configuration
 
 Repo templates live under `mcp/gateway/`; runtime files are in `data/mcp/` (bind-mounted into the gateway). See [mcp/README.md](../mcp/README.md).
