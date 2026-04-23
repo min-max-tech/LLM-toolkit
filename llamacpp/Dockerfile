@@ -79,6 +79,8 @@ RUN cmake -S . -B build -G Ninja \
         -DGGML_CUDA_FA_ALL_QUANTS=ON \
         -DGGML_NATIVE=OFF \
         -DLLAMA_BUILD_TESTS=OFF \
+        -DCMAKE_EXE_LINKER_FLAGS="-Wl,-rpath-link,/usr/local/cuda/lib64/stubs" \
+        -DCMAKE_SHARED_LINKER_FLAGS="-Wl,-rpath-link,/usr/local/cuda/lib64/stubs" \
     && cmake --build build -j --target llama-server llama-perplexity
 
 # --- Runtime stage ------------------------------------------------------------
