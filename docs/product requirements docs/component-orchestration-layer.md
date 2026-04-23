@@ -1,7 +1,7 @@
 # Orchestration Layer
 
 ## Purpose
-A lightweight, plug‑in‑driven orchestrator that stitches together all AI services (model‑gateway, MCP, n8n, custom plugins) into a unified workflow engine. It does **not** expose any direct UI; it only provides APIs that any service (including the dashboard, OpenClaw, or external clients) can call.
+A lightweight, plug‑in‑driven orchestrator that stitches together all AI services (model‑gateway, MCP, n8n, custom plugins) into a unified workflow engine. It does **not** expose any direct UI; it only provides APIs that any service (including the dashboard, agent clients, or external callers) can call.
 
 ## Current Implementation
 
@@ -10,7 +10,6 @@ The orchestration layer today is an **MCP server** (`orchestration-mcp/server.py
 ### What exists now
 - MCP-based orchestration tools registered in the MCP gateway via `registry-custom.yaml`.
 - Dashboard HTTP routes that wrap orchestration operations for the UI.
-- A `wait-orchestration` init container that polls `dashboard:8080/api/orchestration/readiness` before OpenClaw starts.
 - Job tracking in the dashboard data directory.
 
 ### What does NOT exist yet
@@ -56,12 +55,12 @@ Response:
 ## Design Decisions (Why this shape?)
 1. **Extensibility over rigidity** – We want any new AI service (e.g., an Azure OpenAI integration) to be added by dropping a manifest file, not by touching core code.
 2. **Separation of concerns** – Orchestrator never holds long‑running state. It delegates execution to the underlying services (model‑gateway, n8n). The orchestrator's role is coordination, not execution.
-3. **Security** – All calls are authenticated with the existing `OPS_CONTROLLER_TOKEN`. The token is passed in the HTTP `Authorization` header by the dashboard or OpenClaw CLI.
+3. **Security** – All calls are authenticated with the existing `OPS_CONTROLLER_TOKEN`. The token is passed in the HTTP `Authorization` header by the dashboard or agent client.
 4. **Observability** – Every step is logged with trace IDs, making it easy to trace a user's request through the entire AI stack.
 
 ## Integration with Existing Stack
 - **Model Gateway** – Calls to the orchestrator can chain model calls (e.g., call `model-a`, then `model-b`). The orchestrator forwards the request to the gateway with the appropriate provider name.
-- **OpenClaw** – OpenClaw CLI can invoke the orchestrator via the `gateway__call` RPC when a user issues `/workflow` commands.
+- **Agent clients** (Hermes, etc.) – Invoke the orchestrator via the MCP `gateway__call` RPC or the dashboard HTTP routes.
 - **Dashboard** – The dashboard shows orchestration status, active jobs, and recent logs via `routes_orchestration.py`.
 - **n8n** – Existing n8n workflows can be composed with the orchestrator for multi‑model orchestration, without rewriting node logic.
 - **Ops Controller** – Handles lifecycle of the orchestrator container; restarts it automatically on failures.
@@ -71,7 +70,7 @@ Response:
 2. **Step 1** – Orchestrator calls `gateway__call` with `provider=ollama`, `tool=search` to fetch context.
 3. **Step 2** – Orchestrator invokes the `comfyui` plugin to render an image.
 4. **Step 3** – Orchestrator compiles a markdown summary using the LLM.
-5. **Step 4** – Returns the full response to the caller (OpenClaw CLI or dashboard).
+5. **Step 4** – Returns the full response to the caller (agent client or dashboard).
 
 ---
 

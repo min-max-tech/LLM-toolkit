@@ -2,7 +2,7 @@
 
 ## Purpose
 
-The **MCP gateway** service exposes one **MCP HTTP endpoint** (backend port **8811** in the default compose) that aggregates multiple logical servers—web search, n8n, ComfyUI workflows, orchestration helpers, etc.—so clients (OpenClaw bridge, n8n, other agents) use **one URL** and one authentication pattern.
+The **MCP gateway** service exposes one **MCP HTTP endpoint** (backend port **8811** in the default compose) that aggregates multiple logical servers—web search, n8n, ComfyUI workflows, orchestration helpers, etc.—so clients (Hermes, n8n, other agents) use **one URL** and one authentication pattern.
 
 ## Key Responsibilities
 
@@ -32,7 +32,7 @@ The **MCP gateway** service exposes one **MCP HTTP endpoint** (backend port **88
       "image": "mcp/github-official",
       "description": "GitHub issues, PRs, repos",
       "scopes": ["github"],
-      "allow_clients": ["open-webui", "openclaw"],
+      "allow_clients": ["open-webui", "hermes"],
       "env_schema": {
         "GITHUB_PERSONAL_ACCESS_TOKEN": {"required": true, "secret": true}
       }
@@ -66,15 +66,9 @@ The **MCP gateway** service exposes one **MCP HTTP endpoint** (backend port **88
 - `allow_clients: []` = tool disabled in registry (requires explicit opt-in to enable)
 - Per-client enforcement: **not yet implemented** — requires Docker MCP Gateway `X-Client-ID` support (M6)
 
-## Relationship to OpenClaw
+## Client Integration
 
-`plugins.entries["openclaw-mcp-bridge"]` in `openclaw.json` must point at **`http://mcp-gateway:8811/mcp`** (or the correct internal URL). OpenClaw discovers tools through that single bridge—**not** duplicate per-server ComfyUI URLs.
-
-OpenClaw-specific details:
-- `openclaw-mcp-bridge` plugin → `http://mcp-gateway:8811/mcp`
-- Tools surface as `gateway__duckduckgo_search`, etc.
-- Future per-agent policy: add `X-Client-ID: openclaw` header; gateway checks `allow_clients`
-- Planned (M6): Auto-disable after 3 consecutive health failures; per-client allowlist enforcement at gateway
+Agent clients (Hermes today, others later) connect to the gateway via the single MCP URL `http://mcp-gateway:8811/mcp`. Tools surface under names like `gateway__duckduckgo_search`. Per-client policy enforcement is planned for M6 via `X-Client-ID` + `allow_clients`, along with auto-disable after 3 consecutive health failures.
 
 ## Non-Goals
 

@@ -13,13 +13,9 @@
 | `OPS_CONTROLLER_TOKEN` | dashboard, ops-controller | Bearer token for ops API | *(required)* |
 | `DASHBOARD_AUTH_TOKEN` | dashboard | Bearer token for dashboard API | *(optional)* |
 | `DEFAULT_MODEL` | dashboard, open-webui | Default model shown in Open WebUI chat | *(optional)* |
-| `OPENCLAW_GATEWAY_TOKEN` | openclaw | Gateway auth token | *(required)* |
-| `OPENCLAW_GATEWAY_PORT` | openclaw-gateway | OpenClaw gateway host port | `6680` (secure: **18789**) |
-| `OPENCLAW_BRIDGE_PORT` | openclaw-gateway | OpenClaw bridge host port | `6681` (secure: **18790**) |
-| `OPENCLAW_CONFIG_DIR` | openclaw | OpenClaw config directory | `${BASE_PATH}/data/openclaw` |
-| `OPENCLAW_WORKSPACE_DIR` | openclaw | OpenClaw workspace directory | `${BASE_PATH}/data/openclaw/workspace` |
-| `OPENCLAW_UNRESTRICTED_GATEWAY_CONTAINER` | openclaw-config-sync | When `1`, merge script sets full **exec** + **elevated** for webchat/Discord (`merge_gateway_config.py`) | `0` (unset) |
-| `OPENCLAW_DISCORD_GUILD_IDS` | openclaw-config-sync | Comma-separated guild IDs for Discord allowlist | *(empty)* |
+| `HERMES_DASHBOARD_PORT` | hermes-dashboard | Hermes dashboard host port | `9119` |
+| `DISCORD_BOT_TOKEN` | hermes-gateway | Discord bot token | *(optional)* |
+| `DISCORD_ALLOWED_USERS` | hermes-gateway | Comma-separated Discord user IDs authorized to DM/invoke | *(required for Discord use)* |
 | `MCP_GATEWAY_PORT` | mcp-gateway | MCP gateway host port | `8811` |
 | `MODEL_GATEWAY_PORT` | model-gateway | Model gateway host port | `11435` |
 | `WEBUI_AUTH` | open-webui | Enable Open WebUI auth | `False` (target `True` in M6) |

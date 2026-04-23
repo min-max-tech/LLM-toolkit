@@ -8,7 +8,7 @@
 ## Key Responsibilities
 - **Unified API**: OpenAI-compatible surface (`/v1/...`) for local and routed models.
 - **Provider / API keys**: Manages keys and headers for upstream providers where configured; local Ollama uses the stack's shared key material (e.g. `ollama-local` pattern).
-- **Cross-service use**: Open WebUI, OpenClaw (via its `gateway` provider), n8n, and other services target this service instead of raw Ollama where compose wires them.
+- **Cross-service use**: Open WebUI, Hermes, n8n, and other services target this service instead of raw Ollama where compose wires them.
 - **Extensibility**: Additional backends or policies are added in the gateway service code and compose env—not in every client.
 
 ## API Reference
@@ -57,17 +57,9 @@ Converts Responses API input items and tool definitions to chat-completions form
 | Client | Current | Target | Change needed |
 |--------|---------|--------|---------------|
 | Open WebUI | `OPENAI_API_BASE_URL=http://model-gateway:11435/v1` | Same | None |
-| OpenClaw | `gateway` provider → `http://model-gateway:11435/v1` | Same | None |
+| Hermes | `http://model-gateway:11435/v1` | Same | None |
 | N8N | No LLM node set | `OPENAI_API_BASE=http://model-gateway:11435/v1` | Docs only |
 | Cursor/external | `http://localhost:11435/v1` | Same | None |
-
-## OpenClaw-Specific (Confirmed Working)
-
-- `models.providers.gateway.baseUrl`: `http://model-gateway:11435/v1`
-- `models.providers.gateway.api`: `openai-completions`
-- `models.providers.gateway.headers.X-Service-Name`: `openclaw`
-- Config sync: `merge_gateway_config.py` adds gateway provider if missing
-- No migration needed — existing `ollama` provider continues to work
 
 ## Configuration
 
