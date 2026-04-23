@@ -19,6 +19,12 @@ HERMES_BIN=/opt/hermes-agent/.venv/bin/hermes
 "$HERMES_BIN" config set model.base_url        "http://model-gateway:11435/v1" >/dev/null
 "$HERMES_BIN" config set model.api_key         "${LITELLM_MASTER_KEY:-local}"  >/dev/null
 "$HERMES_BIN" config set model.default         "local-chat"                    >/dev/null
+# Context window: single source of truth is LLAMACPP_CTX_SIZE in .env. The
+# compose file plumbs it into this container's env; the seed below overwrites
+# whatever hermes had cached so a change to .env + `docker compose up -d
+# hermes-gateway hermes-dashboard` is enough to update the UI progress bar
+# (`0/<N>K`). Falls back to 262144 (256k) if unset — matches the stack default.
+"$HERMES_BIN" config set model.context_length  "${LLAMACPP_CTX_SIZE:-262144}"  >/dev/null
 "$HERMES_BIN" config set mcp_servers.gateway.url "http://mcp-gateway:8811/mcp" >/dev/null
 
 # Bump timeouts for local model. Hermes's default 180s stale-timeout aborts

@@ -628,6 +628,11 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
       - PYTHONIOENCODING=utf-8
+      # Single source of truth for context window across the stack — llamacpp
+      # allocates KV for this; model-gateway templates it into litellm_config
+      # as max_input_tokens; the hermes entrypoint seeds model.context_length
+      # into $HERMES_HOME/config.yaml so the dashboard progress bar matches.
+      - LLAMACPP_CTX_SIZE=${LLAMACPP_CTX_SIZE:-262144}
       # 24h — effectively "never timeout". Hermes's run_agent.py:6606 reads
       # HERMES_STREAM_STALE_TIMEOUT (env-only, not a config key) with default 180s,
       # which kills streaming responses mid-flight on slow local-model turns.
@@ -696,6 +701,9 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
       - PYTHONIOENCODING=utf-8
+      # Same single-source plumbing as hermes-gateway — dashboard shares
+      # the bind-mounted config.yaml so either service's entrypoint seeds it.
+      - LLAMACPP_CTX_SIZE=${LLAMACPP_CTX_SIZE:-262144}
       # 24h — see hermes-gateway for rationale. Dashboard streams chat too.
       - HERMES_STREAM_STALE_TIMEOUT=86400
       # Point Hermes at the pre-built SPA (Dockerfile stage 1). Without this env var,
