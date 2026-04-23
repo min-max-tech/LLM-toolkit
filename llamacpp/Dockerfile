@@ -29,6 +29,13 @@ ARG CMAKE_CUDA_ARCHITECTURES=120
 
 ENV DEBIAN_FRONTEND=noninteractive
 
+# CUDA driver API stubs — libcuda.so.1 is provided by the NVIDIA driver at
+# runtime (via --gpus all + nvidia-container-runtime), but at build time the
+# linker needs a stub to satisfy cuMemCreate / cuMemMap / etc references
+# emitted by ggml-cuda. Without this, the final executable link fails with
+# 'libcuda.so.1, not found' even though the compile step succeeded.
+ENV LIBRARY_PATH=/usr/local/cuda/lib64/stubs
+
 RUN apt-get update && apt-get install -y --no-install-recommends \
         build-essential \
         ca-certificates \
