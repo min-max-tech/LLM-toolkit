@@ -522,8 +522,8 @@ services:
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/mcp:/mcp-config
-    # Published on host so remote tailnet devices can reach it (OpenClaude install,
-    # external MCP clients like Cursor). Backend services still address it as
+    # Published on host so external MCP clients (e.g. Cursor, Claude Desktop)
+    # can reach it. Backend services still address it as
     # http://mcp-gateway:8811 over the docker network.
     ports:
       - "${MCP_GATEWAY_PORT:-8811}:8811"
@@ -628,7 +628,7 @@ services:
       # Agent-level gateway_timeout (1800s) is the real upper bound; this just
       # keeps the streaming stale-detector from firing first.
       - HERMES_STREAM_STALE_TIMEOUT=86400
-      # Accept both DISCORD_BOT_TOKEN (Hermes-native) and legacy DISCORD_TOKEN (OpenClaw era).
+      # Accept both DISCORD_BOT_TOKEN and legacy DISCORD_TOKEN (aliased).
       - DISCORD_BOT_TOKEN=${DISCORD_BOT_TOKEN:-${DISCORD_TOKEN:-}}
       - DISCORD_ALLOWED_USERS=${DISCORD_ALLOWED_USERS:-}
       - DISCORD_ALLOWED_CHANNELS=${DISCORD_ALLOWED_CHANNELS:-}
