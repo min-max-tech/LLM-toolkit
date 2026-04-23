@@ -12,7 +12,6 @@
 | docker.sock in two services | Two attack surfaces for container escape | Accept: both required. Mitigate with allowlists, auth, no host ports | Remove one; document trade-off |
 | MCP filesystem SSRF | Tool access to host filesystem | Removed from default; `allow_clients: []` in registry | Clear from servers.txt |
 | Prompt injection via MCP tool output | Model manipulated by tool results | Allowlists; structured output in tool_result tags; monitor | Remove suspicious tool from servers.txt |
-| openclaw.json plaintext tokens on disk | Local token exposure if data/ is shared | Tokens in gitignored `data/`; document backup warnings | Rotate tokens |
 | Performance regression from gateway proxy | >10ms added latency | Thin async proxy; benchmarked acceptable. Cache helps | Direct `OLLAMA_BASE_URL` escape hatch |
 
 ## Open Questions
@@ -22,7 +21,6 @@
 | 1 | **Ops-controller docker GID:** `user: "1000:<gid>"` value depends on host docker GID | Resolved — ops-controller runs without explicit user |
 | 2 | **Open WebUI `OPENAI_API_BASE`:** Does `open-webui:v0.8.4` support this env? | Resolved — uses `OPENAI_API_BASE_URL`; working |
 | 3 | **MCP gateway policy:** Does Docker MCP Gateway support `X-Client-ID` for per-client allowlist? | Open — not yet; deferred to M6 |
-| 4 | **openclaw.json token externalization:** Can `merge_gateway_config.py` inject tokens from env? | Resolved for gateway auth + Discord/Telegram |
 | 5 | **Ollama host port:** Remove to reduce attack surface? | Resolved — backend-only by default; `overrides/ollama-expose.yml` |
 | 6 | **Audit log rotation** | Resolved — size-based rotation (`AUDIT_LOG_MAX_BYTES`) |
 | 7 | **vLLM timing** | Resolved — `overrides/vllm.yml` with `--profile vllm` |

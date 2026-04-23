@@ -40,7 +40,7 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 | Explicit frontend/backend networks | Live | `docker-compose.yml` |
 | Ollama backend-only (no host port default) | Live | `docker-compose.yml`, `overrides/ollama-expose.yml` |
 | SSRF egress block scripts | Live | `scripts/ssrf-egress-block.sh`, `.ps1` |
-| OpenClaw agentic runtime + CLI profile | Live | `docker-compose.yml` |
+| Hermes agent (gateway + dashboard) | Live | `docker-compose.yml`, `hermes/` |
 | vLLM optional compose profile | Live | `overrides/vllm.yml` |
 | Contract + smoke tests | Live | `tests/` |
 
@@ -50,16 +50,15 @@ A self-hosted AI platform that any developer can run with `./compose up -d`. Cor
 |------|----------|--------|
 | `docker.sock` in both `mcp-gateway` and `ops-controller` | High | Accepted — mitigated by allowlist + auth + no host port |
 | `WEBUI_AUTH` still defaults to `False` | Medium | Tracked — change to `True` in M6 |
-| `openclaw.json` contains plaintext tokens on disk | Medium | Accepted — gitignored `data/`; documented in SECURITY.md |
 | MCP per-client policy (`allow_clients`) not enforced at gateway level | Medium | Planned — requires Docker MCP Gateway `X-Client-ID` support |
 | No CI pipeline for compose smoke tests | Low | Tracked — M6 |
 | Reliability / readiness contracts | High | Strategic — see [reliability-and-contracts.md](reliability-and-contracts.md) |
 
 ## Strategic Priority: Reliability Layer
 
-The platform's next major quality bar is a **reliability spine**: guarantees that OpenClaw (and other clients) can **reach, authenticate to, and recover from failures** across the shared stack—especially **Model Gateway `:11435`**, **MCP Gateway `:8811`**, and **browser/tool bridges** behind them.
+The platform's next major quality bar is a **reliability spine**: guarantees that agent and tool clients can **reach, authenticate to, and recover from failures** across the shared stack—especially **Model Gateway `:11435`**, **MCP Gateway `:8811`**, and **browser/tool bridges** behind them.
 
-**Design stance:** OpenClaw is **one client** on a **shared service mesh**, not the architectural center. Service-to-service reliability and dependency management are the dominant failure mode when weak.
+**Design stance:** Any given agent (today: Hermes) is **one client** on a **shared service mesh**, not the architectural center. Service-to-service reliability and dependency management are the dominant failure mode when weak.
 
 See [Reliability & Service Contracts](reliability-and-contracts.md) for full details.
 
@@ -70,12 +69,11 @@ See [Reliability & Service Contracts](reliability-and-contracts.md) for full det
 - [Architecture & Principles](architecture-and-principles.md) – System architecture, product principles, data flows, network assignments.
 - [Model Gateway](component-model-gateway.md) – Unified model routing and provider-facing API keys (Ollama / OpenAI-compatible surface).
 - [Ops Controller](component-ops-controller.md) – Secure Docker Compose control plane (token-auth lifecycle API, internal port 9000).
-- [OpenClaw Assistant Layer](component-openclaw.md) – Gateway, Control UI, CLI, bots, plugins, workspace governance.
 - [MCP & Tool Aggregation](component-mcp-gateway.md) – Single MCP entrypoint; ComfyUI / n8n / web tools via gateway.
 - [RAG Pipeline](component-rag-pipeline.md) – Qdrant vector search + document ingestion.
 - [Orchestration Layer](component-orchestration-layer.md) – Multi-service workflow coordination (target architecture; implementation evolves with the repo).
 - [Dashboard UI](component-dashboard-ui.md) – Ops dashboard (Compose, models, workspace, MCP explorer).
-- [Security & Trust Model](security-and-trust-model.md) – Threat model, auth tiers, SSRF, OpenClaw trust model, secret handling.
+- [Security & Trust Model](security-and-trust-model.md) – Threat model, auth tiers, SSRF, secret handling.
 - [Reliability & Contracts](reliability-and-contracts.md) – Service contracts, health depth, circuit breakers, observability.
 - [Milestones & Roadmap](milestones-and-roadmap.md) – M0–M7 milestone tracking, PR slices, acceptance criteria.
 - [Risks & Open Questions](risks-and-questions.md) – Risk register and open questions.

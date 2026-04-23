@@ -41,5 +41,5 @@
 2. Restore data: `rsync -a <backup>/data/ data/`; `docker compose up -d`
 3. Disable all tools: `echo "" > data/mcp/servers.txt`
 4. Invalidate model cache: `curl -X DELETE http://localhost:11435/v1/cache`
-5. Disable unsafe services: `docker compose stop mcp-gateway openclaw-gateway comfyui rag-ingestion`
+5. Disable unsafe services: `docker compose stop mcp-gateway hermes-gateway comfyui rag-ingestion`
 6. Safe mode: `docker compose up -d ollama model-gateway dashboard open-webui qdrant`

@@ -5,8 +5,7 @@
 3. **MCP registry:** Delete `registry.json`; dashboard falls back to `servers.txt` only. Policy metadata disabled.
 4. **cap_drop / read_only:** Remove from compose; `docker compose up -d --force-recreate <service>`.
 5. **Reset OPS_CONTROLLER_TOKEN:** `openssl rand -hex 32` → update `.env` → `docker compose up -d dashboard ops-controller`.
-6. **Reset OPENCLAW_GATEWAY_TOKEN:** Update `.env` → `docker compose restart openclaw-gateway` → re-pair clients.
-7. **MCP tools:** Clear `data/mcp/servers.txt` or set to single safe server → gateway hot-reloads within 10s.
-8. **RAG:** `docker compose stop rag-ingestion qdrant`; remove `VECTOR_DB=qdrant` from Open WebUI env → Open WebUI uses built-in vector store. Qdrant data preserved in `data/qdrant/`.
-9. **Invalidate model cache:** `curl -X DELETE http://localhost:11435/v1/cache` — forces fresh fetch from Ollama on next `/v1/models` call.
-10. **Safe mode:** `docker compose stop mcp-gateway openclaw-gateway comfyui rag-ingestion` → Ollama + Open WebUI + dashboard only.
+6. **MCP tools:** Clear `data/mcp/servers.txt` or set to single safe server → gateway hot-reloads within 10s.
+7. **RAG:** `docker compose stop rag-ingestion qdrant`; remove `VECTOR_DB=qdrant` from Open WebUI env → Open WebUI uses built-in vector store. Qdrant data preserved in `data/qdrant/`.
+8. **Invalidate model cache:** `curl -X DELETE http://localhost:11435/v1/cache` — forces fresh fetch from Ollama on next `/v1/models` call.
+9. **Safe mode:** `docker compose stop mcp-gateway hermes-gateway comfyui rag-ingestion` → Ollama + Open WebUI + dashboard only.

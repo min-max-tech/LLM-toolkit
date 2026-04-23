@@ -68,7 +68,7 @@ Secure, authenticated REST API for Docker Compose lifecycle operations. The cont
 
 ## Design Principle
 
-**Recovery, not hot path.** Normal model and tool traffic flows OpenClaw → model gateway and OpenClaw → MCP gateway directly. Dashboard observes and administers. Ops controller restarts services, surfaces logs, coordinates upgrades. No user request should require ops-controller success to complete a chat or tool call.
+**Recovery, not hot path.** Normal model and tool traffic flows agent clients → model gateway and agent clients → MCP gateway directly. Dashboard observes and administers. Ops controller restarts services, surfaces logs, coordinates upgrades. No user request should require ops-controller success to complete a chat or tool call.
 
 ## Known Limitations
 
