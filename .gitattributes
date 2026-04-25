@@ -5,3 +5,9 @@
 dashboard/entrypoint.sh text eol=lf
 hermes/entrypoint.sh text eol=lf
 scripts/llamacpp/run-llama-server.sh text eol=lf
+
+# SOPS-encrypted files store metadata that includes a timestamp followed
+# by `\n`; SOPS rejects the file outright on Windows checkouts where
+# autocrlf=true rewrites that newline as `\r\n`.
+*.sops text eol=lf
+secrets/.sops.yaml text eol=lf
