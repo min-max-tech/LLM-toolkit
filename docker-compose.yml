@@ -274,8 +274,6 @@ services:
         condition: service_healthy
       qdrant:
         condition: service_healthy
-    ports:
-      - "3000:8080"
     healthcheck:
       test: ["CMD", "curl", "-f", "http://localhost:8080/"]
       start_period: 120s
@@ -304,6 +302,7 @@ services:
     networks:
       - frontend
       - backend
+      - proxy-net
 
   gguf-puller:
     profiles: [models]

@@ -51,6 +51,11 @@
         reverse_proxy dashboard:8080
     }
 
+    # ---- /chat/ → open-webui ----
+    handle_path /chat/* {
+        reverse_proxy open-webui:8080
+    }
+
     # ---- catch-all for paths not yet wired ----
     handle {
         respond "auth ok — no route configured for this path yet" 404
