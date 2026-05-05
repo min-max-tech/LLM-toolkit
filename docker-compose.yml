@@ -27,6 +27,8 @@ services:
       - LLAMACPP_KV_CACHE_TYPE_K=${LLAMACPP_KV_CACHE_TYPE_K:-q4_0}
       - LLAMACPP_KV_CACHE_TYPE_V=${LLAMACPP_KV_CACHE_TYPE_V:-q4_0}
       - LLAMACPP_EXTRA_ARGS=${LLAMACPP_EXTRA_ARGS:-}
+      - LLAMACPP_USE_MMAP=${LLAMACPP_USE_MMAP:-1}
+      - LLAMACPP_MMPROJ=${LLAMACPP_MMPROJ:-}
     volumes:
       - ${BASE_PATH:-.}/models/gguf:/models:ro
       - ${BASE_PATH:-.}/scripts/llamacpp:/llamacpp-scripts:ro
@@ -51,6 +53,12 @@ services:
     image: ${LLAMACPP_EMBED_IMAGE:-ghcr.io/ggml-org/llama.cpp:server-cuda}
     restart: unless-stopped
     platform: linux/amd64
+    # Explicit entrypoint: upstream `ghcr.io/ggml-org/llama.cpp:server-cuda`
+    # ships ENTRYPOINT=[] with the binary baked into CMD. Setting `command:`
+    # below otherwise strips the binary and tries to exec `--host` directly
+    # (exit 127 "executable file not found"). Forcing the entrypoint here
+    # makes command-args chain work regardless of how upstream packages CMD.
+    entrypoint: ["/app/llama-server"]
     command: >
       --host 0.0.0.0 --port 8080
       --model /models/${LLAMACPP_EMBED_MODEL:-nomic-embed-text-v1.5.Q4_K_M.gguf}
@@ -140,6 +148,13 @@ services:
       - COMFYUI_QUEUE_POLL_SECONDS=${COMFYUI_QUEUE_POLL_SECONDS:-2}
       - COMFYUI_DRAIN_SECONDS=${COMFYUI_DRAIN_SECONDS:-20}
       - COMFYUI_GUARDIAN_TARGET=${COMFYUI_GUARDIAN_TARGET:-llamacpp}
+      # Phase 1: cache-flush after drain (default ON)
+      - COMFYUI_FREE_AFTER_DRAIN=${COMFYUI_FREE_AFTER_DRAIN:-1}
+      # Phase 2: VRAM-pressure watchdog (set OPS_VRAM_PRESSURE_GB > 0 to enable)
+      - OPS_VRAM_PRESSURE_GB=${OPS_VRAM_PRESSURE_GB:-0}
+      - OPS_VRAM_RECOVERY_GB=${OPS_VRAM_RECOVERY_GB:-}
+      - OPS_VRAM_PRESSURE_POLL_SECONDS=${OPS_VRAM_PRESSURE_POLL_SECONDS:-10}
+      - DASHBOARD_HARDWARE_URL=${DASHBOARD_HARDWARE_URL:-http://dashboard:8080/api/hardware}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${BASE_PATH:-.}:/workspace
@@ -213,7 +228,13 @@ services:
       - N8N_PUBLISH_WEBHOOK_URL=${N8N_PUBLISH_WEBHOOK_URL:-}
       - COMFYUI_OUTPUT_DIR=/comfyui-output
       - DASHBOARD_TRUST_PROXY_HEADERS=true
-      - DASHBOARD_TRUSTED_PROXY_NET=172.24.0.0/16
+      # 172.16.0.0/12 covers Docker's entire default bridge-network pool
+      # (172.16.x.x – 172.31.x.x). Caddy is dual-homed on `frontend` and
+      # `proxy-net` and may reach dashboard from either; trusting the
+      # whole pool is acceptable in a single-user homelab where every
+      # container in the stack is trusted. Tighten to the narrower
+      # proxy-net CIDR (172.24.0.0/16) when multi-tenant.
+      - DASHBOARD_TRUSTED_PROXY_NET=172.16.0.0/12
     volumes:
       - ${BASE_PATH:-.}/models/comfyui:/models
       - ${BASE_PATH:-.}/models/gguf:/gguf-models
@@ -269,7 +290,7 @@ services:
       - backend
 
   open-webui:
-    image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.8.4}
+    image: ${OPEN_WEBUI_IMAGE:-ghcr.io/open-webui/open-webui:v0.9.2}
     restart: unless-stopped
     depends_on:
       llamacpp:
@@ -303,6 +324,11 @@ services:
       - RAG_EMBEDDING_MODEL=${EMBED_MODEL:-${LLAMACPP_EMBED_MODEL:-nomic-embed-text-v1.5.Q4_K_M.gguf}}
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/open-webui:/app/backend/data
+    # Direct host-port: SPAs (Open WebUI / Hermes / ComfyUI / n8n) can't be
+    # path-mounted under Caddy because their builds emit absolute /assets/
+    # and /api/ URLs. Tailscale is still the network gate.
+    ports:
+      - "3000:8080"
     networks:
       - frontend
       - backend
@@ -425,6 +451,9 @@ services:
           export GITHUB_TOKEN="$$(cat "$${GITHUB_TOKEN_FILE:-/run/secrets/github_pat}")"
         fi
         exec bash /runner-scripts/entrypoint.sh
+    # Direct host-port: see Open WebUI above for rationale.
+    ports:
+      - "8188:8188"
     networks:
       - frontend
       - backend
@@ -478,7 +507,7 @@ services:
       - backend
 
   n8n:
-    image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n:2.10.2}
+    image: ${N8N_IMAGE:-docker.n8n.io/n8nio/n8n:2.20.0}
     restart: unless-stopped
     # Run as non-root (n8n image uses node user; 1000:1000 matches typical node uid)
     user: "1000:1000"
@@ -516,6 +545,9 @@ services:
     volumes:
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-data:/home/node/.n8n
       - ${DATA_PATH:-${BASE_PATH:-.}/data}/n8n-files:/files
+    # Direct host-port: see Open WebUI above for rationale.
+    ports:
+      - "5678:5678"
     networks:
       - frontend
       - backend
@@ -629,7 +661,7 @@ services:
         max-file: "3"
 
   caddy:
-    image: caddy:2-alpine
+    image: caddy:2.11.2-alpine
     restart: unless-stopped
     # CADDY_BIND must be the host's tailnet IP. The :? failsafe makes
     # `docker compose config` exit non-zero if it's empty or unset, since
@@ -664,7 +696,7 @@ services:
   # --- RAG ---
 
   qdrant:
-    image: qdrant/qdrant:v1.13.4
+    image: qdrant/qdrant:v1.17.1
     restart: unless-stopped
     ports:
       - "${QDRANT_PORT:-6333}:6333"
@@ -724,11 +756,20 @@ services:
     image: ordo-ai-stack-hermes:latest
     pull_policy: build
     restart: unless-stopped
-    # Hermes used to hold /var/run/docker.sock (and group_add ["0"]) for its
-    # built-in docker tools. Plan C narrowed that surface: Hermes no longer
-    # has the socket. Privileged container ops route through ops-controller's
-    # HTTP API at OPS_CONTROLLER_URL with OPS_CONTROLLER_TOKEN. See
-    # docs/runbooks/bounded-hermes.md for the new verb surface.
+    # Root group grants access to /var/run/docker.sock (root:root mode 660 on
+    # Docker Desktop). Lets Hermes run `docker exec`, `docker ps`,
+    # `docker compose` against the stack without running the container itself
+    # as root.
+    # Plan C tried to narrow this surface by removing the socket and routing
+    # all container ops through ops-controller's HTTP API. That works for new
+    # callers but the upstream Hermes (vendor/hermes-agent/) does not know
+    # about OpsClient and its built-in tools assume the docker CLI works.
+    # Rolled back to restore Hermes' "main controller" UX. The Plan C
+    # ops-controller endpoints + audit log remain available for any caller
+    # (orchestration-mcp, future Hermes plugin, scripts) that wants the
+    # audited path. Discord allowlist + tailnet are the real perimeter for
+    # this single-user homelab.
+    group_add: ["0"]
     depends_on:
       model-gateway:
         condition: service_healthy
@@ -741,11 +782,10 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
       - PYTHONIOENCODING=utf-8
-      # ops-controller HTTP API replaces the raw Docker socket Hermes used
-      # to hold. Privileged verbs: /containers/*, /compose/*. See
-      # hermes/ops_client.py for the in-process wrapper.
+      # ops-controller still available for callers that want the audited path.
+      # Not required at boot since Hermes also has the raw socket fallback.
       - OPS_CONTROLLER_URL=http://ops-controller:9000
-      - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:?required for Hermes to reach ops-controller}
+      - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
       # Single source of truth for context window across the stack — llamacpp
       # allocates KV for this; model-gateway templates it into litellm_config
       # as max_input_tokens; the hermes entrypoint seeds model.context_length
@@ -783,12 +823,16 @@ services:
       # across sibling repos. /workspace stays scoped to the AI-toolkit project
       # root. Default target is /projects. Override HERMES_HOST_DEV_MOUNT to a
       # path that mirrors your host filesystem (e.g. /c/dev on Windows where
-      # dev lives at C:\dev) — the historical reason was to make sibling-stack
-      # bind-mounts resolve identically when Hermes shelled out to `docker
-      # compose`. Plan C removes that shell-out path; the override is still
-      # useful for any future tool that does its own filesystem path
-      # rewriting against the host.
+      # dev lives at C:\dev) — the host's daemon resolves bind-mount source
+      # paths against the *host* filesystem when Hermes shells out to
+      # `docker compose` against sibling stacks via the docker socket.
       - ${BASE_PATH:-.}/..:${HERMES_HOST_DEV_MOUNT:-/projects}:rw
+      # Docker socket — restored after the Plan C bounded-Hermes rollback.
+      # Lets Hermes run `docker`, `docker exec`, `docker compose` directly
+      # against the host daemon. Requires `group_add: ["0"]` above so the
+      # non-root hermes user can read root:root mode-660 socket on Docker
+      # Desktop.
+      - /var/run/docker.sock:/var/run/docker.sock
     secrets:
       - discord_token
     healthcheck:
@@ -828,9 +872,10 @@ services:
     environment:
       - LITELLM_MASTER_KEY=${LITELLM_MASTER_KEY:-local}
       - PYTHONIOENCODING=utf-8
-      # Same ops-controller plumbing as hermes-gateway — see Plan C runbook.
+      # ops-controller still available for callers that want the audited path.
+      # Not required at boot since Hermes also has the raw socket fallback.
       - OPS_CONTROLLER_URL=http://ops-controller:9000
-      - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:?required for Hermes to reach ops-controller}
+      - OPS_CONTROLLER_TOKEN=${OPS_CONTROLLER_TOKEN:-}
       # Same single-source plumbing as hermes-gateway — dashboard shares
       # the bind-mounted config.yaml so either service's entrypoint seeds it.
       - LLAMACPP_CTX_SIZE=${LLAMACPP_CTX_SIZE:-262144}
@@ -861,10 +906,14 @@ services:
       - frontend
       - backend
       - proxy-net
-    # --insecure: Hermes rejects 0.0.0.0 binding without it. Safe here because
-    # the host-port publish was dropped (Plan A Task 13) — hermes-dashboard is
-    # only reachable on the internal Docker network via Caddy at /hermes/.
+    # --insecure: Hermes rejects 0.0.0.0 binding without it. Reachable directly
+    # at http://<tailnet-host>:9119/ — Plan A's path-mount under Caddy was
+    # rolled back because the SPA emits absolute /assets/ and /api/ URLs and
+    # uses client-side routing that breaks sub-path mounting.
     command: ["hermes", "dashboard", "--port", "9119", "--host", "0.0.0.0", "--no-open", "--insecure"]
+    # Direct host-port: see Open WebUI above for rationale.
+    ports:
+      - "${HERMES_DASHBOARD_PORT:-9119}:9119"
 
 volumes:
   caddy_data:
@@ -900,12 +949,12 @@ networks:
 # the app SDK doesn't natively support the _FILE pattern.
 secrets:
   discord_token:
-    file: ${HOME}/.ai-toolkit/runtime/secrets/discord_token
+    file: ${BASE_PATH:-.}/secrets/discord_token
   github_pat:
-    file: ${HOME}/.ai-toolkit/runtime/secrets/github_pat
+    file: ${BASE_PATH:-.}/secrets/github_pat
   hf_token:
-    file: ${HOME}/.ai-toolkit/runtime/secrets/hf_token
+    file: ${BASE_PATH:-.}/secrets/hf_token
   tavily_key:
-    file: ${HOME}/.ai-toolkit/runtime/secrets/tavily_key
+    file: ${BASE_PATH:-.}/secrets/tavily_key
   civitai_token:
-    file: ${HOME}/.ai-toolkit/runtime/secrets/civitai_token
+    file: ${BASE_PATH:-.}/secrets/civitai_token
