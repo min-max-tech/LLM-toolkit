@@ -114,6 +114,83 @@ COMFYUI_DRAIN_SECONDS = float(os.environ.get("COMFYUI_DRAIN_SECONDS", "20"))
 # Lets cross-project consumers like a sibling ai-toolkit container join the handshake.
 # Examples: "llamacpp" (legacy single), "llamacpp,llamacpp-embed,ai-toolkit-ai-toolkit-1".
 COMFYUI_GUARDIAN_TARGET = os.environ.get("COMFYUI_GUARDIAN_TARGET", "llamacpp")
+# Cache-flush after drain (Phase 1): when the queue has been empty for
+# COMFYUI_DRAIN_SECONDS, POST to ComfyUI's /free endpoint to drop cached weights
+# BEFORE resuming paused targets. Without this, ComfyUI keeps multi-GB of model
+# weights in VRAM after each workflow, leaving llamacpp permanently in
+# OOM-spillover slow-decode mode. Default ON; set to 0 to disable for back-to-back
+# workflow scenarios where you want ComfyUI to stay hot.
+COMFYUI_FREE_AFTER_DRAIN = os.environ.get("COMFYUI_FREE_AFTER_DRAIN", "1").strip().lower() in ("1", "true", "yes", "on")
+
+# Phase 2: VRAM-pressure independent watchdog.
+# When free VRAM drops below OPS_VRAM_PRESSURE_GB for any reason (regardless of
+# ComfyUI queue state), POST to ComfyUI /free to drop cached weights and recover
+# headroom. Hysteresis: stays in pressure state until free VRAM crosses
+# OPS_VRAM_RECOVERY_GB to avoid flapping on transient allocations. Disabled by
+# default (threshold = 0). Set OPS_VRAM_PRESSURE_GB=2 to enable a 2 GB floor.
+OPS_VRAM_PRESSURE_GB = float(os.environ.get("OPS_VRAM_PRESSURE_GB", "0"))
+_RECOVERY_RAW = os.environ.get("OPS_VRAM_RECOVERY_GB", "").strip()
+if _RECOVERY_RAW:
+    _r = float(_RECOVERY_RAW)
+    # Reject misconfig (recovery <= pressure) by snapping back to safe default.
+    OPS_VRAM_RECOVERY_GB = _r if _r > OPS_VRAM_PRESSURE_GB else OPS_VRAM_PRESSURE_GB + 2.0
+else:
+    OPS_VRAM_RECOVERY_GB = OPS_VRAM_PRESSURE_GB + 2.0
+OPS_VRAM_PRESSURE_POLL_SECONDS = float(os.environ.get("OPS_VRAM_PRESSURE_POLL_SECONDS", "10"))
+
+# Where the watchdog reads free-VRAM telemetry from. The dashboard service
+# already exposes NVML-derived GPU stats at /api/hardware; we just consume.
+DASHBOARD_HARDWARE_URL = os.environ.get(
+    "DASHBOARD_HARDWARE_URL", "http://dashboard:8080/api/hardware"
+)
+
+
+def _free_vram_gb() -> float | None:
+    """Query free VRAM (in GB) from the dashboard's NVML probe. Returns None
+    on any error so callers fail-open rather than blocking on probe outages.
+    """
+    try:
+        r = httpx.get(DASHBOARD_HARDWARE_URL, timeout=3.0)
+        r.raise_for_status()
+        payload = r.json()
+        gpu = payload.get("gpu") or {}
+        used = gpu.get("vram_used_gb")
+        total = gpu.get("vram_total_gb")
+        if used is None or total is None:
+            return None
+        return max(0.0, float(total) - float(used))
+    except Exception:
+        return None
+
+
+def _vram_pressure_enabled() -> bool:
+    return OPS_VRAM_PRESSURE_GB > 0
+
+
+def _vram_pressure_step(state: str, free_gb: float | None) -> tuple[str, str | None]:
+    """One step of the VRAM-pressure state machine. Pure function for testability.
+
+    States: ``idle`` | ``pressure``.
+    Action returned (string or None): the side-effect to perform this tick.
+    Currently the only action is ``"free_cache"`` (POST ComfyUI /free).
+
+    Hysteresis rule: once below pressure threshold, stays in ``pressure`` until
+    free VRAM crosses OPS_VRAM_RECOVERY_GB. Prevents flapping on transient
+    allocations or measurement jitter.
+
+    Unmeasurable VRAM (free_gb is None) holds the current state — fail-open
+    rather than risk panicking on a probe outage.
+    """
+    if free_gb is None:
+        return state, None
+    if state == "idle":
+        if free_gb < OPS_VRAM_PRESSURE_GB:
+            return "pressure", "free_cache"
+        return "idle", None
+    # state == "pressure"
+    if free_gb >= OPS_VRAM_RECOVERY_GB:
+        return "idle", None
+    return "pressure", None
 
 
 def _guardian_target_list() -> list[str]:
@@ -141,6 +218,14 @@ _guardian_status: dict = {
     "last_error": "",
     "paused_by_us": False,  # aggregate: True if we paused at least one target
     "paused_targets": [],   # which specific targets we paused this cycle
+    "free_after_drain": COMFYUI_FREE_AFTER_DRAIN,  # Phase 1 toggle (cache-flush before resume)
+    # Phase 2: VRAM-pressure watchdog state.
+    "vram_pressure_enabled": OPS_VRAM_PRESSURE_GB > 0,
+    "vram_pressure_gb": OPS_VRAM_PRESSURE_GB,
+    "vram_recovery_gb": OPS_VRAM_RECOVERY_GB,
+    "vram_pressure_state": "idle",  # idle | pressure
+    "vram_pressure_last_action_ts": None,
+    "vram_pressure_action_count": 0,
 }
 
 
@@ -1351,6 +1436,30 @@ def _comfyui_queue_depth() -> tuple[int, int] | None:
         return None
 
 
+def _comfyui_free_cache() -> bool:
+    """POST to ComfyUI's /free endpoint to drop cached model weights.
+
+    Called between drain-elapsed and resume so the freed VRAM is available
+    when paused services come back. Returns True on success, False on any
+    error — the guardian fail-opens and continues with the resume cycle
+    rather than blocking forever on a transient ComfyUI hiccup.
+
+    The /free endpoint expects ``{"unload_models": bool, "free_memory": bool}``
+    and is idempotent — calling on an already-empty cache is a no-op.
+    """
+    try:
+        r = httpx.post(
+            f"{COMFYUI_URL}/free",
+            json={"unload_models": True, "free_memory": True},
+            timeout=10.0,
+        )
+        r.raise_for_status()
+        return True
+    except Exception as e:  # noqa: BLE001
+        logger.warning("guardian: ComfyUI /free failed: %s", e)
+        return False
+
+
 def _resolve_guardian_containers(target: str):
     """Resolve a guardian target string to docker container(s).
 
@@ -1503,6 +1612,23 @@ def _guardian_loop() -> None:
             elif not busy and state == "draining":
                 if drain_started is not None and (time.monotonic() - drain_started) >= COMFYUI_DRAIN_SECONDS:
                     if paused_by_us and paused_targets_snapshot:
+                        # Phase 1: drop ComfyUI's model cache before resuming so the
+                        # freed VRAM is actually available for the resumed services.
+                        # ComfyUI keeps multi-GB of weights resident after each
+                        # workflow; without this, llamacpp comes back into a
+                        # saturated GPU and runs in slow-decode mode forever.
+                        if COMFYUI_FREE_AFTER_DRAIN:
+                            ok = _comfyui_free_cache()
+                            _audit(
+                                "comfyui_free_cache",
+                                "comfyui",
+                                "ok" if ok else "error",
+                                "post-drain pre-resume",
+                            )
+                            print(
+                                f"[guardian] FREE comfyui cache {'ok' if ok else 'failed (fail-open)'}",
+                                flush=True,
+                            )
                         print(
                             f"[guardian] RESUME drain elapsed; targets={paused_targets_snapshot}",
                             flush=True,
@@ -1542,13 +1668,79 @@ async def guardian_status(_: None = Depends(verify_token)):
 # Start the guardian thread at module import. Doing it here instead of via
 # @app.on_event("startup") (deprecated in recent FastAPI) guarantees the thread
 # spawns regardless of the app lifecycle and surfaces errors immediately.
+def _vram_pressure_loop() -> None:
+    """Independent watchdog loop. Polls free VRAM every
+    OPS_VRAM_PRESSURE_POLL_SECONDS; when it crosses below the pressure
+    threshold, posts to ComfyUI /free to drop cached weights. Hysteresis
+    via OPS_VRAM_RECOVERY_GB prevents flapping. Logs each transition and
+    each /free action to the audit log.
+    """
+    state = "idle"
+    print(
+        f"[vram-pressure] loop started threshold={OPS_VRAM_PRESSURE_GB}GB "
+        f"recovery={OPS_VRAM_RECOVERY_GB}GB poll={OPS_VRAM_PRESSURE_POLL_SECONDS}s",
+        flush=True,
+    )
+    while True:
+        try:
+            free_gb = _free_vram_gb()
+            new_state, action = _vram_pressure_step(state, free_gb)
+
+            if new_state != state:
+                print(
+                    f"[vram-pressure] {state} -> {new_state} "
+                    f"(free_vram={free_gb} GB)",
+                    flush=True,
+                )
+                _audit("vram_pressure_transition", state, "ok",
+                       f"to={new_state} free_gb={free_gb}")
+                state = new_state
+
+            if action == "free_cache":
+                ok = _comfyui_free_cache()
+                _audit("vram_pressure_free", "comfyui",
+                       "ok" if ok else "error",
+                       f"free_gb={free_gb}")
+                print(
+                    f"[vram-pressure] FREE comfyui cache "
+                    f"{'ok' if ok else 'failed (fail-open)'} (free_vram={free_gb} GB)",
+                    flush=True,
+                )
+                with _guardian_lock:
+                    _guardian_status["vram_pressure_last_action_ts"] = (
+                        datetime.now(UTC).isoformat().replace("+00:00", "Z")
+                    )
+                    _guardian_status["vram_pressure_action_count"] += 1
+
+            with _guardian_lock:
+                _guardian_status["vram_pressure_state"] = state
+
+        except Exception as e:  # noqa: BLE001
+            logger.exception("vram-pressure: loop iteration failed: %s", e)
+
+        time.sleep(OPS_VRAM_PRESSURE_POLL_SECONDS)
+
+
 if COMFYUI_SERIALIZE_LLAMACPP:
     print(
         f"[guardian] ENABLED targets={_guardian_target_list()} "
         f"poll={COMFYUI_QUEUE_POLL_SECONDS}s drain={COMFYUI_DRAIN_SECONDS}s "
-        f"comfyui={COMFYUI_URL}",
+        f"comfyui={COMFYUI_URL} free_after_drain={COMFYUI_FREE_AFTER_DRAIN}",
         flush=True,
     )
     threading.Thread(target=_guardian_loop, daemon=True, name="comfyui-guardian").start()
 else:
     print("[guardian] disabled (set COMFYUI_SERIALIZE_LLAMACPP=1 to enable)", flush=True)
+
+if _vram_pressure_enabled():
+    print(
+        f"[vram-pressure] ENABLED threshold={OPS_VRAM_PRESSURE_GB}GB "
+        f"recovery={OPS_VRAM_RECOVERY_GB}GB",
+        flush=True,
+    )
+    threading.Thread(target=_vram_pressure_loop, daemon=True, name="vram-pressure").start()
+else:
+    print(
+        "[vram-pressure] disabled (set OPS_VRAM_PRESSURE_GB to a positive GB threshold to enable)",
+        flush=True,
+    )
