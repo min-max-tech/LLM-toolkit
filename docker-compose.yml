@@ -146,6 +146,13 @@ services:
       - COMFYUI_QUEUE_POLL_SECONDS=${COMFYUI_QUEUE_POLL_SECONDS:-2}
       - COMFYUI_DRAIN_SECONDS=${COMFYUI_DRAIN_SECONDS:-20}
       - COMFYUI_GUARDIAN_TARGET=${COMFYUI_GUARDIAN_TARGET:-llamacpp}
+      # Phase 1: cache-flush after drain (default ON)
+      - COMFYUI_FREE_AFTER_DRAIN=${COMFYUI_FREE_AFTER_DRAIN:-1}
+      # Phase 2: VRAM-pressure watchdog (set OPS_VRAM_PRESSURE_GB > 0 to enable)
+      - OPS_VRAM_PRESSURE_GB=${OPS_VRAM_PRESSURE_GB:-0}
+      - OPS_VRAM_RECOVERY_GB=${OPS_VRAM_RECOVERY_GB:-}
+      - OPS_VRAM_PRESSURE_POLL_SECONDS=${OPS_VRAM_PRESSURE_POLL_SECONDS:-10}
+      - DASHBOARD_HARDWARE_URL=${DASHBOARD_HARDWARE_URL:-http://dashboard:8080/api/hardware}
     volumes:
       - /var/run/docker.sock:/var/run/docker.sock
       - ${BASE_PATH:-.}:/workspace
