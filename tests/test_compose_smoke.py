@@ -21,12 +21,22 @@ COMPOSE_VLLM = REPO_ROOT / "overrides" / "vllm.yml"
 SMOKE_SERVICES = ["llamacpp", "llamacpp-embed", "model-gateway", "dashboard"]
 
 
+# Placeholders for compose's ${VAR:?...} strict-required variables. These are
+# operator-supplied at deploy time; provide test stand-ins so `compose config`
+# can interpolate during static validation.
+_COMPOSE_REQUIRED_PLACEHOLDERS = {
+    "BASE_PATH": ".",
+    "OPS_CONTROLLER_TOKEN": "placeholder-for-tests",
+    "CADDY_BIND": "127.0.0.1",
+}
+
+
 def _compose_cmd(*args, extra_env=None):
     cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)]
     if COMPOSE_VLLM.exists():
         cmd += ["-f", str(COMPOSE_VLLM)]
     cmd += list(args)
-    env = {**os.environ, **(extra_env or {})}
+    env = {**os.environ, **_COMPOSE_REQUIRED_PLACEHOLDERS, **(extra_env or {})}
     return subprocess.run(
         cmd,
         cwd=REPO_ROOT,
