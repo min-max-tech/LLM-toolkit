@@ -31,7 +31,7 @@ _COMPOSE_REQUIRED_PLACEHOLDERS = {
 }
 
 
-def _compose_cmd(*args, extra_env=None):
+def _compose_cmd(*args, extra_env=None, timeout=120):
     cmd = ["docker", "compose", "-f", str(COMPOSE_FILE)]
     if COMPOSE_VLLM.exists():
         cmd += ["-f", str(COMPOSE_VLLM)]
@@ -43,7 +43,7 @@ def _compose_cmd(*args, extra_env=None):
         env=env,
         capture_output=True,
         text=True,
-        timeout=120,
+        timeout=timeout,
     )
 
 
@@ -72,8 +72,14 @@ def test_compose_vllm_override_config_valid():
 @pytest.mark.skipif(os.environ.get("RUN_COMPOSE_SMOKE") != "1", reason="Set RUN_COMPOSE_SMOKE=1 to run")
 def test_compose_up_and_services_healthy():
     """Bring up stack and assert core services become healthy (Docker daemon required)."""
-    # Bring up only core services to limit resource use
-    up = _compose_cmd("up", "-d", "llamacpp", "llamacpp-embed", "model-gateway", "dashboard")
+    # Bring up only core services to limit resource use. Image pulls for
+    # llama.cpp:server-cuda alone are several GB on a cold runner, so the
+    # default 120s subprocess timeout is too tight for the up call. The
+    # health-poll loop below has its own 3-minute budget.
+    up = _compose_cmd(
+        "up", "-d", "llamacpp", "llamacpp-embed", "model-gateway", "dashboard",
+        timeout=900,
+    )
     assert up.returncode == 0, f"compose up failed: {up.stderr or up.stdout}"
 
     try:
