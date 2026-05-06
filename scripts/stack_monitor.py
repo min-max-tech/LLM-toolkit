@@ -19,7 +19,7 @@ import os
 import re
 import subprocess
 import sys
-from datetime import datetime, timezone, timedelta
+from datetime import UTC, datetime
 from pathlib import Path
 
 STACK_ROOT = Path(__file__).resolve().parent.parent
@@ -200,12 +200,10 @@ def fetch_latest_release(repo):
     stdout, stderr, rc = run_cmd(cmd)
     if rc == 0 and stdout.strip():
         tag_m = re.search(r'<id>.*?tag:github\.com, [\d-]+.*?v?([\d.]+).*?</id>', stdout)
-        title_m = re.search(r'<title[^>]*>(.*?)</title>', stdout, re.DOTALL)
         url_m = re.search(r'<link[^>]*href="([^"]+)"', stdout)
         body_m = re.search(r'<summary[^>]*>(.*?)</summary>', stdout, re.DOTALL)
 
         tag = tag_m.group(1) if tag_m else None
-        title = re.sub(r'<[^>]+>', '', title_m.group(1)).strip() if title_m else ""
         url = url_m.group(1) if url_m else ""
         body = re.sub(r'<[^>]+>', '', body_m.group(1)).strip() if body_m else ""
 
@@ -257,7 +255,6 @@ def classify_severity(current, latest, body=""):
 
         major_diff = l_parts[0] - p_parts[0]
         minor_diff = l_parts[1] - p_parts[1] if len(l_parts) > 1 and len(p_parts) > 1 else 0
-        patch_diff = l_parts[2] - p_parts[2] if len(l_parts) > 2 and len(p_parts) > 2 else 0
 
         if major_diff > 0:
             return "HIGH", f"Major version jump ({clean_current} → {clean_latest}) — review breaking changes"
@@ -298,12 +295,12 @@ def read_compose_versions():
     text = COMPOSE.read_text()
     versions = {}
     patterns = {
-        "n8n": rf'docker\.n8n\.io/n8nio/n8n:([\d.]+)',
-        "Open WebUI": rf'open-webui/open-webui:v([\d.]+)',
-        "Qdrant": rf'qdrant/qdrant:v([\d.]+)',
-        "Caddy": rf'caddy:([\d.]+)-alpine',
-        "llama.cpp": rf'ghcr\.io/ggml-org/llama\.cpp:([a-z-]+)',
-        "oauth2-proxy": rf'oauth2-proxy/oauth2-proxy:([\w-]+)',
+        "n8n": r'docker\.n8n\.io/n8nio/n8n:([\d.]+)',
+        "Open WebUI": r'open-webui/open-webui:v([\d.]+)',
+        "Qdrant": r'qdrant/qdrant:v([\d.]+)',
+        "Caddy": r'caddy:([\d.]+)-alpine',
+        "llama.cpp": r'ghcr\.io/ggml-org/llama\.cpp:([a-z-]+)',
+        "oauth2-proxy": r'oauth2-proxy/oauth2-proxy:([\w-]+)',
     }
     for name, pat in patterns.items():
         m = re.search(pat, text)
@@ -321,10 +318,10 @@ def apply_updates(updates):
     for name, new_tag in updates.items():
         # Update docker-compose.yml
         patterns = {
-            "n8n": (rf'docker\.n8n\.io/n8nio/n8n:[\d.]+', f'docker.n8n.io/n8nio/n8n:{new_tag}'),
-            "Open WebUI": (rf'open-webui/open-webui:v[\d.]+', f'open-webui/open-webui:v{new_tag}'),
-            "Qdrant": (rf'qdrant/qdrant:v[\d.]+', f'qdrant/qdrant:v{new_tag}'),
-            "Caddy": (rf'caddy:([\d.]+)-alpine', f'caddy:{new_tag}-alpine'),
+            "n8n": (r'docker\.n8n\.io/n8nio/n8n:[\d.]+', f'docker.n8n.io/n8nio/n8n:{new_tag}'),
+            "Open WebUI": (r'open-webui/open-webui:v[\d.]+', f'open-webui/open-webui:v{new_tag}'),
+            "Qdrant": (r'qdrant/qdrant:v[\d.]+', f'qdrant/qdrant:v{new_tag}'),
+            "Caddy": (r'caddy:([\d.]+)-alpine', f'caddy:{new_tag}-alpine'),
         }
         if name in patterns:
             old_pattern, new_val = patterns[name]
@@ -354,7 +351,7 @@ def apply_updates(updates):
     if "n8n" in updates:
         monitor_text = MONITOR.read_text()
         monitor_text = re.sub(
-            rf'(docker\.n8n\.io/n8nio/n8n:[\d.]+)',
+            r'(docker\.n8n\.io/n8nio/n8n:[\d.]+)',
             f'docker.n8n.io/n8nio/n8n:{updates["n8n"]}',
             monitor_text
         )
@@ -378,7 +375,7 @@ def restart_services(services_to_restart):
 
 def create_git_branch_and_pr(changes):
     """Create a git branch, commit, push, and create a PR."""
-    branch_name = f"update/{datetime.now(timezone.utc).strftime('%Y-%m-%d')}/stack-versions"
+    branch_name = f"update/{datetime.now(UTC).strftime('%Y-%m-%d')}/stack-versions"
     services = list(changes.keys())
     commit_msg = f"chore: update stack versions ({', '.join(services)})"
 
@@ -405,7 +402,7 @@ def create_git_branch_and_pr(changes):
     # Create PR via GitHub API
     pr_body = f"""## Automated Stack Update
 
-**Date:** {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}
+**Date:** {datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}
 **Services updated:** {', '.join(services)}
 
 ### Changes
@@ -444,7 +441,7 @@ def main():
     args = parser.parse_args()
 
     compose_versions = read_compose_versions()
-    results = {"timestamp": datetime.now(timezone.utc).isoformat(), "services": {}}
+    results = {"timestamp": datetime.now(UTC).isoformat(), "services": {}}
     all_updates = {}
 
     for name, info in SERVICES.items():
@@ -495,7 +492,7 @@ def main():
         if approved_file.exists():
             try:
                 approved = json.loads(approved_file.read_text())
-            except:
+            except (OSError, json.JSONDecodeError):
                 pass
 
         if approved:
@@ -515,8 +512,8 @@ def main():
         print(json.dumps(results, indent=2))
     else:
         # Human-readable output
-        print(f"# 📡 Ordo-AI-Stack — Package Audit")
-        print(f"**{datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M UTC')}**\n")
+        print("# 📡 Ordo-AI-Stack — Package Audit")
+        print(f"**{datetime.now(UTC).strftime('%Y-%m-%d %H:%M UTC')}**\n")
 
         critical = []
         high = []
@@ -559,8 +556,8 @@ def main():
                 print(m)
         if low:
             print("## 🟢 LOW (Patch update)\n")
-            for l in low:
-                print(l)
+            for entry in low:
+                print(entry)
         if safe:
             print("## ✅ SAFE (Up to date)\n")
             for s in safe:
@@ -568,7 +565,7 @@ def main():
 
         if all_updates:
             print(f"\n---\n\n**📌 Updates available:** {len(all_updates)} services")
-            print(f"**Recommendation:** Review severity above, then approve updates.")
+            print("**Recommendation:** Review severity above, then approve updates.")
         else:
             print("\n\n**✅ Everything is up to date.**")
 

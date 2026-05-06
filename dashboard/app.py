@@ -37,7 +37,6 @@ from dashboard.settings import AUTH_REQUIRED as _AUTH_REQUIRED
 from dashboard.settings import DASHBOARD_AUTH_TOKEN
 
 
-
 async def _read_json_async(path: Path) -> dict:
     """Read and parse a JSON file off the event loop."""
     return await asyncio.to_thread(lambda: json.loads(path.read_text(encoding="utf-8")))
@@ -1946,7 +1945,7 @@ async def hardware_stats():
 @app.get("/api/hardware/service-pressure")
 async def service_pressure():
     """Per-service compute pressure (CPU/RAM/VRAM). No auth — read-only, like /api/hardware."""
-    from dashboard.services_catalog import SERVICES, OPS_SERVICE_MAP
+    from dashboard.services_catalog import OPS_SERVICE_MAP, SERVICES
 
     ops_url = os.environ.get("OPS_CONTROLLER_URL", "http://ops-controller:9000").rstrip("/")
     token = os.environ.get("OPS_CONTROLLER_TOKEN", "").strip()
