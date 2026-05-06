@@ -6,7 +6,11 @@ import json
 from unittest.mock import MagicMock, patch
 
 import pytest
-from mcp.server.fastmcp import FastMCP
+
+# `mcp` is a comfyui-mcp service dep, not part of the test-runner deps in
+# tests/requirements.txt. Skip rather than fail when it isn't installed.
+pytest.importorskip("mcp.server.fastmcp")
+from mcp.server.fastmcp import FastMCP  # noqa: E402
 
 
 @pytest.fixture
