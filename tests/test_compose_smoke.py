@@ -69,7 +69,22 @@ def test_compose_vllm_override_config_valid():
     assert r.returncode == 0, f"vllm config failed: {r.stderr or r.stdout}"
 
 
-@pytest.mark.skipif(os.environ.get("RUN_COMPOSE_SMOKE") != "1", reason="Set RUN_COMPOSE_SMOKE=1 to run")
+def _has_nvidia_gpu() -> bool:
+    """Return True iff `nvidia-smi` is available and exits 0."""
+    try:
+        return subprocess.run(
+            ["nvidia-smi"], capture_output=True, timeout=5,
+        ).returncode == 0
+    except (FileNotFoundError, subprocess.TimeoutExpired):
+        return False
+
+
+@pytest.mark.skipif(
+    os.environ.get("RUN_COMPOSE_SMOKE") != "1" or not _has_nvidia_gpu(),
+    reason="Requires RUN_COMPOSE_SMOKE=1 AND an NVIDIA GPU "
+           "(llama.cpp:server-cuda will not start on a CPU-only runner; "
+           "compose up hangs while CUDA-required containers retry).",
+)
 def test_compose_up_and_services_healthy():
     """Bring up stack and assert core services become healthy (Docker daemon required)."""
     # Bring up only core services to limit resource use. Image pulls for
