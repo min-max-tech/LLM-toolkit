@@ -446,7 +446,9 @@ _COMPOSE_SERVICE_NAME = re.compile(r"[A-Za-z0-9_-]+")
 
 
 def _run_compose(verb: str, service: str | None) -> subprocess.CompletedProcess:
-    cmd = ["docker", "compose", verb]
+    # Use standalone docker-compose binary (installed in Dockerfile)
+    # rather than docker CLI + compose plugin which is not available.
+    cmd = ["docker-compose", verb]
     if service:
         cmd.append(service)
     elif verb == "up":
@@ -546,18 +548,25 @@ def _watchdog_iteration() -> None:
                 continue
 
             # decision == "act"
-            logger.info("[watchdog] restarting %s (%s)", svc, detail)
-            proc = _run_compose("up", svc)
-            if proc.returncode == 0:
+            # Use container.start() via the SDK rather than `docker-compose up`.
+            # The watchdog's job is to revive a container the operator stopped,
+            # not to recreate from spec — and avoiding compose sidesteps the
+            # ${HOME}-relative secret-path resolution mess (compose secrets
+            # interpolate $HOME against the *calling* process, so running it
+            # from inside ops-controller (HOME=/home/appuser) hits a path that
+            # doesn't exist on the docker host).
+            logger.info("[watchdog] starting %s (%s)", svc, detail)
+            try:
+                c.start()
                 _audit_log.record(
                     action="watchdog.acted", target=svc, result="ok",
-                    caller="watchdog", detail=detail, rc=0,
+                    caller="watchdog", detail=detail, container_id=c.short_id,
                 )
-            else:
+            except Exception as e:
                 _audit_log.record(
                     action="watchdog.acted", target=svc, result="fail",
                     caller="watchdog", detail=detail,
-                    rc=proc.returncode, stderr=(proc.stderr or "")[-200:],
+                    container_id=c.short_id, error=str(e)[:200],
                 )
 
 

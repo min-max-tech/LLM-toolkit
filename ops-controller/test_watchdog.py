@@ -152,26 +152,26 @@ def test_iteration_acts_on_exited_after_grace(tmp_path, monkeypatch):
     _patch_audit_log(monkeypatch, m, audit_path)
 
     finished = datetime.now(UTC) - timedelta(seconds=300)
+    container = _make_container("hg", "hermes-gateway", "exited", finished_at=_iso(finished))
+    container.short_id = "abc123def456"
     fake_client = MagicMock()
-    fake_client.containers.list.return_value = [
-        _make_container("hg", "hermes-gateway", "exited", finished_at=_iso(finished)),
-    ]
+    fake_client.containers.list.return_value = [container]
     monkeypatch.setattr(m, "_docker_client", lambda: fake_client)
-    monkeypatch.setattr(m, "_run_compose",
-                        lambda verb, svc: MagicMock(returncode=0, stderr="", stdout=""))
 
     m._watchdog_iteration()
 
+    container.start.assert_called_once()
     entries = _read_audit(audit_path)
     actions = [e["action"] for e in entries]
     assert "watchdog.acted" in actions
     acted = next(e for e in entries if e["action"] == "watchdog.acted")
     assert acted["target"] == "hermes-gateway"
     assert acted["result"] == "ok"
+    assert acted["container_id"] == "abc123def456"
 
 
-def test_iteration_records_failure_on_compose_up_error(tmp_path, monkeypatch):
-    """Regression: the original code crashed with TypeError on this path."""
+def test_iteration_records_failure_when_start_raises(tmp_path, monkeypatch):
+    """Regression: the original audit signature crashed on the failure path."""
     import ops_controller.main as m
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setattr(m, "OPS_HERMES_WATCHDOG_PAUSE_FILE", str(tmp_path / "no-such"))
@@ -179,13 +179,12 @@ def test_iteration_records_failure_on_compose_up_error(tmp_path, monkeypatch):
     _patch_audit_log(monkeypatch, m, audit_path)
 
     finished = datetime.now(UTC) - timedelta(seconds=300)
+    container = _make_container("hg", "hermes-gateway", "exited", finished_at=_iso(finished))
+    container.short_id = "abc123"
+    container.start.side_effect = RuntimeError("daemon connection refused")
     fake_client = MagicMock()
-    fake_client.containers.list.return_value = [
-        _make_container("hg", "hermes-gateway", "exited", finished_at=_iso(finished)),
-    ]
+    fake_client.containers.list.return_value = [container]
     monkeypatch.setattr(m, "_docker_client", lambda: fake_client)
-    monkeypatch.setattr(m, "_run_compose",
-                        lambda verb, svc: MagicMock(returncode=1, stderr="boom", stdout=""))
 
     m._watchdog_iteration()
 
@@ -193,11 +192,10 @@ def test_iteration_records_failure_on_compose_up_error(tmp_path, monkeypatch):
     assert len(entries) == 1
     assert entries[0]["action"] == "watchdog.acted"
     assert entries[0]["result"] == "fail"
-    assert "boom" in entries[0]["stderr"]
-    assert entries[0]["rc"] == 1
+    assert "daemon connection refused" in entries[0]["error"]
 
 
-def test_iteration_skip_grace_does_not_call_compose(tmp_path, monkeypatch):
+def test_iteration_skip_grace_does_not_start(tmp_path, monkeypatch):
     import ops_controller.main as m
     audit_path = tmp_path / "audit.jsonl"
     monkeypatch.setattr(m, "OPS_HERMES_WATCHDOG_PAUSE_FILE", str(tmp_path / "no-such"))
@@ -205,18 +203,14 @@ def test_iteration_skip_grace_does_not_call_compose(tmp_path, monkeypatch):
     _patch_audit_log(monkeypatch, m, audit_path)
 
     finished = datetime.now(UTC) - timedelta(seconds=10)  # within grace
+    container = _make_container("hg", "hermes-gateway", "exited", finished_at=_iso(finished))
     fake_client = MagicMock()
-    fake_client.containers.list.return_value = [
-        _make_container("hg", "hermes-gateway", "exited", finished_at=_iso(finished)),
-    ]
+    fake_client.containers.list.return_value = [container]
     monkeypatch.setattr(m, "_docker_client", lambda: fake_client)
-    called = []
-    monkeypatch.setattr(m, "_run_compose",
-                        lambda *a, **kw: called.append((a, kw)) or MagicMock(returncode=0))
 
     m._watchdog_iteration()
 
-    assert called == []
+    container.start.assert_not_called()
     entries = _read_audit(audit_path)
     assert len(entries) == 1
     assert entries[0]["action"] == "watchdog.skipped-grace"
